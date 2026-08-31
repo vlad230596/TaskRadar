@@ -1,0 +1,261 @@
+.task-list__add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.task-list__add input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  /* >=16px prevents mobile browsers from zooming the viewport on focus. */
+  font-size: 16px;
+}
+
+.task-list__add button {
+  padding: 10px 16px;
+  min-height: 44px;
+  border: none;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.task-list__add button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.task-list__empty {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding: 12px 0;
+}
+
+.task-list__error,
+.task-item__error {
+  font-size: 13px;
+  color: var(--color-blocked);
+  margin: 0 0 8px;
+}
+
+.task-item__error {
+  margin: 0;
+}
+
+.task-list__items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.task-item--current {
+  border-color: var(--color-accent);
+  background: var(--color-accent-bg);
+}
+
+.task-item--dragging {
+  opacity: 0.5;
+}
+
+.task-item__handle {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* ~44px square hit area (the rule-of-thumb minimum comfortable touch
+     target), not just the glyph's own tiny visual footprint -- this is the
+     one control on the page that only works via touch/pointer drag, no
+     keyboard/click fallback for reordering on a phone. */
+  min-width: 44px;
+  min-height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: grab;
+  font-size: 18px;
+  line-height: 1;
+  /* touch-action: none is what makes a small distance-based drag threshold
+     safe to use on touch (see TaskList.tsx): scoping it to just the handle,
+     rather than the whole row, means the browser still handles normal page
+     scrolling everywhere else on the card. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.task-item__handle:active {
+  cursor: grabbing;
+}
+
+.task-item__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-item__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-item__title {
+  flex: 1 1 auto;
+  min-width: 100px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: text;
+  overflow-wrap: anywhere;
+}
+
+.task-item__title-input {
+  flex: 1 1 auto;
+  min-width: 100px;
+  /* >=16px prevents mobile browsers from zooming the viewport on focus. */
+  font-size: 16px;
+  font-weight: 600;
+  padding: 5px 6px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.task-item__status-group {
+  display: flex;
+  gap: 4px;
+  flex: none;
+}
+
+.task-item__status-btn {
+  font-size: 12px;
+  padding: 10px 12px;
+  min-height: 40px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+}
+
+.task-item__status-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.task-item__status-btn--active.task-item__status-btn--pending {
+  border-color: var(--color-pending);
+  color: var(--color-text);
+}
+
+.task-item__status-btn--active.task-item__status-btn--done {
+  border-color: var(--color-done);
+  background: rgba(47, 158, 91, 0.12);
+  color: var(--color-done);
+}
+
+.task-item__status-btn--active.task-item__status-btn--blocked {
+  border-color: var(--color-blocked);
+  background: var(--color-blocked-bg);
+  color: var(--color-blocked);
+}
+
+.task-item__delete {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.task-item__delete:hover {
+  color: var(--color-blocked);
+}
+
+.task-item__reminder {
+  font-size: 12px;
+  color: var(--color-blocked);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.task-item__reminder input {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 5px 6px;
+  /* >=16px prevents mobile browsers from zooming the viewport on focus. */
+  font-size: 16px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+/* Same "genuinely noticeable" treatment as the board's task-row__reminder--due. */
+.task-item__reminder--due {
+  font-weight: 700;
+  color: var(--color-blocked);
+}
+
+.task-item__reminder--due input {
+  border-color: var(--color-blocked);
+  background: var(--color-blocked-bg);
+}
+
+.task-item__description {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+  cursor: text;
+}
+
+.task-item__description-input {
+  /* >=16px prevents mobile browsers from zooming the viewport on focus. */
+  font-size: 16px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  min-height: 60px;
+  resize: vertical;
+  font-family: inherit;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.task-item__add-description {
+  align-self: flex-start;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: transparent;
+  border: none;
+  padding: 8px 0;
+}
+
+.task-item__add-description:hover {
+  color: var(--color-accent);
+}

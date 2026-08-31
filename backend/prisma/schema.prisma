@@ -1,0 +1,73 @@
+// TaskRadar — Prisma schema (Iteration 1: data model + REST API)
+//
+// IMPORTANT: DATABASE_URL lives in exactly one place — the repo-root `.env`
+// (one directory above `backend/`). The Prisma CLI only auto-loads a `.env`
+// sitting next to this file, so every npm script that shells out to `prisma`
+// wraps the call with `dotenv-cli` pointed at `../.env` (see backend/package.json,
+// scripts prefixed `prisma:*`). Do not add a `backend/.env` or
+// `backend/prisma/.env` — that would create a second source of truth for the
+// secret connection string.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TaskStatus {
+  pending
+  done
+  blocked
+}
+
+model Project {
+  id         String    @id @default(cuid())
+  name       String
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tasks Task[]
+  notes Note[]
+
+  @@map("projects")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  projectId   String
+  project     Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      TaskStatus @default(pending)
+  // Ordering key within a project. Float with large gaps between siblings so
+  // that moving one task between two neighbours only ever requires writing
+  // that single row (new position = average of the two neighbours' positions)
+  // instead of renumbering every task in the project. See
+  // src/domain/position.ts for the full rationale and the rebalance fallback
+  // used when the gap between two neighbours is exhausted.
+  position Float
+  remindAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, position])
+  @@map("tasks")
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title     String
+  content   String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@map("notes")
+}

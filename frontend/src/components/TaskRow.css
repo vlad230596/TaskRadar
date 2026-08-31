@@ -1,0 +1,71 @@
+.task-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.task-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.task-dot--done {
+  background: var(--color-done);
+}
+
+.task-dot--blocked {
+  background: var(--color-blocked);
+}
+
+.task-dot--pending {
+  background: transparent;
+  border: 1.5px solid var(--color-pending);
+}
+
+.task-row--blocked .task-row__reminder {
+  font-size: 12px;
+  color: var(--color-blocked);
+}
+
+/* A due/overdue reminder is the one thing on the board this whole tool
+   exists to surface at a glance -- it needs to be genuinely noticeable, not
+   just "colored text" like a future-dated reminder already is. */
+.task-row--blocked .task-row__reminder--due {
+  font-weight: 700;
+  color: #fff;
+  background: var(--color-blocked);
+  padding: 1px 7px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+/* The current task is the single most important fact on the whole board:
+   "what do I do next on this project" -- so it gets the strongest visual
+   weight of anything in a column, not just a colored dot. */
+.task-row--current {
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  margin: 2px 0;
+  background: var(--color-accent-bg);
+  border: 1px solid var(--color-accent);
+  border-radius: 8px;
+}
+
+.task-row--current .task-dot {
+  margin-top: 5px;
+  width: 10px;
+  height: 10px;
+  background: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.18);
+}
+
+.task-row--current .task-row__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.35;
+}
