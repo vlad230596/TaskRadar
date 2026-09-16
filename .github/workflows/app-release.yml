@@ -30,9 +30,14 @@ on:
         required: true
         type: string
       flutter_version:
+        # Pinned rather than "latest stable" by default: a release APK should be
+        # built by the toolchain the app is actually developed against, and a
+        # Flutter release landing between two builds must not be able to change
+        # what ships to the phone. Override it deliberately when moving the pin.
         description: Exact Flutter version to build with (empty = latest stable)
         required: false
         type: string
+        default: '3.41.8'
 
 permissions:
   contents: read
@@ -46,11 +51,14 @@ jobs:
       id-token: write
     env:
       VERSION: ${{ inputs.version }}
-      # TODO(owner): set the repository variable TASKRADAR_API_URL to the same
-      # origin as APP_ORIGIN in /opt/taskradar/.env. It is a build-time constant
-      # in the client (AppConfig.apiBaseUrl), so an APK cannot be repointed
-      # afterwards.
-      TASKRADAR_API_URL: ${{ vars.TASKRADAR_API_URL }}
+      # The origin the APK talks to, baked in at build time (AppConfig.apiBaseUrl)
+      # -- an APK cannot be repointed afterwards. `TASKRADAR_API_URL` is set as a
+      # repository variable; `PRODUCTION_URL` is the fallback because it is the
+      # same origin (it is what the deploy job publishes as the production
+      # environment URL) and having the APK job fail on a variable nobody
+      # remembers setting is a worse failure than reusing the one that must
+      # exist anyway.
+      TASKRADAR_API_URL: ${{ vars.TASKRADAR_API_URL || vars.PRODUCTION_URL }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -70,9 +78,19 @@ jobs:
         # that durable, so this step exists to make sure that line never comes
         # back. (Gradle now refuses an unsigned release build on its own; this is
         # the cheap early check, not the real one.)
+        #
+        # It matches the **assignment**, not the string. The first version of
+        # this step grepped the whole file for `signingConfigs.getByName("debug")`
+        # and failed on its first real run -- on the comment in build.gradle.kts
+        # that explains what the line used to say. A guard that cannot tell code
+        # from the comment describing the bug it guards against is a guard that
+        # blocks every release; `^[^*/]*` drops the comment lines, which in that
+        # file all start with `*` or `//`.
         run: |
           gradle_file=app/android/app/build.gradle.kts
-          if grep -q 'signingConfigs.getByName("debug")' "$gradle_file"; then
+          assignment='signingConfig[[:space:]]*=[[:space:]]*signingConfigs\.getByName'
+
+          if grep -qE "^[^*/]*${assignment}\(\"debug\"\)" "$gradle_file"; then
             echo "$gradle_file signs the release build with the debug keystore." >&2
             echo 'It must use the "release" signingConfig, which reads:' >&2
             echo '  TASKRADAR_ANDROID_KEYSTORE_PATH' >&2
@@ -81,6 +99,14 @@ jobs:
             echo '  TASKRADAR_ANDROID_KEY_PASSWORD' >&2
             exit 65
           fi
+
+          # And the positive half: "no debug config" is also true of a file that
+          # lost its signing config altogether.
+          if ! grep -qE "^[^*/]*${assignment}\(\"release\"\)" "$gradle_file"; then
+            echo "$gradle_file does not sign the release build with the release key." >&2
+            exit 65
+          fi
+
           test -n "$TASKRADAR_API_URL"
 
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
