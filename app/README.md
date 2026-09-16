@@ -26,6 +26,26 @@ The default is `http://localhost:3001`, which is only correct for the desktop
 target. The login screen prints the URL it is actually using, because "cannot
 connect" on a phone is almost always a wrong base URL.
 
+## Release builds (Android)
+
+A release APK is signed with the owner's own key, which is **not in this
+repository** and never will be: no keystore, no passwords, no alias.
+`android/app/build.gradle.kts` reads the signing config from
+`android/key.properties` (gitignored) or from `TASKRADAR_ANDROID_*` environment
+variables, which is what `.github/workflows/app-release.yml` supplies from its
+Actions secrets.
+
+With no config, a release build **fails with a message** naming what is missing.
+That is the fix, not a limitation: until F5 the release build type was signed
+with the *debug* keystore, which produces an APK that installs and runs and looks
+fine — right up to the day that keystore is regenerated and Android refuses to
+update the installed app. Debug builds need no configuration at all and are
+untouched.
+
+[`RELEASE-ANDROID.md`](RELEASE-ANDROID.md) is the owner's instruction: generating
+the keystore, where to keep it, what goes in `key.properties`, which Actions
+secrets to create — and why that key can never be lost or replaced.
+
 ## Code generation
 
 Models (`freezed` + `json_serializable`) and providers (`riverpod_generator`)
@@ -315,6 +335,38 @@ by a signed-out user never fires a request that 401s and bounces them around.
 Nothing is lost by waiting -- the tap sits in the gateway's buffer or in the
 launch intent, neither of which expires.
 
+### Renaming a project
+
+`PATCH /projects/:id` (B6) is a project's only field update, and it is reachable
+from two places: the project screen's menu, and **every row of the archive**.
+The second is not a bonus — the archive is where you meet a project whose name
+made sense in January, and the server allows a rename there deliberately so that
+fixing it does not mean unarchive → rename → archive again, which writes
+`archivedAt` twice to change a string. `archivedAt` is not in the payload, so a
+rename can move a project between the board and the archive in neither
+direction.
+
+The write is optimistic with a rollback, queued behind the other project writes
+(`ProjectLifecycle`, `providers/archive_providers.dart`), and it **splices**
+rather than invalidating: `Board.applyProject`, `ArchivedBoard.applyProject` and
+`ProjectHeader.applyProject` each take the row for the one list they own, so a
+rename costs exactly one request. There is no re-read at all, and that is
+provable rather than hopeful — `isCurrent` is "the first `pending` task in
+position order", so a name can move neither the order, nor the current task, nor
+a reminder date. It is the same argument that lets a reminder date be set in one
+request (see the blocker cycle above).
+
+The alarms do change, and again with nothing in the write path mentioning the
+scheduler: a notification says which project it is about
+(`TaskReminder.projectName`), so the spliced board publishes a new target set
+and `reminderSync` re-arms it with the new wording. A renamed project that kept
+nagging under its old name for weeks is exactly the bug that costs nothing to
+avoid here.
+
+Only the providers that are *already alive* are updated (`ref.exists`
+before `ref.read(...notifier)`): reading a provider that does not exist creates
+it, and creating either board means fetching a list nobody has open.
+
 ### Archive, delete, create
 
 `providers/archive_providers.dart`, `screens/archive_screen.dart`, and the menu
@@ -341,11 +393,10 @@ with no scheduler call anywhere: the refreshed board no longer contains its
 blocked tasks, so the target set shrinks and the queue follows. An archived
 project must stop nagging -- that is what archiving it means.
 
-**Renaming a project is not possible**, from this client or any other: there is
-no `PATCH /projects/:id` in the backend. `POST /projects` and the two archive
-routes are a project's entire write surface. That is a missing endpoint, not a
-missing screen, and `archive_screen_test.dart` has a test that should start
-looking wrong the day it appears.
+Renaming used to be impossible from any client, and `archive_screen_test.dart`
+carried a test saying so. `PATCH /projects/:id` has since landed, so that test
+was replaced by the `renaming` group in the same file rather than deleted — see
+"Renaming a project" above.
 
 ## Local reminders (F1)
 

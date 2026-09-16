@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -264,23 +266,202 @@ void main() {
       );
     });
 
-    testWidgets('there is no rename -- the backend has no endpoint for it', (
+  });
+
+  /// The counterpart of F4's "there is no rename" marker test, which was true
+  /// when it was written and stopped being true when `PATCH /projects/:id`
+  /// landed (B6 in `../../flutter-migration-plan.md`). What it guarded -- "the
+  /// client must not pretend to offer a rename the server cannot perform" -- is
+  /// now guarded from the other side: the menu item exists, and these assert
+  /// that it reaches the endpoint and that the endpoint's two rules (the name is
+  /// the whole payload, `archivedAt` is untouched) survive the trip.
+  group('renaming', () {
+    /// Opens the dialog's field specifically. The project screen has an inline
+    /// "new task" field of its own, so a bare `find.byType(TextField)` would be
+    /// ambiguous there.
+    Finder dialogField() => find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+
+    Future<void> renameTo(WidgetTester tester, String name) async {
+      await tester.enterText(dialogField(), name);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Переименовать'));
+      await settle(tester);
+    }
+
+    testWidgets('from the project screen, and the board card follows', (
       tester,
     ) async {
-      // Documented as a test rather than only as a comment: if
-      // `PATCH /projects/:id` ever appears, this is the line that should start
-      // looking wrong.
       server.addProject(name: 'Дача', id: 'prj_1');
+      server.addTask(projectId: 'prj_1', title: 'Покрасить забор');
 
       await pump(tester, home: const BoardScreen());
       await tester.tap(find.text('Дача'));
       await settle(tester);
 
+      final boardReadsBefore = backend.requests
+          .where((request) => request.path == '/board')
+          .length;
+
       await tester.tap(find.byTooltip('Действия с проектом'));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Переименовать'));
+      await tester.pumpAndSettle();
 
-      expect(find.text('В архив'), findsOneWidget);
-      expect(find.textContaining('переимен'), findsNothing);
+      // Pre-filled and selected: the common gesture is replacing the name, and
+      // the second most common is correcting one character in it.
+      expect(
+        tester.widget<TextField>(dialogField()).controller!.text,
+        'Дача',
+      );
+
+      await renameTo(tester, '  Дача и баня  ');
+
+      expect(server.projects['prj_1']!['name'], 'Дача и баня');
+      expect(find.text('Дача и баня'), findsOneWidget);
+
+      // Back on the board, the card carries the new name -- spliced in, not
+      // re-fetched. `GET /board` is the assertion: a rename that invalidated the
+      // board would show up here as an extra read.
+      await tester.pageBack();
+      await settle(tester);
+      expect(find.byType(BoardScreen), findsOneWidget);
+      expect(find.text('Дача и баня'), findsOneWidget);
+      expect(
+        backend.requests.where((request) => request.path == '/board').length,
+        boardReadsBefore,
+      );
+    });
+
+    testWidgets('sends the name and nothing else', (tester) async {
+      server.addProject(name: 'Дача', id: 'prj_1');
+
+      await pump(tester, home: const BoardScreen());
+      await tester.tap(find.text('Дача'));
+      await settle(tester);
+      await tester.tap(find.byTooltip('Действия с проектом'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Переименовать'));
+      await tester.pumpAndSettle();
+      await renameTo(tester, 'Дача и баня');
+
+      // `archivedAt` is not in the payload, server-side by design: a rename
+      // must not be able to archive or resurrect a project as a side effect.
+      final patch = server.patches.last;
+      expect(patch.path, '/projects/prj_1');
+      expect(patch.body.keys, <String>['name']);
+    });
+
+    testWidgets('an archived project is renamed in place and stays archived', (
+      tester,
+    ) async {
+      server.addProject(
+        name: 'Старый проект',
+        id: 'prj_1',
+        archivedAt: '2026-09-01T00:00:00.000Z',
+      );
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Переименовать'));
+      await tester.pumpAndSettle();
+      await renameTo(tester, 'Дача, лето 2025');
+
+      // The point of allowing this at all: the archive is where a badly named
+      // project is met. It must not leave the archive to be fixed.
+      expect(find.text('Дача, лето 2025'), findsOneWidget);
+      expect(find.text('Архив пуст'), findsNothing);
+      expect(
+        server.projects['prj_1']!['archivedAt'],
+        '2026-09-01T00:00:00.000Z',
+      );
+    });
+
+    testWidgets('the new name is on screen before the server has answered', (
+      tester,
+    ) async {
+      server.addProject(
+        name: 'Старый проект',
+        id: 'prj_1',
+        archivedAt: '2026-09-01T00:00:00.000Z',
+      );
+      await pump(tester);
+
+      // Hold the PATCH open, so the optimistic frame exists long enough to be
+      // asserted -- otherwise the fake answers in the same microtask and the
+      // frame the user actually sees never happens in a test.
+      final held = Completer<void>();
+      backend.delay = (options) async {
+        if (options.method == 'PATCH') await held.future;
+      };
+
+      await tester.tap(find.byTooltip('Переименовать'));
+      await tester.pumpAndSettle();
+      await tester.enterText(dialogField(), 'Дача, лето 2025');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Переименовать'));
+      await settle(tester);
+
+      expect(find.text('Дача, лето 2025'), findsOneWidget);
+      expect(server.projects['prj_1']!['name'], 'Старый проект');
+
+      held.complete();
+      await settle(tester);
+
+      // And the settled row is the server's, not the guess: `updatedAt` is a
+      // field only the server can know.
+      expect(server.projects['prj_1']!['name'], 'Дача, лето 2025');
+      expect(find.text('Дача, лето 2025'), findsOneWidget);
+    });
+
+    testWidgets('a failed rename puts the old name back and says why', (
+      tester,
+    ) async {
+      server.addProject(
+        name: 'Старый проект',
+        archivedAt: '2026-09-01T00:00:00.000Z',
+      );
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Переименовать'));
+      await tester.pumpAndSettle();
+      await tester.enterText(dialogField(), 'Новое имя');
+      await tester.pumpAndSettle();
+
+      backend.alwaysFailToConnect();
+      await tester.tap(find.widgetWithText(FilledButton, 'Переименовать'));
+      await settle(tester);
+
+      // Rule 2: no network, no write, and no pretending otherwise.
+      expect(
+        find.textContaining('Не удалось переименовать проект.'),
+        findsOneWidget,
+      );
+      expect(find.text('Старый проект'), findsOneWidget);
+      expect(find.text('Новое имя'), findsNothing);
+    });
+
+    testWidgets('an empty name cannot be submitted', (tester) async {
+      server.addProject(
+        name: 'Старый проект',
+        archivedAt: '2026-09-01T00:00:00.000Z',
+      );
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Переименовать'));
+      await tester.pumpAndSettle();
+      await tester.enterText(dialogField(), '   ');
+      await tester.pumpAndSettle();
+
+      expect(
+        tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Переименовать'),
+            )
+            .onPressed,
+        isNull,
+      );
     });
   });
 

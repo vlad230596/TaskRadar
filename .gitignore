@@ -11,3 +11,11 @@ coverage/
 .vite/
 .claude/
 CREDENTIALS.local.md
+
+# Подпись Android-релиза. Дублирует app/android/.gitignore намеренно: keystore
+# нельзя закоммитить даже случайно и даже не из той папки — потеря ключа
+# означает, что обновить установленное приложение больше нельзя никогда.
+# Инструкция — app/RELEASE-ANDROID.md.
+key.properties
+*.jks
+*.keystore

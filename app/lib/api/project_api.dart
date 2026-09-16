@@ -45,11 +45,11 @@ class ProjectApi {
   /// `GET /projects/:id`. A 404 (an [ApiException] with `statusCode == 404`)
   /// means the project does not exist any more.
   ///
-  /// It does **not** mean "archived", despite the name of the route's helper:
-  /// `getActiveProjectOrThrow` only checks existence, so an archived project
-  /// answers 200 with a non-null `archivedAt`. That is what lets a reminder deep
-  /// link open a task in a project that was archived since the alarm was armed,
-  /// rather than dead-ending on a 404.
+  /// It does **not** mean "archived": the route's helper (`getProjectOrThrow`,
+  /// `backend/src/routes/projects.ts`) only checks existence, so an archived
+  /// project answers 200 with a non-null `archivedAt`. That is what lets a
+  /// reminder deep link open a task in a project that was archived since the
+  /// alarm was armed, rather than dead-ending on a 404.
   Future<Project> fetchProject(String projectId) async {
     final json = await _client.get<Map<String, dynamic>>(
       '/projects/$projectId',
@@ -69,12 +69,38 @@ class ProjectApi {
     return Project.fromJson(json);
   }
 
+  /// `PATCH /projects/:id` -- the rename, and a project's only field update.
+  ///
+  /// The server trims the name and rejects an empty or whitespace-only one with
+  /// a 400; the caller trims too, so that refusal is reached by a broken client
+  /// rather than by an ordinary user typing spaces.
+  ///
+  /// **`archivedAt` is not in the payload**, by the route's design: a rename can
+  /// neither resurrect an archived project nor archive a live one, and
+  /// `/archive` + `/unarchive` stay the only two routes that move a project
+  /// between those states. Which is also why renaming an **archived** project is
+  /// allowed and is a feature, not an oversight -- the archive screen is exactly
+  /// where a badly named old project gets looked at, and the alternative would be
+  /// an unarchive/rename/re-archive dance that changes more state than the rename
+  /// does. The long argument is in the comment above the route and in B6 of
+  /// `../../../flutter-migration-plan.md`.
+  ///
+  /// Answers the same object as [fetchProject], so there is one `Project` model
+  /// and no rename-flavoured twin of it.
+  Future<Project> renameProject(String projectId, {required String name}) async {
+    final json = await _client.patch<Map<String, dynamic>>(
+      '/projects/$projectId',
+      body: <String, dynamic>{'name': name},
+    );
+    return Project.fromJson(json);
+  }
+
   /// `POST /projects/:id/archive` -- reversible; the project leaves the board.
   ///
-  /// There is no `PATCH /projects/:id` anywhere in the backend, so archiving is
-  /// a route of its own rather than a field update, and **renaming a project is
-  /// not possible from any client**. That is a missing endpoint, not a missing
-  /// screen.
+  /// A route of its own rather than a field on [renameProject]'s patch: archiving
+  /// is a state transition with a guard behind it (`DELETE` refuses an
+  /// unarchived project), and a body key that could flip it would make every
+  /// rename a potential archive.
   Future<Project> archiveProject(String projectId) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/projects/$projectId/archive',

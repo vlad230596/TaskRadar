@@ -15,7 +15,12 @@ name: Release TaskRadar Android APK
 # waiting for a client build, and a client build must not be able to block a
 # server fix.
 #
-# BLOCKED until the Android release signing config exists -- see the first step.
+# Signing: `app/android/app/build.gradle.kts` reads the release key from
+# `android/key.properties` or from TASKRADAR_ANDROID_* environment variables, and
+# refuses to build a release without one. This job supplies the environment half
+# from the four Actions secrets below. The owner has to create the keystore and
+# store the secrets once -- `app/RELEASE-ANDROID.md` says how, and why that key
+# can never be lost or replaced.
 
 on:
   workflow_dispatch:
@@ -52,27 +57,28 @@ jobs:
           ref: refs/tags/${{ inputs.version }}
 
       - name: Require a real release signing config
-        # Guard, not paperwork. app/android/app/build.gradle.kts currently signs
-        # the release build type with the *debug* keystore ("TODO: Add your own
-        # signing config"). A debug-signed APK installs and runs, so nothing
-        # would look wrong -- until the debug keystore is regenerated (a fresh
-        # checkout, another machine, a reinstalled SDK), at which point Android
-        # refuses to update the installed app and the only way forward is
-        # uninstalling it and losing its local state. Worse, the debug key is
-        # not a secret, so anyone could sign an update for this application id.
+        # Regression guard, and it fails before the three minutes of SDK setup.
         #
-        # Producing such an APK from CI and attaching it to a Release would make
-        # all of that durable, so the job stops here instead.
+        # The release build type used to be signed with the *debug* keystore
+        # ("TODO: Add your own signing config"). A debug-signed APK installs and
+        # runs, so nothing would look wrong -- until the debug keystore is
+        # regenerated (a fresh checkout, another machine, a reinstalled SDK), at
+        # which point Android refuses to update the installed app and the only
+        # way forward is uninstalling it and losing its local state. Worse, the
+        # debug key is not a secret, so anyone could sign an update for this
+        # application id. Attaching such an APK to a Release would make all of
+        # that durable, so this step exists to make sure that line never comes
+        # back. (Gradle now refuses an unsigned release build on its own; this is
+        # the cheap early check, not the real one.)
         run: |
           gradle_file=app/android/app/build.gradle.kts
           if grep -q 'signingConfigs.getByName("debug")' "$gradle_file"; then
-            echo "$gradle_file still signs the release build with the debug keystore." >&2
-            echo 'Add a real release signingConfig reading these environment variables:' >&2
+            echo "$gradle_file signs the release build with the debug keystore." >&2
+            echo 'It must use the "release" signingConfig, which reads:' >&2
             echo '  TASKRADAR_ANDROID_KEYSTORE_PATH' >&2
             echo '  TASKRADAR_ANDROID_KEYSTORE_PASSWORD' >&2
             echo '  TASKRADAR_ANDROID_KEY_ALIAS' >&2
             echo '  TASKRADAR_ANDROID_KEY_PASSWORD' >&2
-            echo 'then store the keystore and its passwords as Actions secrets.' >&2
             exit 65
           fi
           test -n "$TASKRADAR_API_URL"
@@ -86,8 +92,23 @@ jobs:
       - name: Configure Android release signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # All four are checked here rather than left to the build: a missing
+        # password surfaces from keytool as "keystore was tampered with, or
+        # password was incorrect", which sends the reader hunting for a corrupt
+        # keystore instead of an empty secret. The names are the ones in
+        # app/RELEASE-ANDROID.md; `secrets.` names and the TASKRADAR_ANDROID_*
+        # variable names below are deliberately distinct -- the former are what
+        # GitHub stores, the latter are what build.gradle.kts reads.
         run: |
-          test -n "$ANDROID_KEYSTORE_BASE64"
+          for secret in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!secret}" ]; then
+              echo "Actions secret $secret is not set; see app/RELEASE-ANDROID.md." >&2
+              exit 65
+            fi
+          done
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/android/app/release-keystore.jks
           chmod 600 app/android/app/release-keystore.jks
 

@@ -27,7 +27,9 @@ import 'fake_backend.dart';
 ///   rebalance renumbers rows the response says nothing about.
 /// - **the three-state PATCH** (`backend/src/schemas.ts`): a key that is absent
 ///   leaves the column alone, a key that is null clears it.
-/// - 404 from `getActiveProjectOrThrow` for an unknown or archived project.
+/// - 404 from `getProjectOrThrow` for an unknown project -- and, just as
+///   importantly, a normal 200 for an **archived** one, which the server also
+///   gives.
 ///
 /// It is not a general-purpose server: no auth, no validation beyond what the
 /// tests exercise, one flat namespace of ids.
@@ -55,6 +57,11 @@ class FakeProjectBackend {
   /// What `archivedAt` becomes on archive. Fixed rather than `DateTime.now()`
   /// so an assertion can name the exact value.
   static const String archivedAtStamp = '2026-09-16T13:00:00.000Z';
+
+  /// What `updatedAt` becomes on a rename, for the same reason. Distinct from
+  /// the seeded value, so "the client kept its optimistic guess instead of the
+  /// server's row" is a visible difference rather than a coincidence.
+  static const String renamedAtStamp = '2026-09-16T13:30:00.000Z';
 
   String _id(String prefix) => '${prefix}_${++_nextId}';
 
@@ -161,14 +168,14 @@ class FakeProjectBackend {
 
     // Registered before `/projects/:id` so the longer paths win.
     backend.on('POST', '/projects/:id/archive', (match) {
-      final project = _activeProject(match.params['id']!);
+      final project = _project(match.params['id']!);
       if (project == null) return _notFound('Project');
       project['archivedAt'] = archivedAtStamp;
       return jsonResponse(project);
     });
 
     backend.on('POST', '/projects/:id/unarchive', (match) {
-      final project = _activeProject(match.params['id']!);
+      final project = _project(match.params['id']!);
       if (project == null) return _notFound('Project');
       project['archivedAt'] = null;
       return jsonResponse(project);
@@ -188,14 +195,35 @@ class FakeProjectBackend {
     });
 
     backend.on('GET', '/projects/:id', (match) {
-      final project = _activeProject(match.params['id']!);
+      final project = _project(match.params['id']!);
       if (project == null) return _notFound('Project');
+      return jsonResponse(project);
+    });
+
+    // The rename. Three server behaviours are reproduced because the client
+    // depends on all three: the name is trimmed, an empty one is a 400, and
+    // `archivedAt` is untouched -- an archived project is renamed in place and
+    // stays archived, which is what makes the archive screen's rename button
+    // legitimate rather than a way to resurrect a project by accident.
+    backend.on('PATCH', '/projects/:id', (match) {
+      final project = _project(match.params['id']!);
+      if (project == null) return _notFound('Project');
+
+      patches.add((path: match.options.path, body: match.body));
+
+      final raw = match.body['name'];
+      if (raw is! String || raw.trim().isEmpty) {
+        return _error(400, 'name is required');
+      }
+
+      project['name'] = raw.trim();
+      project['updatedAt'] = renamedAtStamp;
       return jsonResponse(project);
     });
 
     backend.on('DELETE', '/projects/:id', (match) {
       final id = match.params['id']!;
-      final project = _activeProject(id);
+      final project = _project(id);
       if (project == null) return _notFound('Project');
 
       // `canHardDeleteProject`: archive first, or 409. Reproduced here because
@@ -213,13 +241,13 @@ class FakeProjectBackend {
 
     backend.on('GET', '/projects/:id/tasks', (match) {
       final projectId = match.params['id']!;
-      if (_activeProject(projectId) == null) return _notFound('Project');
+      if (_project(projectId) == null) return _notFound('Project');
       return jsonResponse(_annotated(projectId));
     });
 
     backend.on('POST', '/projects/:id/tasks', (match) {
       final projectId = match.params['id']!;
-      if (_activeProject(projectId) == null) return _notFound('Project');
+      if (_project(projectId) == null) return _notFound('Project');
 
       final body = match.body;
       final row = <String, dynamic>{
@@ -241,7 +269,7 @@ class FakeProjectBackend {
 
     backend.on('GET', '/projects/:id/notes', (match) {
       final projectId = match.params['id']!;
-      if (_activeProject(projectId) == null) return _notFound('Project');
+      if (_project(projectId) == null) return _notFound('Project');
       return jsonResponse(<dynamic>[
         for (final note in notes)
           if (note['projectId'] == projectId) note,
@@ -250,7 +278,7 @@ class FakeProjectBackend {
 
     backend.on('POST', '/projects/:id/notes', (match) {
       final projectId = match.params['id']!;
-      if (_activeProject(projectId) == null) return _notFound('Project');
+      if (_project(projectId) == null) return _notFound('Project');
 
       final row = <String, dynamic>{
         'id': _id('nte'),
@@ -419,14 +447,13 @@ class FakeProjectBackend {
     return rows;
   }
 
-  Map<String, dynamic>? _activeProject(String id) {
-    final project = projects[id];
-    // `getActiveProjectOrThrow` in fact only checks existence, and archived
-    // projects answer normally -- the guard against writing to an archived
-    // project lives in the board query. Mirrored as-is so the fake cannot be
-    // stricter than the server.
-    return project;
-  }
+  /// `getProjectOrThrow`: existence, and nothing else.
+  ///
+  /// Archived projects answer normally -- deliberately, on both sides. The only
+  /// thing archiving changes is which board query returns the row (and, for
+  /// deletion, that the guard is now satisfied). Mirrored as-is so the fake
+  /// cannot be stricter than the server and let a client bug through.
+  Map<String, dynamic>? _project(String id) => projects[id];
 
   Map<String, dynamic>? _task(String id) {
     for (final task in tasks) {

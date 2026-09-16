@@ -9,6 +9,7 @@ import '../providers/board_providers.dart';
 import '../providers/session_provider.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_card.dart';
+import '../widgets/project_name_dialog.dart';
 
 /// The board: every active project, one card each, top to bottom.
 ///
@@ -156,9 +157,14 @@ void _onMenu(BuildContext context, WidgetRef ref, _BoardMenuAction action) {
 /// instead would mean finding the new card and tapping it, which is two gestures
 /// spent on a question that was already answered.
 Future<void> _createProject(BuildContext context, WidgetRef ref) async {
-  final name = await showDialog<String>(
-    context: context,
-    builder: (_) => const _NewProjectDialog(),
+  // The one field there is: `POST /projects` accepts a name and nothing else --
+  // a project's body is its notes, which are written from inside it. The same
+  // dialog asks for a corrected name when a project is renamed; see
+  // `widgets/project_name_dialog.dart`.
+  final name = await askForProjectName(
+    context,
+    title: 'Новый проект',
+    confirmLabel: 'Создать',
   );
   if (name == null || !context.mounted) return;
 
@@ -176,63 +182,6 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
 
   if (!ok || createdId == null || !context.mounted) return;
   await AppRoutes.openProject(context, projectId: createdId!);
-}
-
-/// The one field there is. `POST /projects` accepts a name and nothing else --
-/// a project's body is its notes, which are written from inside it.
-class _NewProjectDialog extends StatefulWidget {
-  const _NewProjectDialog();
-
-  @override
-  State<_NewProjectDialog> createState() => _NewProjectDialogState();
-}
-
-class _NewProjectDialogState extends State<_NewProjectDialog> {
-  final TextEditingController _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _submit() {
-    final name = _controller.text.trim();
-    // Silently ignoring an empty name rather than showing a validation error:
-    // the server would reject it anyway, and the empty field is already the
-    // whole message.
-    if (name.isEmpty) return;
-    Navigator.of(context).pop(name);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Новый проект'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textCapitalization: TextCapitalization.sentences,
-        textInputAction: TextInputAction.done,
-        decoration: const InputDecoration(
-          hintText: 'Название проекта',
-          border: OutlineInputBorder(),
-        ),
-        onChanged: (_) => setState(() {}),
-        onSubmitted: (_) => _submit(),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
-        ),
-        FilledButton(
-          onPressed: _controller.text.trim().isEmpty ? null : _submit,
-          child: const Text('Создать'),
-        ),
-      ],
-    );
-  }
 }
 
 class _BoardList extends ConsumerWidget {

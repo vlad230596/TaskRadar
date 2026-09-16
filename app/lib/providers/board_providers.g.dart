@@ -166,7 +166,7 @@ final class BoardProvider extends $AsyncNotifierProvider<Board, FreshBoard> {
   Board create() => Board();
 }
 
-String _$boardHash() => r'5df6762f76db721acb2f67001d6db2f7f8b89dfc';
+String _$boardHash() => r'9012e9c82da11d11bd6b1329b65719c34da7e51b';
 
 /// `GET /board?archived=false`, plus the snapshot write that follows it.
 

@@ -2,7 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { NotFoundError } from "../lib/errors";
 import { createNoteSchema, updateNoteSchema, idParamSchema, projectIdParamSchema } from "../schemas";
-import { getActiveProjectOrThrow } from "./projects";
+import { getProjectOrThrow } from "./projects";
 
 async function getNoteOrThrow(id: string) {
   const note = await prisma.note.findUnique({ where: { id } });
@@ -16,7 +16,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects/:projectId/notes", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
     const body = createNoteSchema.parse(request.body);
-    await getActiveProjectOrThrow(projectId);
+    await getProjectOrThrow(projectId);
 
     const note = await prisma.note.create({
       data: { projectId, title: body.title, content: body.content },
@@ -26,7 +26,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/projects/:projectId/notes", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
-    await getActiveProjectOrThrow(projectId);
+    await getProjectOrThrow(projectId);
 
     const notes = await prisma.note.findMany({
       where: { projectId },

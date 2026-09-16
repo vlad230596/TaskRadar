@@ -15,7 +15,7 @@ import {
   idParamSchema,
   projectIdParamSchema,
 } from "../schemas";
-import { getActiveProjectOrThrow } from "./projects";
+import { getProjectOrThrow } from "./projects";
 
 async function getTaskOrThrow(id: string) {
   const task = await prisma.task.findUnique({ where: { id } });
@@ -29,7 +29,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
     const body = createTaskSchema.parse(request.body);
-    await getActiveProjectOrThrow(projectId);
+    await getProjectOrThrow(projectId);
 
     const last = await prisma.task.aggregate({
       where: { projectId },
@@ -52,7 +52,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
-    await getActiveProjectOrThrow(projectId);
+    await getProjectOrThrow(projectId);
 
     const tasks = await prisma.task.findMany({
       where: { projectId },

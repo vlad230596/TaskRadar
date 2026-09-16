@@ -5,6 +5,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../domain/board_reminders.dart';
 import '../models/board_project.dart';
+import '../models/project.dart';
 import '../models/task.dart';
 import '../storage/board_snapshot_store.dart';
 import 'dependencies.dart';
@@ -199,6 +200,72 @@ class Board extends _$Board {
     // just written rather than the state before it -- including for the alarm
     // set, which is half the reason the snapshot exists. Same `savedAt` for the
     // same reason as above; `write` never throws (see BoardSnapshotStore).
+    unawaited(
+      ref
+          .read(boardSnapshotStoreProvider)
+          .write(projects, savedAt: current.fetchedAt),
+    );
+  }
+
+  /// Writes a project's **own row** -- in practice its name -- into the board
+  /// already in memory, leaving that row's tasks untouched.
+  ///
+  /// The sibling of [applyProjectTasks], and it exists for the same reason: a
+  /// rename changes one string on one card, and `ref.invalidate(boardProvider)`
+  /// would pay a whole `GET /board` for it. The splice is exact rather than an
+  /// approximation, because `PATCH /projects/:id` answers with byte-identical
+  /// JSON to the `GET /projects/:id` a board row is built from
+  /// (`backend/src/routes/board.ts`, and the backend test that asserts the two
+  /// key sets match).
+  ///
+  /// A name cannot move a task, change `isCurrent`, or add or remove a reminder
+  /// -- but it does appear **inside the notification**
+  /// (`TaskReminder.projectName`, `domain/board_reminders.dart`), so the armed
+  /// alarms have to be re-worded or a renamed project keeps nagging under its old
+  /// name for weeks. That happens here for free and with no scheduler call, by
+  /// the same mechanism as everywhere else: a new projects list is a new target
+  /// set for [boardReminderBridge], and replacing the target set *is* the
+  /// reschedule (`ReminderScheduler.sync` re-arms every target against stable
+  /// per-task ids, so a re-arm replaces rather than duplicates).
+  ///
+  /// **No board in memory means no splice**, and no refetch either. Unlike
+  /// [applyProjectTasks] this does not `invalidateSelf`: a rename is applied
+  /// twice (optimistically, then with the server's row), and invalidating from
+  /// the optimistic half would fire a `GET /board` that answers with the *old*
+  /// name. The case is also nearly unreachable -- the board provider only has no
+  /// value while the very first fetch of this run is in flight or has failed,
+  /// and that fetch, whenever it lands, carries the new name anyway.
+  void applyProject(Project project) {
+    final current = state.value;
+    if (current == null) return;
+
+    var found = false;
+    final projects = <BoardProject>[
+      for (final row in current.projects)
+        if (row.project.id == project.id)
+          () {
+            found = true;
+            return row.copyWith(project: project);
+          }()
+        else
+          row,
+    ];
+
+    // Not on this board: an archived project renamed from the archive screen
+    // takes this branch, and leaving the state alone is what keeps that rename
+    // from re-arming anything.
+    if (!found) return;
+
+    state = AsyncData(
+      FreshBoard(
+        projects: List<BoardProject>.unmodifiable(projects),
+        // The original fetch time, for the reason spelled out in
+        // [applyProjectTasks]: renaming one project does not make the other
+        // fifteen rows any fresher.
+        fetchedAt: current.fetchedAt,
+      ),
+    );
+
     unawaited(
       ref
           .read(boardSnapshotStoreProvider)

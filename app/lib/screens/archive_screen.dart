@@ -6,6 +6,7 @@ import '../domain/project_summary.dart';
 import '../models/board_project.dart';
 import '../providers/archive_providers.dart';
 import '../widgets/mutation_feedback.dart';
+import '../widgets/project_name_dialog.dart';
 
 /// The archive: projects taken off the board, and the only place a project can
 /// be deleted from (F4).
@@ -77,7 +78,14 @@ class _ArchivedProjectTile extends ConsumerWidget {
     final summary = ProjectSummary.of(entry);
 
     return ListTile(
-      title: Text(entry.project.name),
+      // Ellipsised rather than wrapped: the row carries three controls, and a
+      // long project name that pushed them around would move the delete button
+      // under a thumb aiming at "Вернуть".
+      title: Text(
+        entry.project.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       subtitle: Text(
         'Задач: ${summary.doneCount} из ${summary.totalCount} сделано',
       ),
@@ -90,6 +98,11 @@ class _ArchivedProjectTile extends ConsumerWidget {
             label: const Text('Вернуть'),
           ),
           IconButton(
+            tooltip: 'Переименовать',
+            onPressed: () => _rename(context, ref),
+            icon: const Icon(Icons.drive_file_rename_outline),
+          ),
+          IconButton(
             tooltip: 'Удалить навсегда',
             onPressed: () => _delete(context, ref),
             icon: const Icon(Icons.delete_forever_outlined),
@@ -97,6 +110,35 @@ class _ArchivedProjectTile extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// Renaming **here**, and not only on the project screen.
+  ///
+  /// The server allows it deliberately (`backend/src/routes/projects.ts`, B6 in
+  /// `../../../flutter-migration-plan.md`) and this screen is the reason: the
+  /// archive is exactly where you meet a project whose name made sense in
+  /// January and means nothing now, and the point of fixing it is to be able to
+  /// find the project later. The alternative would be вернуть → переименовать →
+  /// заархивировать снова, which writes `archivedAt` twice to change a string.
+  ///
+  /// The rename does not take the project out of the archive: `archivedAt` is
+  /// not in the payload, so the row stays exactly where it is with a new name.
+  Future<void> _rename(BuildContext context, WidgetRef ref) async {
+    final name = await askForProjectName(
+      context,
+      title: 'Переименовать проект',
+      confirmLabel: 'Переименовать',
+      initialName: entry.project.name,
+    );
+    if (name == null || !context.mounted) return;
+
+    await runMutation(
+      context,
+      () => ref
+          .read(projectLifecycleProvider.notifier)
+          .rename(entry.project, name),
+      failure: 'Не удалось переименовать проект.',
     );
   }
 

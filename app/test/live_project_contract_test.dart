@@ -366,6 +366,101 @@ void main() {
     print('live remindAt: $sent round-tripped as UTC midnight and cleared');
   }, skip: skip);
 
+  test('the live rename: active, archived, and what it refuses', () async {
+    await openScratchProject();
+
+    final original = await api.fetchProject(projectId);
+
+    // --- the ordinary rename ------------------------------------------------
+
+    // Non-ASCII and padded, both on purpose: the names in this tool are Russian,
+    // and the server trims. (The literal lives in this UTF-8 source rather than
+    // in a --dart-define, because Git Bash on Windows mangles Cyrillic in
+    // command-line arguments -- the same trap `openScratchProject` names.)
+    final renamed = await api.renameProject(
+      projectId,
+      name: '  Переименованный проект  ',
+    );
+    expect(renamed.id, projectId);
+    expect(renamed.name, 'Переименованный проект');
+    expect(renamed.archivedAt, isNull);
+    expect(
+      renamed.createdAt,
+      original.createdAt,
+      reason: 'a rename is an update, not a re-creation',
+    );
+
+    // The same object `GET /projects/:id` hands back -- one `Project` model, no
+    // rename-flavoured twin of it.
+    expect(await api.fetchProject(projectId), renamed);
+
+    // And the board carries the new name, which is what the client splices into
+    // its own row instead of re-reading the board.
+    final boardApi = BoardApi(client);
+    expect(
+      (await boardApi.fetchBoard())
+          .firstWhere((row) => row.project.id == projectId)
+          .project
+          .name,
+      'Переименованный проект',
+    );
+
+    // --- renaming an archived project ---------------------------------------
+
+    // The decision B6 argues in full: the archive screen is where a badly named
+    // old project is met, so it must be fixable there. Only a live server can
+    // prove the route really allows it.
+    await api.archiveProject(projectId);
+    final archivedRename = await api.renameProject(
+      projectId,
+      name: 'Архивный, переименованный',
+    );
+    expect(archivedRename.name, 'Архивный, переименованный');
+    expect(
+      archivedRename.archivedAt,
+      isNotNull,
+      reason: 'renaming must not resurrect a project as a side effect',
+    );
+    expect(
+      (await boardApi.fetchBoard(archived: true))
+          .firstWhere((row) => row.project.id == projectId)
+          .project
+          .name,
+      'Архивный, переименованный',
+      reason: 'the row stays in the archive, with the new name',
+    );
+
+    await api.unarchiveProject(projectId);
+
+    // --- what it refuses ----------------------------------------------------
+
+    for (final rejected in <String>['', '   ']) {
+      await expectLater(
+        api.renameProject(projectId, name: rejected),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 400),
+        ),
+        reason: 'an empty or whitespace-only name is a 400, not a stored ""',
+      );
+    }
+
+    await expectLater(
+      api.renameProject('nosuchprojectid', name: 'Неважно'),
+      throwsA(
+        isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404),
+      ),
+    );
+
+    // Nothing the refusals touched: the last accepted name is still there.
+    expect(
+      (await api.fetchProject(projectId)).name,
+      'Архивный, переименованный',
+    );
+
+    // ignore: avoid_print
+    print('live rename: active and archived project renamed, 400/404 refused');
+  }, skip: skip);
+
   test('the live project lifecycle: archive, unarchive, delete', () async {
     await openScratchProject();
 
@@ -408,8 +503,8 @@ void main() {
     );
 
     // Still readable by id, which is what lets a reminder deep link open a task
-    // in a project that was archived after the alarm was armed. The route
-    // helper is called `getActiveProjectOrThrow` but only checks existence.
+    // in a project that was archived after the alarm was armed. The route helper
+    // (`getProjectOrThrow`) checks existence and nothing else, deliberately.
     expect((await api.fetchProject(projectId)).archivedAt, isNotNull);
     expect(await api.fetchTasks(projectId), hasLength(1));
 

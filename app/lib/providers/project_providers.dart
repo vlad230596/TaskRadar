@@ -74,19 +74,43 @@ part 'project_providers.g.dart';
 /// answer to. The fetch is for the other entry point: F4's notification deep
 /// link, which can land here on a cold start with nothing loaded.
 ///
-/// `ref.read` rather than `ref.watch` on the board: the only field anyone reads
-/// off this is `name`, and there is no endpoint that can rename a project, so a
-/// later board refresh has nothing to tell us. Watching would rebuild this
-/// provider on every board tick for no change at all.
+/// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+/// and watching would rebuild the provider on every board tick -- including the
+/// ticks this screen's own task writes produce through
+/// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+/// archived one a reminder deep link opens) each of those rebuilds would be a
+/// fresh `GET /projects/:id`.
 ///
-/// A 404 (deleted, or archived -- `getActiveProjectOrThrow` makes no
-/// distinction) is not caught: [projectView] turns it into [ProjectMissing].
+/// That leaves one way for the row to change under us, and it is the reason
+/// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+/// rename is pushed in here rather than pulled -- see
+/// `ProjectLifecycle.rename`.
+///
+/// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+/// that is deliberate) is not caught: [projectView] turns it into
+/// [ProjectMissing].
 @Riverpod(retry: noAutomaticRetry)
-Future<Project> projectHeader(Ref ref, String projectId) async {
-  final cached = _boardRow(ref.read(boardViewProvider), projectId);
-  if (cached != null) return cached.project;
+class ProjectHeader extends _$ProjectHeader {
+  @override
+  Future<Project> build(String projectId) async {
+    final cached = _boardRow(ref.read(boardViewProvider), projectId);
+    if (cached != null) return cached.project;
 
-  return ref.watch(projectApiProvider).fetchProject(projectId);
+    return ref.watch(projectApiProvider).fetchProject(projectId);
+  }
+
+  /// Shows a project row that was written elsewhere -- in practice, a rename.
+  ///
+  /// The alternative was `ref.invalidate`, which rebuilds and re-reads the
+  /// board. That is free for a project that is on the board and a whole
+  /// `GET /projects/:id` for one that is not; worse, during the optimistic half
+  /// of a rename that request would answer with the name the server has not
+  /// been told about yet, so the new name would visibly flip back. Handing the
+  /// row over costs neither.
+  void applyProject(Project project) {
+    if (project.id != projectId) return;
+    state = AsyncData(project);
+  }
 }
 
 /// One project's tasks, and every write that touches them.
@@ -591,10 +615,11 @@ class ProjectLoading extends ProjectView {
   const ProjectLoading();
 }
 
-/// The server says 404. Reached when the project was deleted or archived
-/// elsewhere -- `getActiveProjectOrThrow` answers the same way for both -- and
-/// it must win over a board row that still shows it, because that row is by
-/// definition out of date.
+/// The server says 404, i.e. the project is gone. Only a *delete* produces this:
+/// `getProjectOrThrow` does not filter on `archivedAt`, so an archived project
+/// still answers 200 and stays open (which is what lets a reminder armed weeks
+/// ago open its task). It must win over a board row that still shows the
+/// project, because that row is by definition out of date.
 class ProjectMissing extends ProjectView {
   const ProjectMissing();
 }

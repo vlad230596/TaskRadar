@@ -62,15 +62,23 @@ part of 'project_providers.dart';
 /// answer to. The fetch is for the other entry point: F4's notification deep
 /// link, which can land here on a cold start with nothing loaded.
 ///
-/// `ref.read` rather than `ref.watch` on the board: the only field anyone reads
-/// off this is `name`, and there is no endpoint that can rename a project, so a
-/// later board refresh has nothing to tell us. Watching would rebuild this
-/// provider on every board tick for no change at all.
+/// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+/// and watching would rebuild the provider on every board tick -- including the
+/// ticks this screen's own task writes produce through
+/// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+/// archived one a reminder deep link opens) each of those rebuilds would be a
+/// fresh `GET /projects/:id`.
 ///
-/// A 404 (deleted, or archived -- `getActiveProjectOrThrow` makes no
-/// distinction) is not caught: [projectView] turns it into [ProjectMissing].
+/// That leaves one way for the row to change under us, and it is the reason
+/// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+/// rename is pushed in here rather than pulled -- see
+/// `ProjectLifecycle.rename`.
+///
+/// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+/// that is deliberate) is not caught: [projectView] turns it into
+/// [ProjectMissing].
 
-@ProviderFor(projectHeader)
+@ProviderFor(ProjectHeader)
 final projectHeaderProvider = ProjectHeaderFamily._();
 
 /// The project screen's state (F3): one project, its tasks, its notes, and
@@ -127,17 +135,23 @@ final projectHeaderProvider = ProjectHeaderFamily._();
 /// answer to. The fetch is for the other entry point: F4's notification deep
 /// link, which can land here on a cold start with nothing loaded.
 ///
-/// `ref.read` rather than `ref.watch` on the board: the only field anyone reads
-/// off this is `name`, and there is no endpoint that can rename a project, so a
-/// later board refresh has nothing to tell us. Watching would rebuild this
-/// provider on every board tick for no change at all.
+/// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+/// and watching would rebuild the provider on every board tick -- including the
+/// ticks this screen's own task writes produce through
+/// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+/// archived one a reminder deep link opens) each of those rebuilds would be a
+/// fresh `GET /projects/:id`.
 ///
-/// A 404 (deleted, or archived -- `getActiveProjectOrThrow` makes no
-/// distinction) is not caught: [projectView] turns it into [ProjectMissing].
-
+/// That leaves one way for the row to change under us, and it is the reason
+/// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+/// rename is pushed in here rather than pulled -- see
+/// `ProjectLifecycle.rename`.
+///
+/// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+/// that is deliberate) is not caught: [projectView] turns it into
+/// [ProjectMissing].
 final class ProjectHeaderProvider
-    extends $FunctionalProvider<AsyncValue<Project>, Project, FutureOr<Project>>
-    with $FutureModifier<Project>, $FutureProvider<Project> {
+    extends $AsyncNotifierProvider<ProjectHeader, Project> {
   /// The project screen's state (F3): one project, its tasks, its notes, and
   /// every write in the application.
   ///
@@ -192,13 +206,21 @@ final class ProjectHeaderProvider
   /// answer to. The fetch is for the other entry point: F4's notification deep
   /// link, which can land here on a cold start with nothing loaded.
   ///
-  /// `ref.read` rather than `ref.watch` on the board: the only field anyone reads
-  /// off this is `name`, and there is no endpoint that can rename a project, so a
-  /// later board refresh has nothing to tell us. Watching would rebuild this
-  /// provider on every board tick for no change at all.
+  /// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+  /// and watching would rebuild the provider on every board tick -- including the
+  /// ticks this screen's own task writes produce through
+  /// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+  /// archived one a reminder deep link opens) each of those rebuilds would be a
+  /// fresh `GET /projects/:id`.
   ///
-  /// A 404 (deleted, or archived -- `getActiveProjectOrThrow` makes no
-  /// distinction) is not caught: [projectView] turns it into [ProjectMissing].
+  /// That leaves one way for the row to change under us, and it is the reason
+  /// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+  /// rename is pushed in here rather than pulled -- see
+  /// `ProjectLifecycle.rename`.
+  ///
+  /// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+  /// that is deliberate) is not caught: [projectView] turns it into
+  /// [ProjectMissing].
   ProjectHeaderProvider._({
     required ProjectHeaderFamily super.from,
     required String super.argument,
@@ -222,14 +244,7 @@ final class ProjectHeaderProvider
 
   @$internal
   @override
-  $FutureProviderElement<Project> $createElement($ProviderPointer pointer) =>
-      $FutureProviderElement(pointer);
-
-  @override
-  FutureOr<Project> create(Ref ref) {
-    final argument = this.argument as String;
-    return projectHeader(ref, argument);
-  }
+  ProjectHeader create() => ProjectHeader();
 
   @override
   bool operator ==(Object other) {
@@ -242,7 +257,7 @@ final class ProjectHeaderProvider
   }
 }
 
-String _$projectHeaderHash() => r'5b7ad9f36bf6c831ccfca1f12f3c396d723f6071';
+String _$projectHeaderHash() => r'fa6bbc40c5a329b6c2e938a56f654c0fa35805d9';
 
 /// The project screen's state (F3): one project, its tasks, its notes, and
 /// every write in the application.
@@ -298,16 +313,31 @@ String _$projectHeaderHash() => r'5b7ad9f36bf6c831ccfca1f12f3c396d723f6071';
 /// answer to. The fetch is for the other entry point: F4's notification deep
 /// link, which can land here on a cold start with nothing loaded.
 ///
-/// `ref.read` rather than `ref.watch` on the board: the only field anyone reads
-/// off this is `name`, and there is no endpoint that can rename a project, so a
-/// later board refresh has nothing to tell us. Watching would rebuild this
-/// provider on every board tick for no change at all.
+/// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+/// and watching would rebuild the provider on every board tick -- including the
+/// ticks this screen's own task writes produce through
+/// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+/// archived one a reminder deep link opens) each of those rebuilds would be a
+/// fresh `GET /projects/:id`.
 ///
-/// A 404 (deleted, or archived -- `getActiveProjectOrThrow` makes no
-/// distinction) is not caught: [projectView] turns it into [ProjectMissing].
+/// That leaves one way for the row to change under us, and it is the reason
+/// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+/// rename is pushed in here rather than pulled -- see
+/// `ProjectLifecycle.rename`.
+///
+/// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+/// that is deliberate) is not caught: [projectView] turns it into
+/// [ProjectMissing].
 
 final class ProjectHeaderFamily extends $Family
-    with $FunctionalFamilyOverride<FutureOr<Project>, String> {
+    with
+        $ClassFamilyOverride<
+          ProjectHeader,
+          AsyncValue<Project>,
+          Project,
+          FutureOr<Project>,
+          String
+        > {
   ProjectHeaderFamily._()
     : super(
         retry: noAutomaticRetry,
@@ -371,19 +401,118 @@ final class ProjectHeaderFamily extends $Family
   /// answer to. The fetch is for the other entry point: F4's notification deep
   /// link, which can land here on a cold start with nothing loaded.
   ///
-  /// `ref.read` rather than `ref.watch` on the board: the only field anyone reads
-  /// off this is `name`, and there is no endpoint that can rename a project, so a
-  /// later board refresh has nothing to tell us. Watching would rebuild this
-  /// provider on every board tick for no change at all.
+  /// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+  /// and watching would rebuild the provider on every board tick -- including the
+  /// ticks this screen's own task writes produce through
+  /// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+  /// archived one a reminder deep link opens) each of those rebuilds would be a
+  /// fresh `GET /projects/:id`.
   ///
-  /// A 404 (deleted, or archived -- `getActiveProjectOrThrow` makes no
-  /// distinction) is not caught: [projectView] turns it into [ProjectMissing].
+  /// That leaves one way for the row to change under us, and it is the reason
+  /// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+  /// rename is pushed in here rather than pulled -- see
+  /// `ProjectLifecycle.rename`.
+  ///
+  /// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+  /// that is deliberate) is not caught: [projectView] turns it into
+  /// [ProjectMissing].
 
   ProjectHeaderProvider call(String projectId) =>
       ProjectHeaderProvider._(argument: projectId, from: this);
 
   @override
   String toString() => r'projectHeaderProvider';
+}
+
+/// The project screen's state (F3): one project, its tasks, its notes, and
+/// every write in the application.
+///
+/// ## The three rules this file is built around
+///
+/// The migration plan fixes three properties that a mutation path is very good
+/// at breaking, so they are restated here where the breaking would happen:
+///
+/// 1. **The server computes `isCurrent`; the client never re-derives it.** The
+///    rule ("the first `pending` task in `position` order") is three lines long
+///    and lives in `backend/src/domain/isCurrent.ts` -- which is exactly why
+///    reimplementing it is tempting and wrong. It is a property of the whole
+///    ordered list, and a second copy of it would drift the first time the
+///    backend gains a status, an archived flag, or a scope.
+///
+/// 2. **The cache is read-only; every write needs the network.** There is no
+///    operation queue and no conflict resolution. An optimistic update is a
+///    *prediction shown for one round trip*, not an offline edit: when the write
+///    fails the prediction is rolled back and the failure is said out loud.
+///
+/// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
+///    file mentions the scheduler. Writes flow into the board (see
+///    [Board.applyProjectTasks]) and `boardReminderBridge` does the rest,
+///    because a second place that remembers to re-arm alarms is a second place
+///    that can forget.
+///
+/// ## What "reconcile" means, and why most writes do one
+///
+/// `POST /projects/:id/tasks`, `PATCH /tasks/:id` and `PATCH /tasks/:id/position`
+/// each answer with a single raw row: no `isCurrent`, and -- for a move -- no
+/// word about the *other* rows the server may have renumbered when the float gap
+/// between two neighbours ran out (see `ProjectApi`, and
+/// `backend/src/domain/position.ts`). So any mutation that can move the "first
+/// pending task" around, or that can trigger a rebalance, ends with one
+/// `GET /projects/:id/tasks`: the cheapest question whose answer is complete.
+///
+/// That is one extra request for a create, a status change, a delete or a move,
+/// and **zero** for a title or description edit (which provably change neither
+/// the order nor which task is current -- see [mergeMutatedTask]) and zero for
+/// anything to do with notes. The board is then updated from the very same
+/// response instead of being refetched, so a write costs at most two round
+/// trips total, never a board reload on top.
+// --- reading ----------------------------------------------------------------
+/// The project's own row.
+///
+/// ## Why this usually costs nothing
+///
+/// A board row is `GET /projects/:id`'s answer with the tasks attached
+/// (`backend/src/routes/board.ts`), so when the board is loaded -- which is
+/// every time the user got here by tapping a card -- the project is already in
+/// memory and asking the server again would be asking a question we hold the
+/// answer to. The fetch is for the other entry point: F4's notification deep
+/// link, which can land here on a cold start with nothing loaded.
+///
+/// `ref.read` rather than `ref.watch` on the board: this is a one-shot lookup,
+/// and watching would rebuild the provider on every board tick -- including the
+/// ticks this screen's own task writes produce through
+/// [Board.applyProjectTasks]. For a project that is *not* on the board (the
+/// archived one a reminder deep link opens) each of those rebuilds would be a
+/// fresh `GET /projects/:id`.
+///
+/// That leaves one way for the row to change under us, and it is the reason
+/// [applyProject] exists: `PATCH /projects/:id` can rename a project, and the
+/// rename is pushed in here rather than pulled -- see
+/// `ProjectLifecycle.rename`.
+///
+/// A 404 (deleted, or archived -- `getProjectOrThrow` makes no distinction, and
+/// that is deliberate) is not caught: [projectView] turns it into
+/// [ProjectMissing].
+
+abstract class _$ProjectHeader extends $AsyncNotifier<Project> {
+  late final _$args = ref.$arg as String;
+  String get projectId => _$args;
+
+  FutureOr<Project> build(String projectId);
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<AsyncValue<Project>, Project>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<Project>, Project>,
+              AsyncValue<Project>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, () => build(_$args));
+  }
 }
 
 /// One project's tasks, and every write that touches them.

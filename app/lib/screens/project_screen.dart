@@ -9,6 +9,7 @@ import '../providers/archive_providers.dart';
 import '../providers/project_providers.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_list.dart';
+import '../widgets/project_name_dialog.dart';
 import '../widgets/task_list.dart';
 
 /// A project from the inside: its tasks and its notes (F3).
@@ -59,19 +60,23 @@ class ProjectScreen extends ConsumerWidget {
         ),
       ),
 
-      // Deliberately a distinct state from "failed". 404 here means somebody
-      // deleted or archived the project somewhere else -- or it is an old
-      // notification pointing at a project that no longer exists, which is
-      // exactly the case F4 will produce -- and "нет связи, попробуйте ещё"
-      // would be a lie the user could retry forever.
+      // Deliberately a distinct state from "failed". 404 here means the project
+      // was deleted somewhere else -- typically an old notification pointing at
+      // a project that no longer exists -- and "нет связи, попробуйте ещё" would
+      // be a lie the user could retry forever.
+      //
+      // Archiving does *not* produce this: `getProjectOrThrow` checks existence
+      // only, so an archived project opens normally and stays editable. Saying
+      // "возможно, он в архиве" here would send the user looking in a place the
+      // project cannot be.
       ProjectMissing() => const _Frame(
         title: 'Проект',
         child: _Message(
           icon: Icons.search_off,
           title: 'Проект не найден',
           body:
-              'Возможно, он удалён или отправлен в архив. Вернитесь на доску '
-              'и обновите её.',
+              'Похоже, его удалили — удаление необратимо и восстановить проект '
+              'нельзя. Вернитесь на доску и обновите её.',
         ),
       ),
 
@@ -201,14 +206,17 @@ class _ProjectBody extends ConsumerWidget {
   }
 }
 
-/// The project's own actions (F4). Archiving, and -- for a project that is
+/// The project's own actions. Renaming, archiving, and -- for a project that is
 /// already archived -- bringing it back.
 ///
-/// There is no "переименовать" here, and that is not an oversight in the UI: the
-/// backend has **no `PATCH /projects/:id`**. `POST /projects` and the two
-/// archive routes are the whole of a project's write surface
-/// (`backend/src/routes/projects.ts`), so a name is fixed at creation for every
-/// client there has ever been. It is a missing endpoint.
+/// Rename is first because it is the harmless one and archive is the one that
+/// takes the project off the board; a menu that opens with its destructive item
+/// under the thumb is a menu that gets mis-tapped.
+///
+/// It arrived after F4, with `PATCH /projects/:id` (B6). Before that a project's
+/// entire write surface was `POST /projects` and the two archive routes, so a
+/// typo in a name could only be fixed by deleting the project and losing its
+/// tasks and notes with it.
 class _ProjectMenu extends ConsumerWidget {
   const _ProjectMenu({required this.project});
 
@@ -221,10 +229,19 @@ class _ProjectMenu extends ConsumerWidget {
     return PopupMenuButton<_ProjectAction>(
       tooltip: 'Действия с проектом',
       onSelected: (action) => switch (action) {
+        _ProjectAction.rename => _rename(context, ref),
         _ProjectAction.archive => _archive(context, ref),
         _ProjectAction.unarchive => _unarchive(context, ref),
       },
       itemBuilder: (_) => <PopupMenuEntry<_ProjectAction>>[
+        const PopupMenuItem<_ProjectAction>(
+          value: _ProjectAction.rename,
+          child: ListTile(
+            leading: Icon(Icons.drive_file_rename_outline),
+            title: Text('Переименовать'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
         if (_archived)
           const PopupMenuItem<_ProjectAction>(
             value: _ProjectAction.unarchive,
@@ -244,6 +261,26 @@ class _ProjectMenu extends ConsumerWidget {
             ),
           ),
       ],
+    );
+  }
+
+  /// No confirmation dialog, unlike the other two: a rename is reversible by
+  /// renaming again, it is shown before the server has confirmed it, and it is
+  /// put back with a message if the server refuses. The text field *is* the
+  /// confirmation.
+  Future<void> _rename(BuildContext context, WidgetRef ref) async {
+    final name = await askForProjectName(
+      context,
+      title: 'Переименовать проект',
+      confirmLabel: 'Переименовать',
+      initialName: project.name,
+    );
+    if (name == null || !context.mounted) return;
+
+    await runMutation(
+      context,
+      () => ref.read(projectLifecycleProvider.notifier).rename(project, name),
+      failure: 'Не удалось переименовать проект.',
     );
   }
 
@@ -284,7 +321,7 @@ class _ProjectMenu extends ConsumerWidget {
   }
 }
 
-enum _ProjectAction { archive, unarchive }
+enum _ProjectAction { rename, archive, unarchive }
 
 /// "What you are looking at is the cache / the last refresh failed."
 ///

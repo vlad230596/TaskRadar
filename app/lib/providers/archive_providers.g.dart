@@ -26,14 +26,20 @@ part of 'archive_providers.dart';
 /// the refusal is instant and legible, but the guard itself stays on the server,
 /// where no client can skip it.
 ///
-/// ## Why these invalidate the board instead of splicing it
+/// ## Why some of these invalidate the board and one of them splices it
 ///
 /// F3's [Board.applyProjectTasks] updates one row in place, which is exact for a
-/// write inside a project: the row is still there, only its tasks changed. These
-/// four change **which rows exist**, on both boards at once, and there is no
-/// splice that can express "this project is now on the other board". So they
-/// invalidate, which costs one `GET /board` per archive/unarchive/delete -- an
-/// action a person performs a handful of times a week.
+/// write inside a project: the row is still there, only its tasks changed.
+/// Create, archive, unarchive and delete change **which rows exist**, on both
+/// boards at once, and there is no splice that can express "this project is now
+/// on the other board". So they invalidate, which costs one `GET /board` per
+/// action -- something a person does a handful of times a week.
+///
+/// [ProjectLifecycle.rename] is the opposite case and therefore takes the
+/// opposite route: the row stays exactly where it is and one string in it
+/// changes, so it is spliced into whichever lists are on screen
+/// ([Board.applyProject], [ArchivedBoard.applyProject],
+/// [ProjectHeader.applyProject]) and costs no read at all.
 ///
 /// That invalidation is also what re-arms the alarms, with no scheduler call
 /// anywhere: the refreshed board no longer contains the archived project's
@@ -49,8 +55,12 @@ part of 'archive_providers.dart';
 ///
 /// No snapshot and no cache. The archive is never the thing you need at 09:00
 /// with no signal, and a second cache file to keep in step would be pure cost.
+///
+/// A notifier rather than a plain future provider only because of [applyProject]
+/// -- renaming a project from this screen has to show up in it without paying
+/// for a second `GET /board?archived=true`.
 
-@ProviderFor(archivedBoard)
+@ProviderFor(ArchivedBoard)
 final archivedBoardProvider = ArchivedBoardProvider._();
 
 /// The archive, and the four writes that move a project between the board, the
@@ -71,14 +81,20 @@ final archivedBoardProvider = ArchivedBoardProvider._();
 /// the refusal is instant and legible, but the guard itself stays on the server,
 /// where no client can skip it.
 ///
-/// ## Why these invalidate the board instead of splicing it
+/// ## Why some of these invalidate the board and one of them splices it
 ///
 /// F3's [Board.applyProjectTasks] updates one row in place, which is exact for a
-/// write inside a project: the row is still there, only its tasks changed. These
-/// four change **which rows exist**, on both boards at once, and there is no
-/// splice that can express "this project is now on the other board". So they
-/// invalidate, which costs one `GET /board` per archive/unarchive/delete -- an
-/// action a person performs a handful of times a week.
+/// write inside a project: the row is still there, only its tasks changed.
+/// Create, archive, unarchive and delete change **which rows exist**, on both
+/// boards at once, and there is no splice that can express "this project is now
+/// on the other board". So they invalidate, which costs one `GET /board` per
+/// action -- something a person does a handful of times a week.
+///
+/// [ProjectLifecycle.rename] is the opposite case and therefore takes the
+/// opposite route: the row stays exactly where it is and one string in it
+/// changes, so it is spliced into whichever lists are on screen
+/// ([Board.applyProject], [ArchivedBoard.applyProject],
+/// [ProjectHeader.applyProject]) and costs no read at all.
 ///
 /// That invalidation is also what re-arms the alarms, with no scheduler call
 /// anywhere: the refreshed board no longer contains the archived project's
@@ -94,17 +110,12 @@ final archivedBoardProvider = ArchivedBoardProvider._();
 ///
 /// No snapshot and no cache. The archive is never the thing you need at 09:00
 /// with no signal, and a second cache file to keep in step would be pure cost.
-
+///
+/// A notifier rather than a plain future provider only because of [applyProject]
+/// -- renaming a project from this screen has to show up in it without paying
+/// for a second `GET /board?archived=true`.
 final class ArchivedBoardProvider
-    extends
-        $FunctionalProvider<
-          AsyncValue<List<BoardProject>>,
-          List<BoardProject>,
-          FutureOr<List<BoardProject>>
-        >
-    with
-        $FutureModifier<List<BoardProject>>,
-        $FutureProvider<List<BoardProject>> {
+    extends $AsyncNotifierProvider<ArchivedBoard, List<BoardProject>> {
   /// The archive, and the four writes that move a project between the board, the
   /// archive and nothing at all (F4).
   ///
@@ -123,14 +134,20 @@ final class ArchivedBoardProvider
   /// the refusal is instant and legible, but the guard itself stays on the server,
   /// where no client can skip it.
   ///
-  /// ## Why these invalidate the board instead of splicing it
+  /// ## Why some of these invalidate the board and one of them splices it
   ///
   /// F3's [Board.applyProjectTasks] updates one row in place, which is exact for a
-  /// write inside a project: the row is still there, only its tasks changed. These
-  /// four change **which rows exist**, on both boards at once, and there is no
-  /// splice that can express "this project is now on the other board". So they
-  /// invalidate, which costs one `GET /board` per archive/unarchive/delete -- an
-  /// action a person performs a handful of times a week.
+  /// write inside a project: the row is still there, only its tasks changed.
+  /// Create, archive, unarchive and delete change **which rows exist**, on both
+  /// boards at once, and there is no splice that can express "this project is now
+  /// on the other board". So they invalidate, which costs one `GET /board` per
+  /// action -- something a person does a handful of times a week.
+  ///
+  /// [ProjectLifecycle.rename] is the opposite case and therefore takes the
+  /// opposite route: the row stays exactly where it is and one string in it
+  /// changes, so it is spliced into whichever lists are on screen
+  /// ([Board.applyProject], [ArchivedBoard.applyProject],
+  /// [ProjectHeader.applyProject]) and costs no read at all.
   ///
   /// That invalidation is also what re-arms the alarms, with no scheduler call
   /// anywhere: the refreshed board no longer contains the archived project's
@@ -146,6 +163,10 @@ final class ArchivedBoardProvider
   ///
   /// No snapshot and no cache. The archive is never the thing you need at 09:00
   /// with no signal, and a second cache file to keep in step would be pure cost.
+  ///
+  /// A notifier rather than a plain future provider only because of [applyProject]
+  /// -- renaming a project from this screen has to show up in it without paying
+  /// for a second `GET /board?archived=true`.
   ArchivedBoardProvider._()
     : super(
         from: null,
@@ -162,19 +183,83 @@ final class ArchivedBoardProvider
 
   @$internal
   @override
-  $FutureProviderElement<List<BoardProject>> $createElement(
-    $ProviderPointer pointer,
-  ) => $FutureProviderElement(pointer);
+  ArchivedBoard create() => ArchivedBoard();
+}
 
+String _$archivedBoardHash() => r'33698be63585b96ecb93ee373ba7cceaadf2260e';
+
+/// The archive, and the four writes that move a project between the board, the
+/// archive and nothing at all (F4).
+///
+/// ## Why archive and delete are two different things
+///
+/// Copied from Trello on purpose -- `../../project-tracker-brief.md` records the
+/// observation and the decision. An archive is reversible and is the move you
+/// make constantly ("this one is done for now"); a delete is irreversible and is
+/// the move you make twice a year. Collapsing them into one button means the
+/// frequent gesture and the unrecoverable one are the same gesture.
+///
+/// The backend enforces the ordering rather than trusting the UI:
+/// `canHardDeleteProject` (`backend/src/domain/projectDeleteGuard.ts`) answers
+/// 409 for a project that is still active, so `DELETE /projects/:id` is only
+/// ever reachable *through* the archive. This file mirrors that in the client so
+/// the refusal is instant and legible, but the guard itself stays on the server,
+/// where no client can skip it.
+///
+/// ## Why some of these invalidate the board and one of them splices it
+///
+/// F3's [Board.applyProjectTasks] updates one row in place, which is exact for a
+/// write inside a project: the row is still there, only its tasks changed.
+/// Create, archive, unarchive and delete change **which rows exist**, on both
+/// boards at once, and there is no splice that can express "this project is now
+/// on the other board". So they invalidate, which costs one `GET /board` per
+/// action -- something a person does a handful of times a week.
+///
+/// [ProjectLifecycle.rename] is the opposite case and therefore takes the
+/// opposite route: the row stays exactly where it is and one string in it
+/// changes, so it is spliced into whichever lists are on screen
+/// ([Board.applyProject], [ArchivedBoard.applyProject],
+/// [ProjectHeader.applyProject]) and costs no read at all.
+///
+/// That invalidation is also what re-arms the alarms, with no scheduler call
+/// anywhere: the refreshed board no longer contains the archived project's
+/// blocked tasks, `boardReminderBridge` publishes the smaller target set, and
+/// the scheduler cancels what is no longer wanted. An archived project must stop
+/// nagging -- that is the point of archiving it -- and this is the only place
+/// that has to be true for it to happen.
+/// `GET /board?archived=true` -- the archive, in the same shape as the board.
+///
+/// Not `keepAlive`, unlike [board]: the archive is a screen you visit, not the
+/// app's home. Letting it dispose means re-opening it re-reads, which is what
+/// you want from a list whose whole purpose is to be acted on.
+///
+/// No snapshot and no cache. The archive is never the thing you need at 09:00
+/// with no signal, and a second cache file to keep in step would be pure cost.
+///
+/// A notifier rather than a plain future provider only because of [applyProject]
+/// -- renaming a project from this screen has to show up in it without paying
+/// for a second `GET /board?archived=true`.
+
+abstract class _$ArchivedBoard extends $AsyncNotifier<List<BoardProject>> {
+  FutureOr<List<BoardProject>> build();
+  @$mustCallSuper
   @override
-  FutureOr<List<BoardProject>> create(Ref ref) {
-    return archivedBoard(ref);
+  void runBuild() {
+    final ref =
+        this.ref as $Ref<AsyncValue<List<BoardProject>>, List<BoardProject>>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<List<BoardProject>>, List<BoardProject>>,
+              AsyncValue<List<BoardProject>>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
   }
 }
 
-String _$archivedBoardHash() => r'aa697b6de502b2fa3b2dc90a822ce0c816f4c006';
-
-/// Create, archive, unarchive, delete.
+/// Create, rename, archive, unarchive, delete: every write a *project* has.
 ///
 /// A notifier with no state of its own: the state these produce lives in the two
 /// board providers, and giving this one a copy would be a second source of truth
@@ -184,7 +269,7 @@ String _$archivedBoardHash() => r'aa697b6de502b2fa3b2dc90a822ce0c816f4c006';
 @ProviderFor(ProjectLifecycle)
 final projectLifecycleProvider = ProjectLifecycleProvider._();
 
-/// Create, archive, unarchive, delete.
+/// Create, rename, archive, unarchive, delete: every write a *project* has.
 ///
 /// A notifier with no state of its own: the state these produce lives in the two
 /// board providers, and giving this one a copy would be a second source of truth
@@ -192,7 +277,7 @@ final projectLifecycleProvider = ProjectLifecycleProvider._();
 /// button) turns that into a message, exactly as the task writes do.
 final class ProjectLifecycleProvider
     extends $NotifierProvider<ProjectLifecycle, void> {
-  /// Create, archive, unarchive, delete.
+  /// Create, rename, archive, unarchive, delete: every write a *project* has.
   ///
   /// A notifier with no state of its own: the state these produce lives in the two
   /// board providers, and giving this one a copy would be a second source of truth
@@ -225,9 +310,9 @@ final class ProjectLifecycleProvider
   }
 }
 
-String _$projectLifecycleHash() => r'70d9ac7a62428cabefaa83bd05b3006865f947e4';
+String _$projectLifecycleHash() => r'9d73fe2a4a0c244c6dd6aa5ce3611ae7305a75e5';
 
-/// Create, archive, unarchive, delete.
+/// Create, rename, archive, unarchive, delete: every write a *project* has.
 ///
 /// A notifier with no state of its own: the state these produce lives in the two
 /// board providers, and giving this one a copy would be a second source of truth
