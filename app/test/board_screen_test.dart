@@ -13,6 +13,8 @@ import 'package:taskradar/screens/notification_bench_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
+import 'package:taskradar/widgets/project_card.dart';
+import 'package:taskradar/widgets/project_column.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
@@ -365,6 +367,211 @@ void main() {
 
       expect(find.textContaining('Сервер ответил ошибкой 500: boom'), findsOneWidget);
       expect(find.textContaining('Нет связи с сервером'), findsNothing);
+    });
+  });
+
+  group('desktop layout (F6)', () {
+    /// A window wide enough for the column layout.
+    ///
+    /// Must be called *before* `pumpBoard`: the layout is a function of the
+    /// window width, read during build.
+    void useDesktopWindow(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('a wide window draws columns instead of cards', (tester) async {
+      backend.alwaysRespond(sampleBoard());
+      useDesktopWindow(tester);
+
+      await pumpBoard(tester);
+
+      expect(find.byType(ProjectColumn), findsNWidgets(3));
+      expect(find.byType(ProjectCard), findsNothing);
+    });
+
+    testWidgets('and the default (phone-sized) window still draws cards', (
+      tester,
+    ) async {
+      backend.alwaysRespond(sampleBoard());
+
+      await pumpBoard(tester);
+
+      expect(find.byType(ProjectCard), findsNWidgets(3));
+      expect(find.byType(ProjectColumn), findsNothing);
+    });
+
+    testWidgets('the line prints the titles worth reading and dots for the rest', (
+      tester,
+    ) async {
+      backend.alwaysRespond(<dynamic>[
+        boardProjectJson(
+          id: 'prj_line',
+          name: 'Дача',
+          tasks: <Map<String, dynamic>>[
+            taskJson(id: 't1', title: 'Сделано давно', status: 'done'),
+            taskJson(id: 't2', title: 'Сейчас', position: 2000, isCurrent: true),
+            taskJson(id: 't3', title: 'Потом', position: 3000),
+            taskJson(
+              id: 't4',
+              title: 'Жду кабель',
+              status: 'blocked',
+              position: 4000,
+              remindAt: remindAt(0),
+            ),
+            taskJson(
+              id: 't5',
+              title: 'Жду плитку',
+              status: 'blocked',
+              position: 5000,
+              remindAt: remindAt(3),
+            ),
+            taskJson(
+              id: 't6',
+              title: 'Жду ответ',
+              status: 'blocked',
+              position: 6000,
+            ),
+          ],
+        ),
+      ]);
+      useDesktopWindow(tester);
+
+      await pumpBoard(tester);
+
+      // The current task, and every blocker: the rows that say what is
+      // happening here and what it is stuck on.
+      expect(find.text('Сейчас'), findsOneWidget);
+      expect(find.text('Жду кабель'), findsOneWidget);
+      expect(find.text('Жду плитку'), findsOneWidget);
+      expect(find.text('Жду ответ'), findsOneWidget);
+
+      // Done and pending-but-not-current are dots, not text -- the rule that
+      // keeps a 15-project board glanceable, so it is pinned here.
+      expect(find.text('Сделано давно'), findsNothing);
+      expect(find.text('Потом'), findsNothing);
+
+      // ...but their titles are still reachable, because this layout only ever
+      // renders where there is a mouse.
+      expect(find.byTooltip('Сделано давно'), findsOneWidget);
+      expect(find.byTooltip('Потом'), findsOneWidget);
+
+      String ddmm(DateTime day) =>
+          '${day.day.toString().padLeft(2, '0')}.'
+          '${day.month.toString().padLeft(2, '0')}';
+
+      // The day has arrived -- the one thing on this screen that asks for
+      // action today -- and it is worded differently from one that has not.
+      expect(find.text('проверить · ${ddmm(DateTime.now())}'), findsOneWidget);
+      expect(
+        find.text(
+          'напомнить ${ddmm(DateTime.now().add(const Duration(days: 3)))}',
+        ),
+        findsOneWidget,
+      );
+
+      // A blocker with no date is stuck and will never say so again; the column
+      // says that out loud rather than leaving the row merely quiet.
+      expect(find.text('без даты'), findsOneWidget);
+    });
+
+    testWidgets('a project with no tasks says so rather than drawing an empty column', (
+      tester,
+    ) async {
+      backend.alwaysRespond(<dynamic>[
+        boardProjectJson(id: 'prj_empty', name: 'Пустой'),
+      ]);
+      useDesktopWindow(tester);
+
+      await pumpBoard(tester);
+
+      expect(find.text('Пустой'), findsOneWidget);
+      expect(find.text('Задач пока нет'), findsOneWidget);
+      // Not the board-level empty state: there *is* a project here.
+      expect(find.text('Проектов пока нет'), findsNothing);
+    });
+
+    testWidgets('clicking a column opens that project, by id', (tester) async {
+      backend.alwaysRespond(sampleBoard());
+      useDesktopWindow(tester);
+
+      await pumpBoard(tester);
+
+      await tester.tap(find.text('Дача'));
+      await settle(tester);
+
+      final screen = tester.widget<ProjectScreen>(find.byType(ProjectScreen));
+      expect(screen.projectId, 'prj_b');
+    });
+
+    testWidgets('the desktop board has a refresh button and it refetches', (
+      tester,
+    ) async {
+      backend.alwaysRespond(sampleBoard());
+      useDesktopWindow(tester);
+
+      await pumpBoard(tester);
+      expect(backend.requests, hasLength(1));
+
+      // A mouse cannot pull to refresh; without this button the desktop board
+      // could only be refreshed by restarting the app.
+      await tester.tap(find.byTooltip('Обновить'));
+      await settle(tester);
+
+      expect(backend.requests, hasLength(2));
+    });
+
+    testWidgets('no refresh button at phone width', (tester) async {
+      backend.alwaysRespond(sampleBoard());
+
+      await pumpBoard(tester);
+
+      expect(find.byTooltip('Обновить'), findsNothing);
+    });
+
+    testWidgets('long names and titles do not overflow a column', (
+      tester,
+    ) async {
+      // The desktop counterpart of the phone guard below. The columns are sized
+      // to fill the window, so the narrowest one this layout can produce is
+      // ~260px -- narrower than a phone card, with the same text in it.
+      useDesktopWindow(tester);
+
+      backend.alwaysRespond(<dynamic>[
+        for (var i = 0; i < 5; i++)
+          boardProjectJson(
+            id: 'prj_$i',
+            name:
+                'Очень длинное название проекта, которое точно не влезает в '
+                'одну строку в колонке',
+            tasks: <Map<String, dynamic>>[
+              taskJson(id: 'w${i}0', status: 'done'),
+              taskJson(
+                id: 'w${i}1',
+                title:
+                    'Очень длинный заголовок текущей задачи, который тоже не '
+                    'влезает и должен быть обрезан, а не сломать вёрстку',
+                position: 2000,
+                isCurrent: true,
+              ),
+              taskJson(
+                id: 'w${i}2',
+                title:
+                    'Очень длинный заголовок заблокированной задачи, который '
+                    'тоже должен быть обрезан',
+                status: 'blocked',
+                position: 3000,
+                remindAt: remindAt(0),
+              ),
+            ],
+          ),
+      ]);
+
+      await pumpBoard(tester);
+
+      expect(find.byType(ProjectColumn), findsNWidgets(5));
+      expect(tester.takeException(), isNull);
     });
   });
 

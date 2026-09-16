@@ -136,13 +136,15 @@ class NotificationSupport {
   /// implemented by `flutter_local_notifications_windows`, so the bench screen
   /// is usable for eyeballing the queue while developing on the desktop.
   ///
-  /// What does not: Windows toast notifications for an *unpackaged* Win32 app
-  /// require a Start-menu shortcut carrying the app's AppUserModelID, which
-  /// `flutter build windows` does not create. So a scheduled toast may simply
-  /// never appear, and that is a deployment gap, not a bug in this code. There
-  /// is also no runtime permission model and no reboot-survival contract to
-  /// speak of -- a scheduled toast is kept by the Windows notification platform,
-  /// not re-armed by us.
+  /// What does not, by itself: Windows toast notifications for an *unpackaged*
+  /// Win32 app require a Start-menu shortcut carrying the app's AppUserModelID,
+  /// which `flutter build windows` does not create. So a scheduled toast from a
+  /// build that was merely copied somewhere may simply never appear, and that is
+  /// a deployment gap, not a bug in this code. F6 closes it on the deployment
+  /// side: `../../../scripts/install-windows-app.ps1` writes that shortcut and
+  /// verifies the id it wrote. There is still no runtime permission model and no
+  /// reboot-survival contract to speak of -- a scheduled toast is kept by the
+  /// Windows notification platform, not re-armed by us.
   ///
   /// The decision: do not pretend. The scheduler runs on Windows (so the same
   /// code path is exercised and cannot rot), every call is guarded against

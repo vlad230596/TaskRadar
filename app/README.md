@@ -1,11 +1,28 @@
 # TaskRadar — Flutter client
 
-Native client for TaskRadar (Android + Windows). Replaces the frozen React PWA in
-`../frontend`; see `../flutter-migration-plan.md` for the iteration plan and
-`../README.md` for the product.
+The client for TaskRadar (Android + Windows), and since F6 the only one; see
+`../flutter-migration-plan.md` for the iteration plan and `../README.md` for the
+product.
 
 The backend (`../backend`) is unchanged apart from a few additive endpoints and
 is the source of truth for every shape this app parses.
+
+## Where `frontend/src/...` went
+
+Comments and this file point at files under `../frontend/` — the React PWA this
+client replaced. **That directory no longer exists**: F6 deleted it, on purpose
+and in the iteration where the Windows build finally made it redundant. The
+references are kept rather than rewritten because they still say the true thing
+— *this was ported from that file, and that file made this decision first* — and
+because the file is one command away:
+
+```
+git log --diff-filter=D -- frontend          # the commit that removed it
+git show <that commit>^:frontend/src/lib/types.ts
+```
+
+Nothing in this app builds, tests or runs against it. It is a citation, not a
+dependency.
 
 ## Running
 
@@ -82,8 +99,8 @@ test/
 ## The board and its read cache (F2)
 
 `GET /board?archived=false` in one request, drawn as a vertical list of project
-cards. The wide "column per project" layout from the original product sketch is
-**F6**, for the desktop target, and is deliberately not built yet.
+cards on a narrow window and as columns on a wide one — see "The desktop
+layout (F6)" below.
 
 Three providers rather than one, for a reason worth knowing before touching
 them (`lib/providers/board_providers.dart` has the long version):
@@ -138,11 +155,13 @@ F4's; see "Checking the writes against the real server" below.
 
 ## Inside a project (F3)
 
-`screens/project_screen.dart`: tasks and notes, as two tabs. Tabs rather than
-two columns for a mechanical reason as much as a layout one -- the task list is a
-`ReorderableListView` and it has to *be* the scrollable in order to scroll, to
-pull-to-refresh and to auto-scroll during a drag, which two stacked lists in one
-scroll view cannot all do. F6's wide desktop layout puts them side by side.
+`screens/project_screen.dart`: tasks and notes, as two tabs on a narrow window.
+Tabs rather than two stacked lists for a mechanical reason as much as a layout
+one -- the task list is a `ReorderableListView` and it has to *be* the
+scrollable in order to scroll, to pull-to-refresh and to auto-scroll during a
+drag, which two stacked lists in one scroll view cannot all do. F6 puts them
+side by side on a wide window, which keeps that property intact: each pane is
+still its own scrollable.
 
 This is the first iteration with real navigation, and it deliberately sits
 **below** the session switch in `app.dart` (see the long note there): `home` is
@@ -397,6 +416,84 @@ Renaming used to be impossible from any client, and `archive_screen_test.dart`
 carried a test saying so. `PATCH /projects/:id` has since landed, so that test
 was replaced by the `renaming` group in the same file rather than deleted — see
 "Renaming a project" above.
+
+## The desktop layout, and installing it (F6)
+
+F6 is the iteration where the desktop stops being "the phone app in a bigger
+window". Two screens grow a second layout, and the build grows a way to be
+installed.
+
+### One breakpoint, two layouts
+
+`widgets/adaptive_layout.dart` holds the only number: **840 logical pixels**,
+Material 3's "expanded" boundary. Above it the desktop layout, below it the
+phone one, on both screens, decided from the window and nothing else.
+
+- **The board** becomes the original picture of this product: a column per
+  project with its **task line running top to bottom**
+  (`widgets/project_column.dart`). The columns are computed to fill the window
+  and wrap, tops aligned — a project's column is exactly as tall as its task
+  list, because that height *is* information.
+- **The project screen** puts tasks and notes side by side instead of behind
+  tabs. The notes are the context you came to restore; reading them while
+  looking at the task list is the gesture, and on a 1600px window hiding half
+  the screen to show one list would be silly.
+
+The column prints a title only for the rows worth reading at a glance — the
+current task and every blocker, with its date — and draws everything else as a
+dot with the title in a tooltip. Printing all twelve titles of a twelve-task
+project would turn a fifteen-project board into a wall of text, which is the
+one property `../README.md` builds the whole product around. The tooltip is
+honest here in a way it would not be on a phone: this layout only renders where
+there is a mouse.
+
+One control is layout-specific rather than shared: the board's **refresh
+button**, which exists only on the wide layout. A mouse cannot pull to refresh
+— a wheel does not overscroll — so without it a desktop board could only be
+refreshed by restarting the app.
+
+### Installing it on Windows
+
+```
+flutter build windows --release --dart-define=TASKRADAR_API_URL=https://<host>
+powershell -ExecutionPolicy Bypass -File ..\scripts\install-windows-app.ps1 -Autostart
+```
+
+`../scripts/install-windows-app.ps1` is per-user and needs no elevation. It does
+two things that matter more than convenience:
+
+1. **It copies the build out of the build tree.** `flutter clean` or the next
+   build rewrites `build/windows/x64/runner/Release`, and a Start-menu or
+   Startup shortcut pointing into it breaks silently — the app just stops
+   opening one day.
+2. **It writes the app's AppUserModelID into the shortcut.** Windows will not
+   show a toast for an unpackaged Win32 app unless a Start-menu shortcut
+   carrying that ID exists, `flutter build windows` does not create one, and
+   `WScript.Shell` cannot set the property — so the script builds the shortcut
+   through `IShellLink` + `IPropertyStore` and then reads the ID back to prove
+   it stuck. The ID must stay equal to the one in
+   `lib/notifications/local_notification_gateway.dart`; if the two ever
+   disagree, the toast is dropped with no error anywhere.
+
+`-Autostart` adds a Startup shortcut, and is off by default: the board is
+something you open in the morning, not something that opens you. `-Uninstall`
+removes both shortcuts and the installed copy; the signed-in session and the
+cached board are untouched, because they belong to the app rather than to the
+installation.
+
+That shortcut closes a **deployment** gap, not F1's acceptance. F1 is the
+question of whether a phone delivers a reminder after a night of vendor battery
+optimisation, and nothing on a desktop answers it.
+
+### What is not verified here
+
+The two layouts are covered by widget tests at 1400x900 (`test/board_screen_test.dart`
+and `test/project_screen_test.dart`, groups "desktop layout (F6)"), including an
+overflow guard, and `flutter build windows --release` passes. **Nobody has looked
+at the result on a real screen** — that is the same gap every previous iteration
+recorded, and the remaining F6 step for a human: open it, resize the window
+across 840px in both directions, and check that the board still reads at a
+glance.
 
 ## Local reminders (F1)
 

@@ -4,7 +4,12 @@ import '../domain/project_summary.dart';
 import '../domain/reminders.dart';
 import '../models/board_project.dart';
 
-/// One project on the board.
+/// One project on the board, on a narrow window.
+///
+/// The wide window draws the same project as a column with its whole task line
+/// instead (`project_column.dart`, F6). They share the header and the summary
+/// logic and differ in exactly one decision -- how much of the task list is
+/// worth printing when there is room for it.
 ///
 /// ## What this card is for
 ///

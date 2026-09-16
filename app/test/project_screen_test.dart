@@ -599,6 +599,99 @@ void main() {
     });
   });
 
+  group('desktop layout (F6)', () {
+    /// A window wide enough for the two-pane layout. Must be called *before*
+    /// `pumpProject`: the layout is a function of the window width.
+    void useDesktopWindow(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('tasks and notes are both on screen, with no tab strip', (
+      tester,
+    ) async {
+      server.addTask(projectId: projectId, title: 'Позвонить прорабу');
+      server.addNote(
+        projectId: projectId,
+        title: 'Контекст',
+        content: 'Кабель заказан 3 сентября.',
+      );
+      useDesktopWindow(tester);
+
+      await pumpProject(tester);
+
+      expect(find.byType(TabBar), findsNothing);
+      expect(find.byType(TaskListView), findsOneWidget);
+      expect(find.byType(NoteListView), findsOneWidget);
+
+      // The counters the tabs used to carry are still facts about the project,
+      // so they survive the layout change.
+      expect(find.text('Задачи · 0/1'), findsOneWidget);
+      expect(find.text('Заметки · 1'), findsOneWidget);
+
+      // ...and the content of both is readable at the same time, which is the
+      // entire point: the note is the context, the task is what to do about it.
+      expect(find.text('Позвонить прорабу'), findsOneWidget);
+      expect(find.text('Кабель заказан 3 сентября.'), findsOneWidget);
+    });
+
+    testWidgets('both panes stay live: a note can be written without a tab switch', (
+      tester,
+    ) async {
+      useDesktopWindow(tester);
+      await pumpProject(tester);
+
+      await tester.enterText(composerIn(NoteListView), 'Что выяснил');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await settle(tester);
+
+      expect(server.notes.single['title'], 'Что выяснил');
+      expect(find.text('Заметки · 1'), findsOneWidget);
+    });
+
+    testWidgets('the project menu is reachable, as on the phone', (
+      tester,
+    ) async {
+      useDesktopWindow(tester);
+      await pumpProject(tester);
+
+      await tester.tap(find.byTooltip('Действия с проектом'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Переименовать'), findsOneWidget);
+      expect(find.text('В архив'), findsOneWidget);
+    });
+
+    testWidgets('long titles and descriptions do not overflow a pane', (
+      tester,
+    ) async {
+      useDesktopWindow(tester);
+
+      server.addTask(
+        projectId: projectId,
+        title:
+            'Очень длинный заголовок задачи, который не влезает в одну строку '
+            'и должен переноситься, а не ломать вёрстку',
+        description:
+            'И описание такой же длины, потому что описания пишут абзацами, '
+            'а не словами, и строка тут тоже не одна.',
+        status: 'blocked',
+        remindAt: _remindAt(0),
+      );
+      server.addNote(
+        projectId: projectId,
+        title: 'Очень длинное название заметки, которое тоже не влезает',
+        content: 'Тело заметки.',
+      );
+
+      await pumpProject(tester);
+
+      expect(find.text('Задачи · 0/1'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
   group('phone-sized layout', () {
     testWidgets('long titles and descriptions do not overflow 375x812', (
       tester,

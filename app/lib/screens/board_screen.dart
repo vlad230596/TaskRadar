@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,23 +9,30 @@ import '../navigation/app_routes.dart';
 import '../providers/archive_providers.dart';
 import '../providers/board_providers.dart';
 import '../providers/session_provider.dart';
+import '../widgets/adaptive_layout.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_card.dart';
+import '../widgets/project_column.dart';
 import '../widgets/project_name_dialog.dart';
 
-/// The board: every active project, one card each, top to bottom.
+/// The board: every active project.
 ///
-/// ## Why a vertical list and not columns
+/// ## Two layouts, one screen
 ///
-/// The original picture of this product (`../../../README.md`) is a wide board
-/// where a column is a project. That is the **F6** layout, for the desktop
-/// target, and it is deliberately not built here: on a phone, fifteen
-/// horizontal columns means fifteen horizontal swipes to answer "what is
-/// happening", which is the one thing this screen exists to answer in a single
-/// vertical scroll.
+/// On a narrow window each project is a card and the board is a single vertical
+/// scroll (F2). On a wide one each project is a **column with its task line
+/// running top to bottom** (F6) -- the original picture of this product in
+/// `../../../README.md`, and the reason the desktop target exists at all.
 ///
-/// F6 adds the wide layout next to this one; the card is already a separate
-/// widget so that the columns can reuse it.
+/// Which one is drawn is a function of the window width and nothing else; see
+/// `../widgets/adaptive_layout.dart` for where the line is drawn and why. The
+/// phone layout is not a degraded desktop: fifteen columns on a phone means
+/// fifteen horizontal swipes to answer "what is happening", which is the one
+/// question this screen exists to answer in a single vertical scroll.
+///
+/// Everything above the projects -- the app bar, the stale banner, the empty
+/// state, pull-to-refresh -- is shared, because none of it changes meaning with
+/// the width. Only the arrangement of the projects does.
 class BoardScreen extends ConsumerWidget {
   const BoardScreen({super.key});
 
@@ -64,6 +73,18 @@ class BoardScreen extends ConsumerWidget {
               )
             : null,
         actions: [
+          // A mouse cannot pull to refresh. The gesture below still exists and
+          // is still the right one on a touch screen, but on the desktop it is
+          // unreachable -- a wheel scroll does not overscroll -- so the wide
+          // layout gets the button and the phone does not need it.
+          if (isWideLayout(context))
+            IconButton(
+              tooltip: 'Обновить',
+              onPressed: refreshing
+                  ? null
+                  : () => ref.read(boardProvider.notifier).refresh(),
+              icon: const Icon(Icons.refresh),
+            ),
           // One menu rather than four icons. F4 added the archive and the
           // settings screen, and a row of five app-bar buttons on a phone is
           // both unreadable and easy to hit by accident -- including "Выйти",
@@ -211,6 +232,16 @@ class _BoardList extends ConsumerWidget {
               scrollable: false,
             ),
           )
+        else if (isWideLayout(context))
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+            sliver: SliverToBoxAdapter(
+              child: _ColumnGrid(
+                projects: view.projects,
+                onOpen: (entry) => _openProject(context, entry),
+              ),
+            ),
+          )
         else
           SliverList.builder(
             itemCount: view.projects.length,
@@ -238,6 +269,67 @@ class _BoardList extends ConsumerWidget {
   /// same caller; see `navigation/app_routes.dart`.
   void _openProject(BuildContext context, BoardProject entry) {
     AppRoutes.openProject(context, projectId: entry.project.id);
+  }
+}
+
+/// The wide board: columns, as many per row as fit, tops aligned.
+///
+/// ## Why a [Wrap] and not a [GridView]
+///
+/// A grid gives every cell the same height, and these columns are exactly as
+/// tall as their task lines -- which is the information. A three-task project
+/// next to a fifteen-task one should *look* like that at a glance; padding the
+/// short one out to match would throw away the shape the layout exists to draw.
+/// Tops aligned, bottoms ragged, which is also what the React board did
+/// (`frontend/src/pages/BoardPage.css`, `flex-wrap`).
+///
+/// The width is computed rather than fixed so the columns fill the window
+/// evenly: a fixed 280px leaves a wide ragged margin on a 2560px monitor, and
+/// resizing the window would move the right edge of the board around instead of
+/// re-flowing it. [_minColumnWidth] is the narrowest a column can be and still
+/// read a two-line task title without ellipsing every one of them.
+class _ColumnGrid extends StatelessWidget {
+  const _ColumnGrid({required this.projects, required this.onOpen});
+
+  final List<BoardProject> projects;
+  final void Function(BoardProject entry) onOpen;
+
+  static const double _minColumnWidth = 260;
+  static const double _gap = 14;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final available = constraints.maxWidth;
+        final perRow = math.max(
+          1,
+          ((available + _gap) / (_minColumnWidth + _gap)).floor(),
+        );
+
+        // The half-pixel is slack, not arithmetic: an exact fit rounds the
+        // wrong way often enough that the last column of a row drops to the
+        // next one and leaves a hole.
+        final width = (available - _gap * (perRow - 1) - 0.5) / perRow;
+
+        return Wrap(
+          spacing: _gap,
+          runSpacing: _gap,
+          crossAxisAlignment: WrapCrossAlignment.start,
+          children: <Widget>[
+            for (final entry in projects)
+              SizedBox(
+                width: width,
+                child: ProjectColumn(
+                  key: ValueKey<String>(entry.project.id),
+                  entry: entry,
+                  onTap: () => onOpen(entry),
+                ),
+              ),
+          ],
+        );
+      },
+    );
   }
 }
 

@@ -7,6 +7,7 @@ import '../models/board_project.dart';
 import '../models/project.dart';
 import '../providers/archive_providers.dart';
 import '../providers/project_providers.dart';
+import '../widgets/adaptive_layout.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_list.dart';
 import '../widgets/project_name_dialog.dart';
@@ -21,18 +22,19 @@ import '../widgets/task_list.dart';
 /// thing F4 needs: the same screen opens from a notification tap on a cold start,
 /// with no board in memory. See `../navigation/app_routes.dart`.
 ///
-/// ## Two tabs rather than two columns
+/// ## Tabs on a phone, two panes on the desktop
 ///
-/// Tasks and notes are one screen in the React client, side by side. Here they
-/// are tabs, for a mechanical reason as much as a layout one: the task list is a
-/// `ReorderableListView` and it must **be** the scrollable in order to scroll,
-/// to pull-to-refresh, and to auto-scroll while a row is being dragged near the
-/// edge. Two lists stacked in one scroll view can only be achieved by
-/// shrink-wrapping both, which breaks all three. A tab gives each its own
-/// viewport and costs one tap.
+/// Tasks and notes are one screen in the React client, side by side. On a
+/// narrow window they are tabs here, for a mechanical reason as much as a
+/// layout one: the task list is a `ReorderableListView` and it must **be** the
+/// scrollable in order to scroll, to pull-to-refresh, and to auto-scroll while
+/// a row is being dragged near the edge. Two lists stacked in one scroll view
+/// can only be achieved by shrink-wrapping both, which breaks all three. A tab
+/// gives each its own viewport and costs one tap.
 ///
-/// F6's wide desktop layout puts them side by side, where the space exists and
-/// each column can keep its own scrollable.
+/// F6 puts them side by side where the window is wide enough
+/// (`../widgets/adaptive_layout.dart`) -- which keeps that same property, since
+/// each pane is still its own scrollable. See [_WideBody].
 class ProjectScreen extends ConsumerWidget {
   const ProjectScreen({
     required this.projectId,
@@ -119,6 +121,50 @@ class _ProjectBody extends ConsumerWidget {
       BoardProject(project: view.project, tasks: view.tasks),
     );
 
+    final tasksLabel = 'Задачи · ${summary.doneCount}/${summary.totalCount}';
+    // The count appears only once the notes have actually loaded -- "Заметки ·
+    // 0" while the request is still in flight reads as a fact about the project
+    // rather than about the request.
+    final notesLabel = notes.value == null
+        ? 'Заметки'
+        : 'Заметки · ${notes.requireValue.length}';
+
+    final taskPane = TaskListView(
+      projectId: projectId,
+      tasks: view.tasks,
+      highlightTaskId: highlightTaskId,
+    );
+
+    final notePane = switch (notes) {
+      AsyncData(:final value) => NoteListView(
+        projectId: projectId,
+        notes: value,
+      ),
+      AsyncError(:final error) => _Message(
+        icon: Icons.cloud_off,
+        title: 'Не удалось загрузить заметки',
+        body: describeApiError(error),
+        action: TextButton.icon(
+          onPressed: () =>
+              ref.read(projectNotesProvider(projectId).notifier).refresh(),
+          icon: const Icon(Icons.refresh, size: 18),
+          label: const Text('Повторить'),
+        ),
+      ),
+      _ => const _Message(icon: null, title: 'Загружаем заметки…', body: ''),
+    };
+
+    if (isWideLayout(context)) {
+      return _WideBody(
+        view: view,
+        projectId: projectId,
+        tasksLabel: tasksLabel,
+        notesLabel: notesLabel,
+        taskPane: taskPane,
+        notePane: notePane,
+      );
+    }
+
     return DefaultTabController(
       // Tasks first, and first is the default. That is also the right landing
       // tab for F4's reminder deep link, which always names a *task* -- so
@@ -129,75 +175,16 @@ class _ProjectBody extends ConsumerWidget {
         appBar: AppBar(
           title: Text(view.project.name),
           bottom: TabBar(
-            tabs: <Widget>[
-              Tab(text: 'Задачи · ${summary.doneCount}/${summary.totalCount}'),
-              // The count appears only once the notes have actually loaded --
-              // "Заметки · 0" while the request is still in flight reads as a
-              // fact about the project rather than about the request.
-              Tab(
-                text: notes.value == null
-                    ? 'Заметки'
-                    : 'Заметки · ${notes.requireValue.length}',
-              ),
-            ],
+            tabs: <Widget>[Tab(text: tasksLabel), Tab(text: notesLabel)],
           ),
-          actions: [
-            if (view.isRefreshing)
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Center(
-                  child: SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              ),
-            // Archiving lives here rather than on the board card, because here
-            // is where the decision is made: you archive a project after
-            // looking at what is left in it, not while scrolling past it. It is
-            // also behind a menu rather than on a button, since it is a
-            // once-a-month action sharing an app bar with a tab strip.
-            _ProjectMenu(project: view.project),
-          ],
+          actions: _projectActions(view),
         ),
         body: Column(
           children: [
             if (view.isStale || view.refreshError != null)
               _ProjectBanner(view: view, projectId: projectId),
             Expanded(
-              child: TabBarView(
-                children: <Widget>[
-                  TaskListView(
-                    projectId: projectId,
-                    tasks: view.tasks,
-                    highlightTaskId: highlightTaskId,
-                  ),
-                  switch (notes) {
-                    AsyncData(:final value) => NoteListView(
-                      projectId: projectId,
-                      notes: value,
-                    ),
-                    AsyncError(:final error) => _Message(
-                      icon: Icons.cloud_off,
-                      title: 'Не удалось загрузить заметки',
-                      body: describeApiError(error),
-                      action: TextButton.icon(
-                        onPressed: () => ref
-                            .read(projectNotesProvider(projectId).notifier)
-                            .refresh(),
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Повторить'),
-                      ),
-                    ),
-                    _ => const _Message(
-                      icon: null,
-                      title: 'Загружаем заметки…',
-                      body: '',
-                    ),
-                  },
-                ],
-              ),
+              child: TabBarView(children: <Widget>[taskPane, notePane]),
             ),
           ],
         ),
@@ -205,6 +192,132 @@ class _ProjectBody extends ConsumerWidget {
     );
   }
 }
+
+/// The desktop project screen: tasks and notes at the same time (F6).
+///
+/// ## Why this is not just the tabs with a wider tab strip
+///
+/// The tabs exist for a mechanical reason as much as a spatial one (see the
+/// note on [ProjectScreen]), and that reason survives here: each pane is still
+/// its own scrollable, so the task list is still the `ReorderableListView` that
+/// scrolls, pulls to refresh and auto-scrolls during a drag. Two panes side by
+/// side keep that property; two lists stacked in one scroll view would not.
+///
+/// What the width buys is the thing the notes are *for*. `../../README.md`
+/// makes a project a first-class entity because it has a body -- the notes are
+/// the context you are restoring, and reading them while looking at the task
+/// list is the whole gesture. On a phone that costs a tab switch and the tab
+/// switch is cheap; on a 1600px window, hiding half the screen to show one list
+/// would be silly.
+///
+/// The panes do not share a scroll position, a refresh or a state of any kind.
+/// They are the same two widgets the tabs hold, in a [Row].
+class _WideBody extends StatelessWidget {
+  const _WideBody({
+    required this.view,
+    required this.projectId,
+    required this.tasksLabel,
+    required this.notesLabel,
+    required this.taskPane,
+    required this.notePane,
+  });
+
+  final ProjectReady view;
+  final String projectId;
+  final String tasksLabel;
+  final String notesLabel;
+  final Widget taskPane;
+  final Widget notePane;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(view.project.name),
+        actions: _projectActions(view),
+      ),
+      body: Column(
+        children: [
+          if (view.isStale || view.refreshError != null)
+            _ProjectBanner(view: view, projectId: projectId),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Tasks get the larger half. Both panes are lists of one-line
+                // rows, but the task rows carry controls (status, drag handle,
+                // reminder date) that start colliding first, and the task list
+                // is what the screen is opened for.
+                Expanded(flex: 3, child: _Pane(label: tasksLabel, child: taskPane)),
+                const VerticalDivider(width: 1, thickness: 1),
+                Expanded(flex: 2, child: _Pane(label: notesLabel, child: notePane)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One half of the desktop layout: a label, and the list under it.
+///
+/// The label is what the tab strip said, and it says it for the same reason --
+/// "Задачи · 2/7" is a fact about the project, not decoration, and losing it
+/// when the window widens would mean the counter only exists on phones.
+class _Pane extends StatelessWidget {
+  const _Pane({required this.label, required this.child});
+
+  final String label;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+            ),
+          ),
+          child: Text(
+            label,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+}
+
+/// The app bar's right-hand side, shared by both layouts so that a control
+/// cannot quietly exist on one width and not the other.
+List<Widget> _projectActions(ProjectReady view) => <Widget>[
+  if (view.isRefreshing)
+    const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16),
+      child: Center(
+        child: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      ),
+    ),
+  // Archiving lives here rather than on the board card, because here is where
+  // the decision is made: you archive a project after looking at what is left
+  // in it, not while scrolling past it. It is also behind a menu rather than on
+  // a button, since it is a once-a-month action.
+  _ProjectMenu(project: view.project),
+];
 
 /// The project's own actions. Renaming, archiving, and -- for a project that is
 /// already archived -- bringing it back.

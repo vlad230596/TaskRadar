@@ -9,8 +9,9 @@ import { boardQuerySchema } from "../schemas";
  * Why this exists next to `GET /projects` + `GET /projects/:id/tasks` rather than
  * replacing them: a client that renders the board needs everything at once, while
  * a client that just toggled one task's status needs one project's tasks. Keeping
- * both means neither caller overfetches, and the existing web frontend keeps
- * working untouched.
+ * both means neither caller overfetches -- and the Flutter client uses both: this
+ * route for the board, the per-project ones for the project screen and for the
+ * re-read after a mutation that can move `isCurrent`.
  *
  * The motivation is latency, not code tidiness. Rendering the board with the
  * per-project route costs 1 + N requests; over a mobile network with ~15 projects
