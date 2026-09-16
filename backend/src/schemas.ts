@@ -40,6 +40,19 @@ export const listProjectsQuerySchema = z.object({
   archived: z.enum(["true", "false"]).optional(),
 });
 
+// ---- Board ----
+
+/**
+ * Query for `GET /board`.
+ *
+ * Intentionally the very same schema object as `listProjectsQuerySchema`, not a
+ * copy: `/board` is `GET /projects` with the tasks already attached, so the two
+ * must accept and reject exactly the same `archived` values forever. Aliasing
+ * makes that impossible to get wrong, and puts the note here -- where anyone
+ * editing the projects query will read it -- rather than in the board route.
+ */
+export const boardQuerySchema = listProjectsQuerySchema;
+
 // ---- Tasks ----
 
 export const createTaskSchema = z.object({

@@ -1,5 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { FastifyInstance } from "fastify";
+// Pure helper over a static allowlist -- importing it loads no route module and
+// therefore no Prisma client.
+import { isPublicRoute } from "../src/lib/authGuard";
 // Type-only imports are erased at compile time, so these do NOT load the modules
 // (and therefore do not construct a Prisma client) before DATABASE_URL is set below.
 import type { AuthConfig } from "../src/lib/authConfig";
@@ -37,6 +40,59 @@ async function buildTestApp(config: AuthConfig): Promise<FastifyInstance> {
   instance.get(PROTECTED_TEST_ROUTE, async () => ({ reached: true }));
   await instance.ready();
   return instance;
+}
+
+/** Logs in and returns the token as the native client would read it: from the body. */
+async function loginForBodyToken(instance: FastifyInstance): Promise<string> {
+  const res = await instance.inject({
+    method: "POST",
+    url: "/auth/login",
+    payload: { email: "owner@example.com", password: TEST_PASSWORD },
+  });
+  expect(res.statusCode).toBe(200);
+  const body = res.json() as { token?: unknown };
+  if (typeof body.token !== "string") {
+    throw new Error("login response did not carry a token in the body");
+  }
+  return body.token;
+}
+
+/**
+ * Returns `token` with its signature corrupted, guaranteeing that the bytes the
+ * verifier compares really did change.
+ *
+ * The obvious version of this -- "replace the last character of the token" -- is
+ * silently broken, and was the cause of this suite failing at random. An HS256
+ * signature is 32 bytes = 256 bits, but its base64url form is 43 characters =
+ * 258 bits: the final character carries only 4 significant bits plus 2 bits of
+ * padding. Characters whose indices share those top 4 bits therefore decode to
+ * the very same signature -- "...A" and "...B" are byte-identical -- and fast-jwt
+ * compares the decoded bytes, not the text. Canonical encoders only ever emit the
+ * first character of each group, so swapping a trailing "A" for a "B" produced a
+ * perfectly valid token about 1 token in 16, depending on the token's `iat`.
+ *
+ * Flipping a bit inside the decoded bytes side-steps the padding entirely and is
+ * deterministic; the assertion below states that guarantee rather than trusting it.
+ */
+function tamperWithSignature(token: string): string {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    throw new Error(`expected a three-part JWT, got ${parts.length} part(s)`);
+  }
+  const [header, payload, signature] = parts as [string, string, string];
+
+  const bytes = Buffer.from(signature, "base64url");
+  // First byte, lowest bit: no padding lives there, so the value is certain to move.
+  bytes[0] ^= 0x01;
+  const tamperedSignature = bytes.toString("base64url");
+
+  // The property the test actually depends on. If a future change to this helper
+  // (or to Node's base64url handling) ever made the tampering a no-op again, this
+  // fails loudly here instead of turning into a flaky assertion further down.
+  expect(Buffer.from(tamperedSignature, "base64url").equals(bytes)).toBe(true);
+  expect(bytes.equals(Buffer.from(signature, "base64url"))).toBe(false);
+
+  return `${header}.${payload}.${tamperedSignature}`;
 }
 
 /** Logs in and returns the raw session cookie value. */
@@ -161,9 +217,7 @@ describe("auth guard", () => {
 
   it("rejects a tampered token", async () => {
     const token = await login(app);
-    // Corrupt the final signature character.
-    const lastChar = token.slice(-1);
-    const tampered = token.slice(0, -1) + (lastChar === "A" ? "B" : "A");
+    const tampered = tamperWithSignature(token);
 
     const res = await app.inject({
       method: "GET",
@@ -232,7 +286,11 @@ describe("POST /auth/login", () => {
     });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ ok: true });
+    expect(res.json()).toEqual({
+      ok: true,
+      token: expect.any(String),
+      expiresIn: 2592000,
+    });
 
     const setCookie = res.headers["set-cookie"];
     expect(setCookie).toBeDefined();
@@ -336,6 +394,154 @@ describe("POST /auth/login", () => {
   });
 });
 
+describe("POST /auth/login -- token in the response body (native clients)", () => {
+  it("returns the token and its lifetime alongside ok", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "owner@example.com", password: TEST_PASSWORD },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as { ok: boolean; token: string; expiresIn: number };
+    expect(body.ok).toBe(true);
+    expect(typeof body.token).toBe("string");
+    // Seconds, matching the cookie's Max-Age and the JWT's own expiry.
+    expect(body.expiresIn).toBe(2592000);
+  });
+
+  it("still sets the httpOnly cookie, so the web client is untouched", async () => {
+    // The body copy is additive: dropping the cookie would silently log out the
+    // existing React frontend, which has no way to read the body token.
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "owner@example.com", password: TEST_PASSWORD },
+    });
+
+    const cookie = res.cookies.find((c) => c.name === SESSION_COOKIE_NAME);
+    expect(cookie?.value).toBeTruthy();
+    expect(String(res.headers["set-cookie"])).toContain("HttpOnly");
+  });
+
+  it("hands out the very same token in the cookie and in the body", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "owner@example.com", password: TEST_PASSWORD },
+    });
+    const cookie = res.cookies.find((c) => c.name === SESSION_COOKIE_NAME);
+    expect((res.json() as { token: string }).token).toBe(cookie?.value);
+  });
+
+  it("issues a body token that a protected route accepts as a Bearer header", async () => {
+    // The whole point of B1: @fastify/jwt reads `Authorization: Bearer` before it
+    // looks at the cookie, so a native client never needs a cookie jar and
+    // `authGuard` needs no Bearer handling of its own.
+    const token = await loginForBodyToken(app);
+
+    const res = await app.inject({
+      method: "GET",
+      url: PROTECTED_TEST_ROUTE,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ reached: true });
+  });
+
+  it("prefers a valid Bearer header over a garbage cookie", async () => {
+    // Pins the precedence the plan relies on: header first, cookie only as a
+    // fallback. If a future @fastify/jwt flipped that order, this fails loudly.
+    const token = await loginForBodyToken(app);
+
+    const res = await app.inject({
+      method: "GET",
+      url: PROTECTED_TEST_ROUTE,
+      headers: { authorization: `Bearer ${token}` },
+      cookies: { [SESSION_COOKIE_NAME]: "garbage.token.value" },
+    });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("rejects a forged Bearer header", async () => {
+    const res = await app.inject({
+      method: "GET",
+      url: PROTECTED_TEST_ROUTE,
+      headers: { authorization: "Bearer garbage.token.value" },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("returns no token at all on a wrong password", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "owner@example.com", password: "wrong-password" },
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: "Unauthorized", message: "Invalid email or password" });
+    expect(res.body).not.toContain("token");
+  });
+});
+
+describe("GET /auth/me", () => {
+  it("rejects a request with no credentials at all", async () => {
+    const res = await app.inject({ method: "GET", url: "/auth/me" });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("is protected rather than public", () => {
+    // Guards against someone "fixing" a 401 by adding it to PUBLIC_ROUTES: a
+    // public /auth/me would answer 200 for everyone and mean nothing.
+    expect(isPublicRoute("GET", "/auth/me")).toBe(false);
+  });
+
+  it("answers 200 for a token supplied as a Bearer header", async () => {
+    const token = await loginForBodyToken(app);
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+  });
+
+  it("answers 200 for a token supplied as the session cookie", async () => {
+    const token = await login(app);
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      cookies: { [SESSION_COOKIE_NAME]: token },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ok: true });
+  });
+
+  it("rejects an expired token", async () => {
+    const expired = app.jwt.sign({ sub: "owner" }, { expiresIn: -60 });
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { authorization: `Bearer ${expired}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("leaks no identity in the body", async () => {
+    // The token carries a deliberately minimal claim set; the probe must not
+    // undo that by echoing the configured email back to whoever holds a token.
+    const token = await loginForBodyToken(app);
+    const res = await app.inject({
+      method: "GET",
+      url: "/auth/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.body).not.toContain(baseConfig.email);
+    expect(res.body).not.toContain("owner");
+  });
+});
+
 describe("POST /auth/logout", () => {
   it("clears the session cookie", async () => {
     const res = await app.inject({ method: "POST", url: "/auth/logout" });
@@ -385,9 +591,32 @@ describe("session token round-trip", () => {
 
   it("fails to verify a tampered token", async () => {
     const token = app.jwt.sign({ sub: "owner" }, { expiresIn: 3600 });
-    const lastChar = token.slice(-1);
-    const tampered = token.slice(0, -1) + (lastChar === "A" ? "B" : "A");
+    const tampered = tamperWithSignature(token);
     expect(() => app.jwt.verify(tampered)).toThrow();
+  });
+
+  it("detects tampering even on a signature ending in the padded 'A'", async () => {
+    /*
+     * Pins the exact case that used to make "fails to verify a tampered token"
+     * flaky, so the old character-swap cannot quietly come back. Roughly one
+     * signature in sixteen ends in "A"; 500 attempts find one with certainty.
+     */
+    let token: string | undefined;
+    for (let nonce = 0; nonce < 500 && token === undefined; nonce++) {
+      const candidate = app.jwt.sign({ sub: "owner", nonce }, { expiresIn: 3600 });
+      if (candidate.endsWith("A")) {
+        token = candidate;
+      }
+    }
+    if (token === undefined) {
+      throw new Error("no signature ending in 'A' produced in 500 attempts");
+    }
+
+    // The old tampering was a no-op here: "...A" and "...B" decode to identical
+    // signature bytes, so the "corrupted" token verifies -- correctly.
+    expect(() => app.jwt.verify(`${token.slice(0, -1)}B`)).not.toThrow();
+    // The byte-level tampering is not fooled by the padding.
+    expect(() => app.jwt.verify(tamperWithSignature(token))).toThrow();
   });
 
   it("fails to verify an expired token", async () => {

@@ -6,6 +6,7 @@ import { authRoutes } from "./routes/auth";
 import { projectRoutes } from "./routes/projects";
 import { taskRoutes } from "./routes/tasks";
 import { noteRoutes } from "./routes/notes";
+import { boardRoutes } from "./routes/board";
 import { registerErrorHandler } from "./lib/errorHandler";
 import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfig";
 import { createAuthGuard } from "./lib/authGuard";
@@ -61,6 +62,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(projectRoutes);
   await app.register(taskRoutes);
   await app.register(noteRoutes);
+  await app.register(boardRoutes);
 
   return app;
 }
