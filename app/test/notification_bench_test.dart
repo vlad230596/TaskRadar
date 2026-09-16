@@ -102,12 +102,16 @@ void main() {
     await tester.pumpAndSettle();
     final before = gateway.queue.length;
 
-    // The first row is the past-dated one, which was never armed; drop twice so
-    // an armed alarm is actually removed.
-    await tester.tap(find.text('Убрать первую'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Убрать первую'));
-    await tester.pumpAndSettle();
+    // The synthetic set starts with rows that may never have been armed at all:
+    // the past-dated one never is, and the *today* one only is while the
+    // configured hour has not gone by yet -- so before 09:00 local two drops
+    // remove an alarm and after 09:00 they remove nothing. Dropping three times
+    // reaches "tomorrow", which is armed at every hour of the day, and makes
+    // this assertion independent of when the suite happens to run.
+    for (var i = 0; i < 3; i++) {
+      await tester.tap(find.text('Убрать первую'));
+      await tester.pumpAndSettle();
+    }
 
     expect(gateway.queue.length, lessThan(before));
   });

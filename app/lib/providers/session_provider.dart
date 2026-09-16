@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/api_exception.dart';
+import 'board_providers.dart';
 import 'dependencies.dart';
 
 part 'session_provider.g.dart';
@@ -98,6 +99,27 @@ class Session extends _$Session {
     // that silently will not survive a restart.
     await ref.read(tokenStorageProvider).write(result.token);
     ref.read(apiClientProvider).setToken(result.token);
+
+    /*
+     * Drop the cached board before letting the app back in.
+     *
+     * `Board` is keepAlive, and a provider that already holds a value does not
+     * rebuild just because a screen re-mounted. So without this, a session that
+     * ended (an expired token, an explicit logout) and was then re-established
+     * would put the board fetched *before* it ended back on screen, labelled as
+     * live, with nothing scheduled to refresh it until the user thought to pull
+     * down.
+     *
+     * Invalidating here rather than in the sign-out paths is deliberate: at this
+     * point the board screen is certainly not mounted (the login form is) and the
+     * new token is already installed, so the rebuild cannot fire a request with
+     * a token that has just been thrown away.
+     *
+     * The snapshot *file* is left alone on purpose -- it is this same user's
+     * last good board, and drawing it instantly on the next cold start is the
+     * entire reason it exists.
+     */
+    ref.invalidate(boardProvider);
 
     state = const AsyncData(SessionStatus.signedIn);
   }

@@ -73,6 +73,55 @@ Map<String, dynamic> emptyProjectJson() => <String, dynamic>{
 /// `createdAt` ascending order.
 List<dynamic> boardJson() => <dynamic>[projectWithTasksJson(), emptyProjectJson()];
 
+// --- builders -------------------------------------------------------------
+//
+// The fixtures above are the *reference* shapes and are deliberately verbose.
+// The builders below exist for tests that vary one thing (a status, a reminder
+// date, how many tasks are done) and should not have to restate the other nine
+// fields to do it.
+
+/// One task row, in exactly the shape the server sends.
+Map<String, dynamic> taskJson({
+  required String id,
+  String projectId = 'prj_1',
+  String title = 'Задача',
+  String? description,
+  String status = 'pending',
+  int position = 1000,
+  String? remindAt,
+  bool isCurrent = false,
+  String createdAt = '2026-08-01T09:00:00.000Z',
+  String updatedAt = '2026-08-01T09:00:00.000Z',
+}) => <String, dynamic>{
+  'id': id,
+  'projectId': projectId,
+  'title': title,
+  'description': description,
+  'status': status,
+  'position': position,
+  'remindAt': remindAt,
+  'createdAt': createdAt,
+  'updatedAt': updatedAt,
+  'isCurrent': isCurrent,
+};
+
+/// One board row: a project plus its tasks.
+Map<String, dynamic> boardProjectJson({
+  required String id,
+  required String name,
+  List<Map<String, dynamic>> tasks = const <Map<String, dynamic>>[],
+  String? archivedAt,
+  String createdAt = '2026-08-01T09:00:00.000Z',
+  String updatedAt = '2026-08-01T09:00:00.000Z',
+}) => <String, dynamic>{
+  'id': id,
+  'name': name,
+  'archivedAt': archivedAt,
+  'createdAt': createdAt,
+  'updatedAt': updatedAt,
+  'tasks': tasks,
+};
+
 /// `POST /auth/login` 200 body.
 Map<String, dynamic> loginOkJson({String token = 'jwt.token.value'}) =>
     <String, dynamic>{

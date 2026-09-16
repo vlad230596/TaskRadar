@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/api_client.dart';
 import '../api/auth_api.dart';
 import '../api/board_api.dart';
+import '../storage/board_snapshot_store.dart';
 import '../storage/token_storage.dart';
 
 part 'dependencies.g.dart';
@@ -21,6 +22,14 @@ part 'dependencies.g.dart';
 
 @Riverpod(keepAlive: true)
 TokenStorage tokenStorage(Ref ref) => TokenStorage();
+
+/// The board's read cache (F2). Lives here rather than in `board_providers.dart`
+/// for the same reason as [tokenStorage]: it owns a path on disk and a
+/// `path_provider` platform channel, so it must not be re-created per screen,
+/// and tests must be able to replace it with something that does not touch the
+/// filesystem.
+@Riverpod(keepAlive: true)
+BoardSnapshotStore boardSnapshotStore(Ref ref) => BoardSnapshotStore();
 
 @Riverpod(keepAlive: true)
 ApiClient apiClient(Ref ref) => createConfiguredApiClient();

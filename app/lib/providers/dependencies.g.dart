@@ -84,6 +84,71 @@ final class TokenStorageProvider
 
 String _$tokenStorageHash() => r'a42816fb1cf5af728e44ff5c48bfcaf5dc6b12aa';
 
+/// The board's read cache (F2). Lives here rather than in `board_providers.dart`
+/// for the same reason as [tokenStorage]: it owns a path on disk and a
+/// `path_provider` platform channel, so it must not be re-created per screen,
+/// and tests must be able to replace it with something that does not touch the
+/// filesystem.
+
+@ProviderFor(boardSnapshotStore)
+final boardSnapshotStoreProvider = BoardSnapshotStoreProvider._();
+
+/// The board's read cache (F2). Lives here rather than in `board_providers.dart`
+/// for the same reason as [tokenStorage]: it owns a path on disk and a
+/// `path_provider` platform channel, so it must not be re-created per screen,
+/// and tests must be able to replace it with something that does not touch the
+/// filesystem.
+
+final class BoardSnapshotStoreProvider
+    extends
+        $FunctionalProvider<
+          BoardSnapshotStore,
+          BoardSnapshotStore,
+          BoardSnapshotStore
+        >
+    with $Provider<BoardSnapshotStore> {
+  /// The board's read cache (F2). Lives here rather than in `board_providers.dart`
+  /// for the same reason as [tokenStorage]: it owns a path on disk and a
+  /// `path_provider` platform channel, so it must not be re-created per screen,
+  /// and tests must be able to replace it with something that does not touch the
+  /// filesystem.
+  BoardSnapshotStoreProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'boardSnapshotStoreProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$boardSnapshotStoreHash();
+
+  @$internal
+  @override
+  $ProviderElement<BoardSnapshotStore> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  BoardSnapshotStore create(Ref ref) {
+    return boardSnapshotStore(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(BoardSnapshotStore value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<BoardSnapshotStore>(value),
+    );
+  }
+}
+
+String _$boardSnapshotStoreHash() =>
+    r'16db2ea1889e40d5ab88ca0b364e8184c0f3bcba';
+
 @ProviderFor(apiClient)
 final apiClientProvider = ApiClientProvider._();
 

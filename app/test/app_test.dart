@@ -6,11 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/app.dart';
 import 'package:taskradar/providers/dependencies.dart';
-import 'package:taskradar/screens/home_screen.dart';
+import 'package:taskradar/providers/reminder_providers.dart';
+import 'package:taskradar/screens/board_screen.dart';
 import 'package:taskradar/screens/login_screen.dart';
 import 'package:taskradar/screens/splash_screen.dart';
 
 import 'support/fake_backend.dart';
+import 'support/fake_board_snapshot_store.dart';
+import 'support/fake_notification_gateway.dart';
 import 'support/fake_token_storage.dart';
 import 'support/fixtures.dart';
 
@@ -20,10 +23,12 @@ import 'support/fixtures.dart';
 void main() {
   late FakeBackend backend;
   late FakeTokenStorage storage;
+  late FakeBoardSnapshotStore snapshots;
 
   setUp(() {
     backend = FakeBackend();
     storage = FakeTokenStorage();
+    snapshots = FakeBoardSnapshotStore();
   });
 
   Future<void> pumpApp(WidgetTester tester) {
@@ -32,6 +37,15 @@ void main() {
         overrides: [
           apiClientProvider.overrideWithValue(backend.client),
           tokenStorageProvider.overrideWithValue(storage),
+          // The board is the signed-in screen now, and it reads a snapshot file
+          // through `path_provider` -- a platform channel the test VM does not
+          // have.
+          boardSnapshotStoreProvider.overrideWithValue(snapshots),
+          // Likewise: the board screen brings the reminder bridge up, which
+          // initialises the notification plugin. The real gateway degrades to
+          // "this platform cannot do reminders" in the test VM, but these tests
+          // are about navigation and should not depend on that.
+          notificationGatewayProvider.overrideWithValue(FakeNotificationGateway()),
         ],
         child: const TaskRadarApp(),
       ),
@@ -41,9 +55,20 @@ void main() {
   /// Pumps a few frames without `pumpAndSettle`, which would hang on the
   /// splash screen's indefinitely animating progress indicator.
   Future<void> settle(WidgetTester tester) async {
-    for (var i = 0; i < 5; i++) {
+    for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
+  }
+
+  /// A responder covering the endpoints a signed-in cold start hits.
+  void respondToSignedInStartup() {
+    backend.responder = (RequestOptions options) => switch (options.path) {
+      '/auth/me' => jsonResponse(<String, dynamic>{'ok': true}),
+      '/auth/login' => jsonResponse(loginOkJson()),
+      '/auth/logout' => jsonResponse(<String, dynamic>{'ok': true}),
+      '/board' => jsonResponse(boardJson()),
+      _ => throw StateError('unexpected ${options.path}'),
+    };
   }
 
   testWidgets('shows the splash while the session is being resolved', (tester) async {
@@ -61,10 +86,12 @@ void main() {
 
     // Release it before the test ends: dio arms a receive-timeout timer per
     // request, and flutter_test fails a test that leaves a timer pending.
+    // Both /auth/me and the board request that follows it are served from here.
+    respondToSignedInStartup();
     probe.complete(jsonResponse(<String, dynamic>{'ok': true}));
     await settle(tester);
 
-    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(BoardScreen), findsOneWidget);
   });
 
   testWidgets('no token -> login screen', (tester) async {
@@ -75,15 +102,16 @@ void main() {
     expect(find.text('Войти'), findsOneWidget);
   });
 
-  testWidgets('valid token -> the signed-in screen', (tester) async {
+  testWidgets('valid token -> the board, drawn from the wire', (tester) async {
     storage.token = 'stored.jwt';
-    backend.alwaysRespond(<String, dynamic>{'ok': true});
+    respondToSignedInStartup();
 
     await pumpApp(tester);
     await settle(tester);
 
-    expect(find.byType(HomeScreen), findsOneWidget);
-    expect(find.text('Сессия жива'), findsOneWidget);
+    expect(find.byType(BoardScreen), findsOneWidget);
+    expect(find.text('TaskRadar'), findsWidgets);
+    expect(find.text('Каркас Flutter'), findsOneWidget, reason: 'current task');
   });
 
   testWidgets('expired token -> login screen', (tester) async {
@@ -149,10 +177,7 @@ void main() {
   });
 
   testWidgets('a successful login lands on the signed-in screen', (tester) async {
-    backend.responder = (RequestOptions options) => switch (options.path) {
-      '/auth/login' => jsonResponse(loginOkJson()),
-      _ => throw StateError('unexpected ${options.path}'),
-    };
+    respondToSignedInStartup();
 
     await pumpApp(tester);
     await settle(tester);
@@ -162,7 +187,7 @@ void main() {
     await tester.tap(find.text('Войти'));
     await settle(tester);
 
-    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.byType(BoardScreen), findsOneWidget);
     expect(storage.token, 'jwt.token.value');
   });
 
@@ -170,20 +195,54 @@ void main() {
     tester,
   ) async {
     storage.token = 'stored.jwt';
+    respondToSignedInStartup();
+
+    await pumpApp(tester);
+    await settle(tester);
+    expect(find.byType(BoardScreen), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Выйти'));
+    await settle(tester);
+
+    expect(find.byType(LoginScreen), findsOneWidget);
+    expect(storage.token, isNull);
+  });
+
+  testWidgets('signing in again refetches the board rather than reusing it', (
+    tester,
+  ) async {
+    // The board provider is keepAlive, so re-mounting the screen is not enough
+    // to make it refetch. A session that ended and was re-established must not
+    // put the pre-logout board back on screen labelled as live.
+    storage.token = 'stored.jwt';
+    var boardCalls = 0;
     backend.responder = (RequestOptions options) => switch (options.path) {
       '/auth/me' => jsonResponse(<String, dynamic>{'ok': true}),
       '/auth/logout' => jsonResponse(<String, dynamic>{'ok': true}),
+      '/auth/login' => jsonResponse(loginOkJson()),
+      '/board' => jsonResponse(<dynamic>[
+        boardProjectJson(
+          id: 'prj_1',
+          name: ++boardCalls == 1 ? 'До выхода' : 'После входа',
+        ),
+      ]),
       _ => throw StateError('unexpected ${options.path}'),
     };
 
     await pumpApp(tester);
     await settle(tester);
-    expect(find.byType(HomeScreen), findsOneWidget);
+    expect(find.text('До выхода'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(OutlinedButton, 'Выйти'));
+    await tester.tap(find.byTooltip('Выйти'));
+    await settle(tester);
+    expect(find.byType(LoginScreen), findsOneWidget);
+
+    await tester.enterText(find.byType(TextFormField).first, 'owner@example.com');
+    await tester.enterText(find.byType(TextFormField).last, 'secret');
+    await tester.tap(find.text('Войти'));
     await settle(tester);
 
-    expect(find.byType(LoginScreen), findsOneWidget);
-    expect(storage.token, isNull);
+    expect(find.text('После входа'), findsOneWidget);
+    expect(find.text('До выхода'), findsNothing);
   });
 }

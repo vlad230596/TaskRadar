@@ -46,6 +46,14 @@ dependencies:
   # able to share one analyzer.
   json_annotation: ^4.11.0
 
+  # Where the board snapshot file lives (F2). The plan calls for "a JSON
+  # snapshot of the board in a file", and a file needs a directory that exists
+  # on both targets and is not visible to the user: `getApplicationSupportDirectory`
+  # is `/data/data/<pkg>/files` on Android and `%APPDATA%\<app>` on Windows.
+  # Deliberately not the documents directory, which Android exposes in the file
+  # manager -- a read cache has no business showing up there.
+  path_provider: ^2.1.5
+
   # Token storage: Android Keystore / Windows DPAPI rather than SharedPreferences.
   # Pinned to the 10.x line to match the sibling CashFlow app, so the two projects
   # on this machine share one platform-channel implementation and one set of

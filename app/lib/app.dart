@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'notifications/reminder_lifecycle.dart';
 import 'providers/session_provider.dart';
-import 'screens/home_screen.dart';
+import 'screens/board_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
 
@@ -48,7 +48,7 @@ class TaskRadarApp extends ConsumerWidget {
         ),
         home: switch (session) {
           AsyncData(:final value) => value == SessionStatus.signedIn
-              ? const HomeScreen()
+              ? const BoardScreen()
               : const LoginScreen(),
 
           // `Session.build` catches everything it expects, so reaching here
