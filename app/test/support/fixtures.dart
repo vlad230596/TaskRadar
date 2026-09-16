@@ -13,6 +13,7 @@ library;
 Map<String, dynamic> projectWithTasksJson() => <String, dynamic>{
   'id': 'prj_1',
   'name': 'TaskRadar',
+  'scopeId': defaultScopeId,
   'archivedAt': null,
   'createdAt': '2026-08-01T09:15:00.000Z',
   'updatedAt': '2026-09-10T18:00:00.000Z',
@@ -63,6 +64,7 @@ Map<String, dynamic> projectWithTasksJson() => <String, dynamic>{
 Map<String, dynamic> emptyProjectJson() => <String, dynamic>{
   'id': 'prj_2',
   'name': 'Пустой',
+  'scopeId': defaultScopeId,
   'archivedAt': null,
   'createdAt': '2026-08-05T12:00:00.000Z',
   'updatedAt': '2026-08-05T12:00:00.000Z',
@@ -115,11 +117,13 @@ Map<String, dynamic> boardProjectJson({
   required String name,
   List<Map<String, dynamic>> tasks = const <Map<String, dynamic>>[],
   String? archivedAt,
+  String scopeId = defaultScopeId,
   String createdAt = '2026-08-01T09:00:00.000Z',
   String updatedAt = '2026-08-01T09:00:00.000Z',
 }) => <String, dynamic>{
   'id': id,
   'name': name,
+  'scopeId': scopeId,
   'archivedAt': archivedAt,
   'createdAt': createdAt,
   'updatedAt': updatedAt,
@@ -187,3 +191,36 @@ Map<String, dynamic> loginOkJson({String token = 'jwt.token.value'}) =>
 /// session; only the message differs.
 Map<String, dynamic> unauthorizedJson({String message = 'Unauthorized'}) =>
     <String, dynamic>{'error': 'Unauthorized', 'message': message};
+
+// --- scopes (F7) ------------------------------------------------------------
+
+/// The scope every fixture project belongs to unless a test says otherwise.
+///
+/// Named like the row the migration seeds (`scope_default_0001`) in spirit but
+/// not in spelling: a test that asserts on this id should be asserting about
+/// *a* scope, never about the production seed.
+const String defaultScopeId = 'scope_main';
+
+/// One scope row, in exactly the shape `GET /scopes` sends.
+Map<String, dynamic> scopeJson({
+  required String id,
+  required String name,
+  num position = 1000,
+  String createdAt = '2026-08-01T09:00:00.000Z',
+  String updatedAt = '2026-08-01T09:00:00.000Z',
+}) => <String, dynamic>{
+  'id': id,
+  'name': name,
+  'position': position,
+  'createdAt': createdAt,
+  'updatedAt': updatedAt,
+};
+
+/// What a freshly migrated installation has: exactly one scope.
+///
+/// One rather than several on purpose -- the switcher only appears from two
+/// scopes up, so this default keeps every test that is not about scopes looking
+/// exactly as it did before F7.
+List<dynamic> defaultScopesJson() => <dynamic>[
+  scopeJson(id: defaultScopeId, name: 'Основной'),
+];

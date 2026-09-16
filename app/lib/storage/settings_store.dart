@@ -39,6 +39,19 @@ abstract interface class SettingsStore {
 
   /// Persists the reminder hour. May throw; the caller decides what to do.
   Future<void> writeReminderTime(ReminderTime time);
+
+  /// The scope the board was last showing, or null if none was ever chosen
+  /// (F7).
+  ///
+  /// An **id**, not a `Scope`: this file must not know what a scope is, and the
+  /// id is the only part of it that is stable. The scope it names can also be
+  /// gone by the time it is read -- deleted, or renamed beyond recognition --
+  /// so the reader resolves it against the real list and falls back to the
+  /// first scope. See `../providers/scope_providers.dart`.
+  Future<String?> readSelectedScopeId();
+
+  /// Remembers which scope the board is showing. May throw.
+  Future<void> writeSelectedScopeId(String scopeId);
 }
 
 /// [SettingsStore] on top of `shared_preferences`.
@@ -51,6 +64,10 @@ class PreferencesSettingsStore implements SettingsStore {
   /// how [ReminderTime] is shaped.
   static const String hourKey = 'reminders.hour';
   static const String minuteKey = 'reminders.minute';
+
+  /// F7. A plain string; an unknown or deleted id reads as "nothing saved"
+  /// wherever it is resolved, which is the same answer a missing key gives.
+  static const String selectedScopeKey = 'board.scopeId';
 
   final Future<SharedPreferences> Function() _preferences;
 
@@ -87,5 +104,28 @@ class PreferencesSettingsStore implements SettingsStore {
     final preferences = await _preferences();
     await preferences.setInt(hourKey, time.hour);
     await preferences.setInt(minuteKey, time.minute);
+  }
+
+  @override
+  Future<String?> readSelectedScopeId() async {
+    try {
+      final preferences = await _preferences();
+      final value = preferences.getString(selectedScopeKey);
+      // An empty string is not an id, and treating it as one would send the
+      // board looking for a scope that cannot exist.
+      if (value == null || value.isEmpty) return null;
+      return value;
+    } catch (error) {
+      // Same contract as the reminder hour: a missing platform channel costs
+      // the default (the first scope), not a crash.
+      debugPrint('Could not read the selected scope: $error');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writeSelectedScopeId(String scopeId) async {
+    final preferences = await _preferences();
+    await preferences.setString(selectedScopeKey, scopeId);
   }
 }

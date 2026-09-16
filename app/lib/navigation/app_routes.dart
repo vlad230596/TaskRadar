@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../screens/archive_screen.dart';
 import '../screens/project_screen.dart';
+import '../screens/scopes_screen.dart';
 import '../screens/settings_screen.dart';
 
 /// The app's routes, and the seam F4 plugs the notification deep link into.
@@ -62,6 +63,10 @@ abstract final class AppRoutes {
   /// Settings. One setting so far -- the hour reminders fire at (F4).
   static const String settings = '/settings';
 
+  /// Managing the scopes themselves (F7). Not the switcher -- that lives above
+  /// the board; this is where scopes are created, renamed, reordered, deleted.
+  static const String scopes = '/scopes';
+
   /// Hooked up as `MaterialApp.onGenerateRoute`.
   ///
   /// Returns null for anything it does not recognise, which lets
@@ -79,6 +84,13 @@ abstract final class AppRoutes {
       return MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => const SettingsScreen(),
+      );
+    }
+
+    if (settings.name == AppRoutes.scopes) {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => const ScopesScreen(),
       );
     }
 
@@ -127,6 +139,10 @@ abstract final class AppRoutes {
   /// Opens settings.
   static Future<void> openSettings(BuildContext context) =>
       Navigator.of(context).pushNamed<void>(settings);
+
+  /// Opens the scope manager (F7).
+  static Future<void> openScopes(BuildContext context) =>
+      Navigator.of(context).pushNamed<void>(scopes);
 
   /// Opens a project from outside the widget tree -- a notification tap, or
   /// anything else that starts at a platform channel.

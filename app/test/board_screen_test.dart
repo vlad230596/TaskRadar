@@ -47,6 +47,28 @@ void main() {
     }
   }
 
+  /// How many times the board itself was fetched.
+  ///
+  /// Counted by path rather than as "every request the screen made": since F7
+  /// the board screen also reads `GET /scopes` for the switcher, and a test
+  /// about refreshing the board should not have to know that.
+  int boardReads() =>
+      backend.requests.where((request) => request.path == '/board').length;
+
+  /// Holds `GET /board` open, while the scope list answers immediately.
+  ///
+  /// The distinction matters since F7: hanging *every* request would leave the
+  /// scope request pending at teardown, and the test would fail on a stray dio
+  /// timeout timer rather than on anything it is about.
+  void holdBoardOpen(Completer<ResponseBody> inFlight) {
+    backend.responder = (options) {
+      if (options.path.startsWith('/scopes')) {
+        return jsonResponse(defaultScopesJson());
+      }
+      return inFlight.future;
+    };
+  }
+
   Future<void> pumpBoard(WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -133,7 +155,7 @@ void main() {
   group('loading', () {
     testWidgets('with no snapshot, the screen says it is loading', (tester) async {
       final inFlight = Completer<ResponseBody>();
-      backend.responder = (_) => inFlight.future;
+      holdBoardOpen(inFlight);
 
       await pumpBoard(tester);
 
@@ -252,13 +274,13 @@ void main() {
 
     testWidgets('pull-to-refresh fetches again', (tester) async {
       await pumpBoard(tester);
-      expect(backend.requests, hasLength(1));
+      expect(boardReads(), 1);
 
       await tester.fling(find.text('Стройка'), const Offset(0, 320), 1200);
       await settle(tester);
       await settle(tester);
 
-      expect(backend.requests, hasLength(2));
+      expect(boardReads(), 2);
     });
 
     testWidgets('the overflow menu reaches the archive and the settings', (
@@ -329,13 +351,13 @@ void main() {
       backend.alwaysFailToConnect();
 
       await pumpBoard(tester);
-      expect(backend.requests, hasLength(1));
+      expect(boardReads(), 1);
 
       backend.alwaysRespond(sampleBoard());
       await tester.tap(find.text('Повторить'));
       await settle(tester);
 
-      expect(backend.requests, hasLength(2));
+      expect(boardReads(), 2);
       expect(find.text('Не удалось обновить'), findsNothing);
       expect(find.text('Данные из кэша'), findsNothing);
     });
@@ -512,14 +534,14 @@ void main() {
       useDesktopWindow(tester);
 
       await pumpBoard(tester);
-      expect(backend.requests, hasLength(1));
+      expect(boardReads(), 1);
 
       // A mouse cannot pull to refresh; without this button the desktop board
       // could only be refreshed by restarting the app.
       await tester.tap(find.byTooltip('Обновить'));
       await settle(tester);
 
-      expect(backend.requests, hasLength(2));
+      expect(boardReads(), 2);
     });
 
     testWidgets('no refresh button at phone width', (tester) async {
@@ -642,7 +664,7 @@ void main() {
       );
 
       final inFlight = Completer<ResponseBody>();
-      backend.responder = (_) => inFlight.future;
+      holdBoardOpen(inFlight);
 
       await pumpBoard(tester);
 

@@ -80,7 +80,8 @@ versions on purpose — the comments there explain which constraint forces which
 ```
 lib/
   config/        build-time configuration (API base URL)
-  models/        freezed models ported from ../frontend/src/lib/types.ts
+  models/        freezed models (ported from the React client's types.ts;
+                 see "Where frontend/src/... went" above)
   api/           dio client, error types, one class per endpoint group
   domain/        pure logic with no plugins and no clock of its own
   notifications/ the side-effecting half: plugin, timezone, scheduler
@@ -88,7 +89,7 @@ lib/
   providers/     riverpod: singletons, session state, board, project, forms
   navigation/    the one router, and the seam F4's deep link plugs into
   screens/       splash / login / board / project / note editor / archive /
-                 settings / notification bench (F1, kept as a diagnostic)
+                 scopes / settings / notification bench (F1, a diagnostic)
   widgets/       reusable pieces of the screens
 test/
   support/       fake HTTP transport (routed + stateful), fake token storage,
@@ -494,6 +495,60 @@ at the result on a real screen** — that is the same gap every previous iterati
 recorded, and the remaining F6 step for a human: open it, resize the window
 across 840px in both directions, and check that the board still reads at a
 glance.
+
+## Scopes (F7)
+
+A scope is a space projects live in -- "work at company A", "home", "the dacha"
+-- and the board shows exactly one at a time. `../README.md` has the product
+argument; this is what it costs in the client.
+
+### The board is fetched whole and filtered locally
+
+The server *can* filter it (`GET /board?scopeId=`) and this client deliberately
+does not ask it to. The reason is not performance:
+
+**the local alarm queue is armed from the board.** A server-filtered board would
+arm the alarms of the scope currently on screen and silently drop every other
+one -- so opening "Работа" in the morning would disarm the reminder about the
+cable for the dacha, and nobody would find out until a date passed unremarked.
+Two smaller reasons point the same way: switching scopes is then instant and
+works with no signal, and there is still exactly one snapshot file rather than
+one per scope.
+
+`providers/scope_providers.dart` holds that decision and the filter
+(`projectsInScope`); the board and the archive both use it, and
+`boardReminderBridge` keeps reading the **unfiltered** list.
+
+### The switcher does not exist until it means something
+
+Every installation has exactly one scope the moment the migration runs, and a
+chip row offering a single choice is furniture. So `hasMultipleScopes` gates the
+switcher above the board *and* the "move to scope" item in the project menu:
+until a second scope is created, F7 is invisible. That is also what makes it
+free for someone who never wanted it.
+
+### The selection is an id, and it is resolved, not trusted
+
+`SettingsStore.readSelectedScopeId` returns a string written on a previous run.
+The scope it names can be gone -- deleted, or this database restored from a
+backup -- so `activeScope` resolves it against the live list and falls back to
+the first scope, which is the same default the server uses for a project created
+without one. "The scope I was looking at was deleted" is then an ordinary state
+instead of an empty board with no explanation.
+
+A failed *write* of that preference does not roll the choice back: the board
+jumping to another scope under the user's finger is a worse lie than the choice
+being forgotten by tomorrow.
+
+### What a move costs
+
+Moving a project between scopes is one `PATCH /projects/:id` and no re-read. It
+provably cannot disturb anything else -- task `position` orders tasks within a
+project, `isCurrent` is computed from those positions, and `archivedAt` is not
+in the payload -- so the row is spliced into whatever lists are on screen, the
+same way a rename is. It is also the one write in this app that shows a success
+message, because it makes the project disappear from the board it was performed
+on.
 
 ## Local reminders (F1)
 

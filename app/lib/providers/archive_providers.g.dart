@@ -8,8 +8,8 @@ part of 'archive_providers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// The archive, and the four writes that move a project between the board, the
-/// archive and nothing at all (F4).
+/// The archive, the four writes that move a project between the board, the
+/// archive and nothing at all (F4), and the rename that moves it nowhere (B6).
 ///
 /// ## Why archive and delete are two different things
 ///
@@ -41,12 +41,12 @@ part of 'archive_providers.dart';
 /// ([Board.applyProject], [ArchivedBoard.applyProject],
 /// [ProjectHeader.applyProject]) and costs no read at all.
 ///
-/// That invalidation is also what re-arms the alarms, with no scheduler call
-/// anywhere: the refreshed board no longer contains the archived project's
-/// blocked tasks, `boardReminderBridge` publishes the smaller target set, and
-/// the scheduler cancels what is no longer wanted. An archived project must stop
-/// nagging -- that is the point of archiving it -- and this is the only place
-/// that has to be true for it to happen.
+/// Either way the alarms follow, with no scheduler call anywhere: whatever
+/// changes the board -- an invalidation or a splice -- changes the target set,
+/// `boardReminderBridge` publishes it, and `reminderSync` re-arms. An archived
+/// project stops nagging because its blocked tasks are no longer on the board
+/// (that is what archiving *means*), and a renamed project's alarms start saying
+/// the new name because the notification text carries it.
 /// `GET /board?archived=true` -- the archive, in the same shape as the board.
 ///
 /// Not `keepAlive`, unlike [board]: the archive is a screen you visit, not the
@@ -63,8 +63,8 @@ part of 'archive_providers.dart';
 @ProviderFor(ArchivedBoard)
 final archivedBoardProvider = ArchivedBoardProvider._();
 
-/// The archive, and the four writes that move a project between the board, the
-/// archive and nothing at all (F4).
+/// The archive, the four writes that move a project between the board, the
+/// archive and nothing at all (F4), and the rename that moves it nowhere (B6).
 ///
 /// ## Why archive and delete are two different things
 ///
@@ -96,12 +96,12 @@ final archivedBoardProvider = ArchivedBoardProvider._();
 /// ([Board.applyProject], [ArchivedBoard.applyProject],
 /// [ProjectHeader.applyProject]) and costs no read at all.
 ///
-/// That invalidation is also what re-arms the alarms, with no scheduler call
-/// anywhere: the refreshed board no longer contains the archived project's
-/// blocked tasks, `boardReminderBridge` publishes the smaller target set, and
-/// the scheduler cancels what is no longer wanted. An archived project must stop
-/// nagging -- that is the point of archiving it -- and this is the only place
-/// that has to be true for it to happen.
+/// Either way the alarms follow, with no scheduler call anywhere: whatever
+/// changes the board -- an invalidation or a splice -- changes the target set,
+/// `boardReminderBridge` publishes it, and `reminderSync` re-arms. An archived
+/// project stops nagging because its blocked tasks are no longer on the board
+/// (that is what archiving *means*), and a renamed project's alarms start saying
+/// the new name because the notification text carries it.
 /// `GET /board?archived=true` -- the archive, in the same shape as the board.
 ///
 /// Not `keepAlive`, unlike [board]: the archive is a screen you visit, not the
@@ -116,8 +116,8 @@ final archivedBoardProvider = ArchivedBoardProvider._();
 /// for a second `GET /board?archived=true`.
 final class ArchivedBoardProvider
     extends $AsyncNotifierProvider<ArchivedBoard, List<BoardProject>> {
-  /// The archive, and the four writes that move a project between the board, the
-  /// archive and nothing at all (F4).
+  /// The archive, the four writes that move a project between the board, the
+  /// archive and nothing at all (F4), and the rename that moves it nowhere (B6).
   ///
   /// ## Why archive and delete are two different things
   ///
@@ -149,12 +149,12 @@ final class ArchivedBoardProvider
   /// ([Board.applyProject], [ArchivedBoard.applyProject],
   /// [ProjectHeader.applyProject]) and costs no read at all.
   ///
-  /// That invalidation is also what re-arms the alarms, with no scheduler call
-  /// anywhere: the refreshed board no longer contains the archived project's
-  /// blocked tasks, `boardReminderBridge` publishes the smaller target set, and
-  /// the scheduler cancels what is no longer wanted. An archived project must stop
-  /// nagging -- that is the point of archiving it -- and this is the only place
-  /// that has to be true for it to happen.
+  /// Either way the alarms follow, with no scheduler call anywhere: whatever
+  /// changes the board -- an invalidation or a splice -- changes the target set,
+  /// `boardReminderBridge` publishes it, and `reminderSync` re-arms. An archived
+  /// project stops nagging because its blocked tasks are no longer on the board
+  /// (that is what archiving *means*), and a renamed project's alarms start saying
+  /// the new name because the notification text carries it.
   /// `GET /board?archived=true` -- the archive, in the same shape as the board.
   ///
   /// Not `keepAlive`, unlike [board]: the archive is a screen you visit, not the
@@ -188,8 +188,8 @@ final class ArchivedBoardProvider
 
 String _$archivedBoardHash() => r'33698be63585b96ecb93ee373ba7cceaadf2260e';
 
-/// The archive, and the four writes that move a project between the board, the
-/// archive and nothing at all (F4).
+/// The archive, the four writes that move a project between the board, the
+/// archive and nothing at all (F4), and the rename that moves it nowhere (B6).
 ///
 /// ## Why archive and delete are two different things
 ///
@@ -221,12 +221,12 @@ String _$archivedBoardHash() => r'33698be63585b96ecb93ee373ba7cceaadf2260e';
 /// ([Board.applyProject], [ArchivedBoard.applyProject],
 /// [ProjectHeader.applyProject]) and costs no read at all.
 ///
-/// That invalidation is also what re-arms the alarms, with no scheduler call
-/// anywhere: the refreshed board no longer contains the archived project's
-/// blocked tasks, `boardReminderBridge` publishes the smaller target set, and
-/// the scheduler cancels what is no longer wanted. An archived project must stop
-/// nagging -- that is the point of archiving it -- and this is the only place
-/// that has to be true for it to happen.
+/// Either way the alarms follow, with no scheduler call anywhere: whatever
+/// changes the board -- an invalidation or a splice -- changes the target set,
+/// `boardReminderBridge` publishes it, and `reminderSync` re-arms. An archived
+/// project stops nagging because its blocked tasks are no longer on the board
+/// (that is what archiving *means*), and a renamed project's alarms start saying
+/// the new name because the notification text carries it.
 /// `GET /board?archived=true` -- the archive, in the same shape as the board.
 ///
 /// Not `keepAlive`, unlike [board]: the archive is a screen you visit, not the
@@ -310,7 +310,7 @@ final class ProjectLifecycleProvider
   }
 }
 
-String _$projectLifecycleHash() => r'9d73fe2a4a0c244c6dd6aa5ce3611ae7305a75e5';
+String _$projectLifecycleHash() => r'7e0fee052dbc066b1f177bbc6f1e1871e1b5e6e4';
 
 /// Create, rename, archive, unarchive, delete: every write a *project* has.
 ///

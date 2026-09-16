@@ -59,12 +59,20 @@ class ProjectApi {
 
   /// `POST /projects`. Answers 201 with the new row.
   ///
-  /// `name` is the only field there is: `createProjectSchema` accepts nothing
-  /// else, and a project's body is its notes, not a description column.
-  Future<Project> createProject({required String name}) async {
+  /// `name` and, since F7, which scope it lands in. There is still no
+  /// description: a project's body is its notes, not a column.
+  ///
+  /// [scopeId] is optional on the wire -- the server falls back to the first
+  /// scope by position -- but the client always sends it, because the board the
+  /// project is being created from is already showing one specific scope and
+  /// landing it anywhere else would be a surprise.
+  Future<Project> createProject({
+    required String name,
+    String? scopeId,
+  }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/projects',
-      body: <String, dynamic>{'name': name},
+      body: <String, dynamic>{'name': name, 'scopeId': ?scopeId},
     );
     return Project.fromJson(json);
   }
@@ -91,6 +99,31 @@ class ProjectApi {
     final json = await _client.patch<Map<String, dynamic>>(
       '/projects/$projectId',
       body: <String, dynamic>{'name': name},
+    );
+    return Project.fromJson(json);
+  }
+
+  /// `PATCH /projects/:id` again, with the other field it grew in F7: which
+  /// scope the project belongs to.
+  ///
+  /// A separate method rather than optional parameters on [renameProject],
+  /// because the two are different intentions with different call sites -- and
+  /// because sending both in one request is never what the UI wants: renaming
+  /// happens in a text field, moving happens in a picker.
+  ///
+  /// **The move has no side effects on anything else**, which is what lets the
+  /// caller splice the answer into the lists it already holds instead of
+  /// re-reading the board: tasks keep their positions (those order tasks within
+  /// a *project*, which did not change), `isCurrent` is computed from those same
+  /// positions, and `archivedAt` is not in the payload -- so a move cannot take
+  /// a project off the board or bring it back. Same argument as the rename.
+  Future<Project> moveProjectToScope(
+    String projectId, {
+    required String scopeId,
+  }) async {
+    final json = await _client.patch<Map<String, dynamic>>(
+      '/projects/$projectId',
+      body: <String, dynamic>{'scopeId': scopeId},
     );
     return Project.fromJson(json);
   }

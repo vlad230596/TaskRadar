@@ -5,6 +5,7 @@ import 'package:taskradar/api/auth_api.dart';
 import 'package:taskradar/api/board_api.dart';
 import 'package:taskradar/api/patch_field.dart';
 import 'package:taskradar/api/project_api.dart';
+import 'package:taskradar/api/scope_api.dart';
 import 'package:taskradar/domain/reminders.dart';
 import 'package:taskradar/domain/task_reorder.dart';
 import 'package:taskradar/models/project.dart';
@@ -535,5 +536,80 @@ void main() {
     // catches.
     // ignore: avoid_print
     print('live project lifecycle: archived, unarchived, deleted $projectId');
+  }, skip: skip);
+
+  test('the live scope contract: create, move a project, refuse, delete', () async {
+    // F7. The one part of scopes no fake can settle: what the real server does
+    // when a scope is asked to disappear while a project still points at it.
+    await openScratchProject();
+    final scopes = ScopeApi(client);
+
+    final before = await scopes.fetchScopes();
+    expect(before, isNotEmpty, reason: 'the migration seeds one scope');
+    expect(
+      before.map((s) => s.position).toList(),
+      orderedEquals(<double>[...before.map((s) => s.position)]..sort()),
+      reason: 'GET /scopes is ordered by position',
+    );
+
+    final scratch = await scopes.createScope(
+      name: 'Проверка скоупа ${DateTime.now().toIso8601String()}',
+    );
+    var cleanedUp = false;
+    addTearDown(() async {
+      if (cleanedUp) return;
+      try {
+        await scopes.deleteScope(scratch.id);
+      } catch (error) {
+        // ignore: avoid_print
+        print('live: FAILED to remove scratch scope ${scratch.id}: $error');
+      }
+    });
+
+    // Appended at the end, and carrying a real position rather than whatever
+    // the client guessed -- `position` is a Float on the wire for the same
+    // reason `Task.position` is, so a client that declared `int` would truncate
+    // a bisected value here too.
+    expect(scratch.position, greaterThan(before.last.position));
+    expect(scratch.position, isA<double>());
+
+    // The scratch project moves into it, with no name in the payload.
+    final moved = await api.moveProjectToScope(projectId, scopeId: scratch.id);
+    expect(moved.scopeId, scratch.id);
+    expect(
+      moved.name,
+      contains('Проверка записи'),
+      reason: 'a move must not rewrite the name',
+    );
+
+    // ...and now the scope cannot be deleted, which is the whole guard.
+    await expectLater(
+      scopes.deleteScope(scratch.id),
+      throwsA(
+        isA<ApiException>()
+            .having((e) => e.statusCode, 'statusCode', 409)
+            .having((e) => e.message, 'message', contains('projects')),
+      ),
+    );
+
+    // An unknown scope is a 404 about the scope, not a 500 about a constraint.
+    await expectLater(
+      api.moveProjectToScope(projectId, scopeId: 'scope_does_not_exist'),
+      throwsA(
+        isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404),
+      ),
+    );
+
+    // Move the project back out, and the scope deletes.
+    await api.moveProjectToScope(projectId, scopeId: before.first.id);
+    await scopes.deleteScope(scratch.id);
+    cleanedUp = true;
+
+    final after = await scopes.fetchScopes();
+    expect(after.map((s) => s.id), isNot(contains(scratch.id)));
+    expect(after.map((s) => s.id), containsAll(before.map((s) => s.id)));
+
+    // ignore: avoid_print
+    print('live scopes: created, moved a project in and out, 409 and 404 seen');
   }, skip: skip);
 }

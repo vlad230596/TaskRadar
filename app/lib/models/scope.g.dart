@@ -1,25 +1,23 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'project.dart';
+part of 'scope.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator
 // **************************************************************************
 
-_Project _$ProjectFromJson(Map<String, dynamic> json) => _Project(
+_Scope _$ScopeFromJson(Map<String, dynamic> json) => _Scope(
   id: json['id'] as String,
   name: json['name'] as String,
-  scopeId: json['scopeId'] as String,
-  archivedAt: json['archivedAt'] as String?,
+  position: (json['position'] as num).toDouble(),
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,
 );
 
-Map<String, dynamic> _$ProjectToJson(_Project instance) => <String, dynamic>{
+Map<String, dynamic> _$ScopeToJson(_Scope instance) => <String, dynamic>{
   'id': instance.id,
   'name': instance.name,
-  'scopeId': instance.scopeId,
-  'archivedAt': instance.archivedAt,
+  'position': instance.position,
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
 };

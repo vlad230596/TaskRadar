@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../api/auth_api.dart';
 import '../api/board_api.dart';
 import '../api/project_api.dart';
+import '../api/scope_api.dart';
 import '../storage/board_snapshot_store.dart';
 import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
@@ -58,3 +59,8 @@ BoardApi boardApi(Ref ref) => BoardApi(ref.watch(apiClientProvider));
 /// be rebuilt per screen would cost an allocation to achieve nothing.
 @Riverpod(keepAlive: true)
 ProjectApi projectApi(Ref ref) => ProjectApi(ref.watch(apiClientProvider));
+
+/// The scope endpoints (F7). Same shape and same reasoning as [projectApi]: a
+/// stateless wrapper around the shared [ApiClient].
+@Riverpod(keepAlive: true)
+ScopeApi scopeApi(Ref ref) => ScopeApi(ref.watch(apiClientProvider));

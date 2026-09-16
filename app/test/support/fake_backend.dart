@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:taskradar/api/api_client.dart';
 
+import 'fixtures.dart';
+
 /// A stand-in for the TaskRadar backend, wired in at the lowest layer dio
 /// exposes: its [HttpClientAdapter].
 ///
@@ -33,8 +35,23 @@ class FakeBackend {
   RequestOptions get lastRequest => requests.last;
 
   /// Convenience for the common case of one canned answer.
-  void alwaysRespond(Object? body, {int statusCode = 200}) {
-    responder = (_) => jsonResponse(body, statusCode: statusCode);
+  ///
+  /// The scope list (F7) is the one exception, and it is built in rather than
+  /// left to each caller: every signed-in screen now reads `GET /scopes`, and a
+  /// blunt "answer everything with this board" would hand the scope parser an
+  /// array of projects. That failure is not interesting to any test that does
+  /// not care about scopes -- it would just make them all fail for the same
+  /// irrelevant reason -- so the default is one scope, which is also what an
+  /// installation looks like right after the migration (and keeps the switcher
+  /// hidden, since it only appears with two or more).
+  ///
+  /// Pass [scopes] to serve a different list.
+  void alwaysRespond(Object? body, {int statusCode = 200, List<dynamic>? scopes}) {
+    final scopeBody = scopes ?? defaultScopesJson();
+    responder = (options) {
+      if (options.path.startsWith('/scopes')) return jsonResponse(scopeBody);
+      return jsonResponse(body, statusCode: statusCode);
+    };
   }
 
   /// Awaited before every response, when set.

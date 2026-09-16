@@ -21,7 +21,7 @@ Future<String?> askForProjectName(
 }) {
   return showDialog<String>(
     context: context,
-    builder: (_) => _ProjectNameDialog(
+    builder: (_) => _NameDialog(
       title: title,
       confirmLabel: confirmLabel,
       initialName: initialName,
@@ -30,8 +30,31 @@ Future<String?> askForProjectName(
   );
 }
 
-class _ProjectNameDialog extends StatefulWidget {
-  const _ProjectNameDialog({
+/// The same question about a scope (F7).
+///
+/// The same dialog, not a copy of it: "name this thing, non-empty, trimmed" is
+/// one rule, and the parts that are easy to get subtly wrong -- disposing the
+/// controller only when the dialog is actually gone, pre-selecting the old name
+/// so a rename is one gesture, keeping the confirm button disabled instead of
+/// showing a validation message -- are exactly the parts nobody wants two
+/// copies of. Only the wording differs.
+Future<String?> askForScopeName(
+  BuildContext context, {
+  required String title,
+  required String confirmLabel,
+  String initialName = '',
+}) {
+  return askForProjectName(
+    context,
+    title: title,
+    confirmLabel: confirmLabel,
+    initialName: initialName,
+    hint: 'Работа, Дача, Личное…',
+  );
+}
+
+class _NameDialog extends StatefulWidget {
+  const _NameDialog({
     required this.title,
     required this.confirmLabel,
     required this.initialName,
@@ -44,10 +67,10 @@ class _ProjectNameDialog extends StatefulWidget {
   final String hint;
 
   @override
-  State<_ProjectNameDialog> createState() => _ProjectNameDialogState();
+  State<_NameDialog> createState() => _NameDialogState();
 }
 
-class _ProjectNameDialogState extends State<_ProjectNameDialog> {
+class _NameDialogState extends State<_NameDialog> {
   late final TextEditingController _controller = TextEditingController(
     text: widget.initialName,
   )..selection = TextSelection(

@@ -599,6 +599,60 @@ void main() {
     });
   });
 
+  group('scopes (F7)', () {
+    testWidgets('with one scope there is nothing to move the project to', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+
+      await tester.tap(find.byTooltip('Действия с проектом'));
+      await tester.pumpAndSettle();
+
+      // A picker with one option, already selected, is not a choice.
+      expect(find.text('Переместить в скоуп'), findsNothing);
+      expect(find.text('Переименовать'), findsOneWidget);
+    });
+
+    testWidgets('moving the project to another scope sends only the scope', (
+      tester,
+    ) async {
+      // Named unlike the project itself ('Дача'), so that tapping the scope in
+      // the picker cannot accidentally hit the project's own title.
+      final personal = server.addScope(name: 'Личное');
+      await pumpProject(tester);
+
+      await tester.tap(find.byTooltip('Действия с проектом'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Переместить в скоуп'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Личное'));
+      await settle(tester);
+
+      expect(server.projects[projectId]!['scopeId'], personal);
+      // A move is not a rename: the name must not travel with it, or every move
+      // would rewrite a string nobody touched.
+      expect(server.patches.last.body, <String, dynamic>{'scopeId': personal});
+    });
+
+    testWidgets('and says where it went, because it leaves the board', (
+      tester,
+    ) async {
+      server.addScope(name: 'Личное');
+      await pumpProject(tester);
+
+      await tester.tap(find.byTooltip('Действия с проектом'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Переместить в скоуп'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Личное'));
+      await settle(tester);
+
+      // The one write in this app whose success is worth a snackbar: it makes
+      // the project disappear from the board it was opened from.
+      expect(find.textContaining('теперь в скоупе «Личное»'), findsOneWidget);
+    });
+  });
+
   group('desktop layout (F6)', () {
     /// A window wide enough for the two-pane layout. Must be called *before*
     /// `pumpProject`: the layout is a function of the window width.

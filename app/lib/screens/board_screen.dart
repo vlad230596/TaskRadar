@@ -6,14 +6,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error_message.dart';
 import '../models/board_project.dart';
 import '../navigation/app_routes.dart';
+import 'scopes_screen.dart';
 import '../providers/archive_providers.dart';
 import '../providers/board_providers.dart';
+import '../models/scope.dart';
+import '../providers/scope_providers.dart';
 import '../providers/session_provider.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_card.dart';
 import '../widgets/project_column.dart';
 import '../widgets/project_name_dialog.dart';
+import '../widgets/scope_switcher.dart';
 
 /// The board: every active project.
 ///
@@ -60,6 +64,10 @@ class BoardScreen extends ConsumerWidget {
     final view = ref.watch(boardViewProvider);
     final refreshing = view is BoardReady && view.isRefreshing;
 
+    // Which board is on screen (F7). Null until the scope list has loaded,
+    // which reads as "show everything" -- see `projectsInScope`.
+    final scope = ref.watch(activeScopeProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('TaskRadar'),
@@ -102,6 +110,14 @@ class BoardScreen extends ConsumerWidget {
                 ),
               ),
               PopupMenuItem<_BoardMenuAction>(
+                value: _BoardMenuAction.scopes,
+                child: ListTile(
+                  leading: Icon(Icons.workspaces_outline),
+                  title: Text(ScopesScreen.title),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuItem<_BoardMenuAction>(
                 value: _BoardMenuAction.settings,
                 child: ListTile(
                   leading: Icon(Icons.settings_outlined),
@@ -131,39 +147,52 @@ class BoardScreen extends ConsumerWidget {
         icon: const Icon(Icons.add),
         label: const Text('Проект'),
       ),
-      body: RefreshIndicator(
-        onRefresh: () => ref.read(boardProvider.notifier).refresh(),
-        child: switch (view) {
-          BoardLoading() => const _Message(
-            icon: null,
-            title: 'Загружаем доску…',
-            body:
-                'Если это первый запуск на этом устройстве, локального снимка '
-                'ещё нет и приходится ждать сервер.',
-          ),
+      // The switcher sits above the scrollable rather than inside it: it is
+      // the answer to "which board am I looking at", and a control that scrolls
+      // away leaves that question unanswered exactly when a long board makes it
+      // worth asking. It draws nothing at all until a second scope exists.
+      body: Column(
+        children: [
+          const ScopeSwitcher(),
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () => ref.read(boardProvider.notifier).refresh(),
+              child: switch (view) {
+                BoardLoading() => const _Message(
+                  icon: null,
+                  title: 'Загружаем доску…',
+                  body:
+                      'Если это первый запуск на этом устройстве, локального снимка '
+                      'ещё нет и приходится ждать сервер.',
+                ),
 
-          BoardUnavailable(:final error) => _Message(
-            icon: Icons.cloud_off,
-            title: 'Не удалось загрузить доску',
-            body:
-                '${describeApiError(error)}\n\nЛокального снимка тоже нет — '
-                'показать нечего. Потяните вниз или нажмите «Повторить».',
-            action: _RetryButton(),
-          ),
+                BoardUnavailable(:final error) => _Message(
+                  icon: Icons.cloud_off,
+                  title: 'Не удалось загрузить доску',
+                  body:
+                      '${describeApiError(error)}\n\nЛокального снимка тоже нет — '
+                      'показать нечего. Потяните вниз или нажмите «Повторить».',
+                  action: _RetryButton(),
+                ),
 
-          BoardReady() => _BoardList(view: view),
-        },
+                BoardReady() => _BoardList(view: view, scope: scope),
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-enum _BoardMenuAction { archive, settings, signOut }
+enum _BoardMenuAction { archive, scopes, settings, signOut }
 
 void _onMenu(BuildContext context, WidgetRef ref, _BoardMenuAction action) {
   switch (action) {
     case _BoardMenuAction.archive:
       AppRoutes.openArchive(context);
+    case _BoardMenuAction.scopes:
+      AppRoutes.openScopes(context);
     case _BoardMenuAction.settings:
       AppRoutes.openSettings(context);
     case _BoardMenuAction.signOut:
@@ -189,29 +218,45 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
   );
   if (name == null || !context.mounted) return;
 
+  // Into the scope the board is currently showing (F7). A project that landed
+  // somewhere the user is not looking would be the worst possible answer to
+  // "where did it go".
+  final scopeId = ref.read(activeScopeProvider)?.id;
+
   String? createdId;
-  final ok = await runMutation(
-    context,
-    () async {
-      createdId = (await ref
-              .read(projectLifecycleProvider.notifier)
-              .create(name))
-          .id;
-    },
-    failure: 'Не удалось создать проект.',
-  );
+  final ok = await runMutation(context, () async {
+    createdId =
+        (await ref
+                .read(projectLifecycleProvider.notifier)
+                .create(name, scopeId: scopeId))
+            .id;
+  }, failure: 'Не удалось создать проект.');
 
   if (!ok || createdId == null || !context.mounted) return;
   await AppRoutes.openProject(context, projectId: createdId!);
 }
 
 class _BoardList extends ConsumerWidget {
-  const _BoardList({required this.view});
+  const _BoardList({required this.view, required this.scope});
 
   final BoardReady view;
 
+  /// The scope being shown, or null while the list of them is still loading.
+  final Scope? scope;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // F7: filtered here, on data the client already has. The unfiltered
+    // `view.projects` stays the source for the reminder queue -- see the long
+    // note in `providers/scope_providers.dart` about why the board is never
+    // filtered on the server.
+    final projects = projectsInScope(view.projects, scope);
+
+    // "Nothing here" and "nothing here *in this scope*" are different facts and
+    // need different sentences: one means the app is empty, the other means the
+    // projects are one tap away in another scope.
+    final hiddenElsewhere = view.projects.length - projects.length;
+
     return CustomScrollView(
       // Without this the list does not scroll when it is shorter than the
       // viewport, and a pull-to-refresh on a two-project board does nothing.
@@ -220,7 +265,7 @@ class _BoardList extends ConsumerWidget {
         if (view.isStale || view.refreshError != null)
           SliverToBoxAdapter(child: _StaleBanner(view: view)),
 
-        if (view.isEmpty)
+        if (projects.isEmpty && hiddenElsewhere == 0)
           const SliverFillRemaining(
             hasScrollBody: false,
             child: _Message(
@@ -232,21 +277,34 @@ class _BoardList extends ConsumerWidget {
               scrollable: false,
             ),
           )
+        else if (projects.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: _Message(
+              icon: Icons.workspaces_outline,
+              title: 'В этом скоупе пусто',
+              body:
+                  'Здесь пока нет проектов, а в остальных скоупах их '
+                  '$hiddenElsewhere. Кнопка «Проект» внизу заведёт новый '
+                  'именно здесь.',
+              scrollable: false,
+            ),
+          )
         else if (isWideLayout(context))
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
             sliver: SliverToBoxAdapter(
               child: _ColumnGrid(
-                projects: view.projects,
+                projects: projects,
                 onOpen: (entry) => _openProject(context, entry),
               ),
             ),
           )
         else
           SliverList.builder(
-            itemCount: view.projects.length,
+            itemCount: projects.length,
             itemBuilder: (context, index) {
-              final entry = view.projects[index];
+              final entry = projects[index];
               return ProjectCard(
                 key: ValueKey<String>(entry.project.id),
                 entry: entry,

@@ -30,6 +30,18 @@ abstract class Project with _$Project {
     required String id,
     required String name,
 
+    /// Which scope this project belongs to (F7). Required on the wire and
+    /// required here: the board shows exactly one scope at a time, so a project
+    /// without one could not be drawn anywhere.
+    ///
+    /// Only ever compared, never parsed. The client does **not** filter the
+    /// board on the server (`GET /board?scopeId=`) even though it could -- it
+    /// fetches every scope and filters locally, because the local reminder
+    /// queue is armed from the board and a server-filtered board would stop
+    /// raising reminders for whichever scopes are not on screen. See
+    /// `../providers/scope_providers.dart`.
+    required String scopeId,
+
     /// Null means "active". Non-null is the ISO instant it was archived at.
     required String? archivedAt,
     required String createdAt,

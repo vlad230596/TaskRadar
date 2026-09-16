@@ -64,6 +64,47 @@ void main() {
     await settle(tester);
   }
 
+  group('scopes (F7)', () {
+    testWidgets('the archive shows only the scope the board is showing', (
+      tester,
+    ) async {
+      final dacha = server.addScope(name: 'Дача');
+      server.addProject(
+        name: 'Старый забор',
+        scopeId: dacha,
+        archivedAt: '2026-01-01T00:00:00.000Z',
+      );
+      server.addProject(
+        name: 'Старый бэкенд',
+        archivedAt: '2026-01-01T00:00:00.000Z',
+      );
+
+      await pump(tester);
+
+      // Otherwise the archive would be the one screen in the app where the
+      // switcher above the board does not apply.
+      expect(find.text('Старый бэкенд'), findsOneWidget);
+      expect(find.text('Старый забор'), findsNothing);
+      expect(find.text('Архив · Основной'), findsOneWidget);
+    });
+
+    testWidgets('an archive that is empty only in this scope says which', (
+      tester,
+    ) async {
+      final dacha = server.addScope(name: 'Дача');
+      server.addProject(
+        name: 'Старый забор',
+        scopeId: dacha,
+        archivedAt: '2026-01-01T00:00:00.000Z',
+      );
+
+      await pump(tester);
+
+      expect(find.text('В этом скоупе архив пуст'), findsOneWidget);
+      expect(find.text('Архив пуст'), findsNothing);
+    });
+  });
+
   group('the archive list', () {
     testWidgets('an empty archive says where projects come from', (
       tester,

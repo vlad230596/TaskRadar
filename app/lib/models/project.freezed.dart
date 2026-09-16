@@ -15,7 +15,17 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Project {
 
- String get id; String get name;/// Null means "active". Non-null is the ISO instant it was archived at.
+ String get id; String get name;/// Which scope this project belongs to (F7). Required on the wire and
+/// required here: the board shows exactly one scope at a time, so a project
+/// without one could not be drawn anywhere.
+///
+/// Only ever compared, never parsed. The client does **not** filter the
+/// board on the server (`GET /board?scopeId=`) even though it could -- it
+/// fetches every scope and filters locally, because the local reminder
+/// queue is armed from the board and a server-filtered board would stop
+/// raising reminders for whichever scopes are not on screen. See
+/// `../providers/scope_providers.dart`.
+ String get scopeId;/// Null means "active". Non-null is the ISO instant it was archived at.
  String? get archivedAt; String get createdAt; String get updatedAt;
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
@@ -29,16 +39,16 @@ $ProjectCopyWith<Project> get copyWith => _$ProjectCopyWithImpl<Project>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,archivedAt,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'Project(id: $id, name: $name, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -49,7 +59,7 @@ abstract mixin class $ProjectCopyWith<$Res>  {
   factory $ProjectCopyWith(Project value, $Res Function(Project) _then) = _$ProjectCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String? archivedAt, String createdAt, String updatedAt
+ String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt
 });
 
 
@@ -66,10 +76,11 @@ class _$ProjectCopyWithImpl<$Res>
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,scopeId: null == scopeId ? _self.scopeId : scopeId // ignore: cast_nullable_to_non_nullable
 as String,archivedAt: freezed == archivedAt ? _self.archivedAt : archivedAt // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
@@ -158,10 +169,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? archivedAt,  String createdAt,  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Project() when $default != null:
-return $default(_that.id,_that.name,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -179,10 +190,10 @@ return $default(_that.id,_that.name,_that.archivedAt,_that.createdAt,_that.updat
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? archivedAt,  String createdAt,  String updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _Project():
-return $default(_that.id,_that.name,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -199,10 +210,10 @@ return $default(_that.id,_that.name,_that.archivedAt,_that.createdAt,_that.updat
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? archivedAt,  String createdAt,  String updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _Project() when $default != null:
-return $default(_that.id,_that.name,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -214,11 +225,22 @@ return $default(_that.id,_that.name,_that.archivedAt,_that.createdAt,_that.updat
 @JsonSerializable()
 
 class _Project implements Project {
-  const _Project({required this.id, required this.name, required this.archivedAt, required this.createdAt, required this.updatedAt});
+  const _Project({required this.id, required this.name, required this.scopeId, required this.archivedAt, required this.createdAt, required this.updatedAt});
   factory _Project.fromJson(Map<String, dynamic> json) => _$ProjectFromJson(json);
 
 @override final  String id;
 @override final  String name;
+/// Which scope this project belongs to (F7). Required on the wire and
+/// required here: the board shows exactly one scope at a time, so a project
+/// without one could not be drawn anywhere.
+///
+/// Only ever compared, never parsed. The client does **not** filter the
+/// board on the server (`GET /board?scopeId=`) even though it could -- it
+/// fetches every scope and filters locally, because the local reminder
+/// queue is armed from the board and a server-filtered board would stop
+/// raising reminders for whichever scopes are not on screen. See
+/// `../providers/scope_providers.dart`.
+@override final  String scopeId;
 /// Null means "active". Non-null is the ISO instant it was archived at.
 @override final  String? archivedAt;
 @override final  String createdAt;
@@ -237,16 +259,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,archivedAt,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'Project(id: $id, name: $name, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -257,7 +279,7 @@ abstract mixin class _$ProjectCopyWith<$Res> implements $ProjectCopyWith<$Res> {
   factory _$ProjectCopyWith(_Project value, $Res Function(_Project) _then) = __$ProjectCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String? archivedAt, String createdAt, String updatedAt
+ String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt
 });
 
 
@@ -274,10 +296,11 @@ class __$ProjectCopyWithImpl<$Res>
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_Project(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
+as String,scopeId: null == scopeId ? _self.scopeId : scopeId // ignore: cast_nullable_to_non_nullable
 as String,archivedAt: freezed == archivedAt ? _self.archivedAt : archivedAt // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable

@@ -42,6 +42,19 @@ class FakeProjectBackend {
 
   final Map<String, Map<String, dynamic>> projects =
       <String, Map<String, dynamic>>{};
+
+  /// Scopes (F7), in the order `GET /scopes` returns them. Seeded with one, so
+  /// a test that does not care about scopes behaves exactly as it did before --
+  /// the switcher only appears from two up.
+  final List<Map<String, dynamic>> scopes = <Map<String, dynamic>>[
+    <String, dynamic>{
+      'id': 'scope_main',
+      'name': 'Основной',
+      'position': 1000,
+      'createdAt': '2026-08-01T09:00:00.000Z',
+      'updatedAt': '2026-08-01T09:00:00.000Z',
+    },
+  ];
   final List<Map<String, dynamic>> tasks = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> notes = <Map<String, dynamic>>[];
 
@@ -67,16 +80,30 @@ class FakeProjectBackend {
 
   // --- seeding ---------------------------------------------------------------
 
+  String addScope({required String name, String? id, num? position}) {
+    final scopeId = id ?? _id('scp');
+    scopes.add(<String, dynamic>{
+      'id': scopeId,
+      'name': name,
+      'position': position ?? (scopes.length + 1) * positionGap,
+      'createdAt': '2026-08-01T09:00:00.000Z',
+      'updatedAt': '2026-08-01T09:00:00.000Z',
+    });
+    return scopeId;
+  }
+
   String addProject({
     required String name,
     String? id,
     String? archivedAt,
+    String scopeId = 'scope_main',
     String createdAt = '2026-08-01T09:00:00.000Z',
   }) {
     final projectId = id ?? _id('prj');
     projects[projectId] = <String, dynamic>{
       'id': projectId,
       'name': name,
+      'scopeId': scopeId,
       'archivedAt': archivedAt,
       'createdAt': createdAt,
       'updatedAt': createdAt,
@@ -153,6 +180,96 @@ class FakeProjectBackend {
   // --- the routes ------------------------------------------------------------
 
   void _install() {
+    // --- scopes (F7) -------------------------------------------------------
+    //
+    // Enough of the real routes for the switcher, the scopes screen and the
+    // "move this project" picker to be exercised end to end: order, the append
+    // on create, the neighbour-based reorder, and the two 409s that the guard
+    // (`backend/src/domain/scopeDeleteGuard.ts`) answers with.
+
+    backend.on('GET', '/scopes', (match) {
+      return jsonResponse(_scopesInOrder());
+    });
+
+    backend.on('POST', '/scopes', (match) {
+      final name = (match.body['name'] as String?)?.trim() ?? '';
+      if (name.isEmpty) return _error(400, 'name is required');
+      final id = addScope(name: name, position: _lastScopePosition() + positionGap);
+      return jsonResponse(_scope(id), statusCode: 201);
+    });
+
+    // Before '/scopes/:id' so the longer path wins.
+    backend.on('PATCH', '/scopes/:id/position', (match) {
+      final scope = _scope(match.params['id']!);
+      if (scope == null) return _notFound('Scope');
+
+      final beforeId = match.body['beforeScopeId'] as String?;
+      final afterId = match.body['afterScopeId'] as String?;
+      if (beforeId == scope['id'] || afterId == scope['id']) {
+        return _error(400, 'A scope cannot be positioned relative to itself');
+      }
+
+      final before = beforeId == null ? null : _scope(beforeId);
+      final after = afterId == null ? null : _scope(afterId);
+      if ((beforeId != null && before == null) || (afterId != null && after == null)) {
+        return _error(400, 'Neighbor scope was not found');
+      }
+
+      var beforePosition = (before?['position'] as num?)?.toDouble();
+      var afterPosition = (after?['position'] as num?)?.toDouble();
+
+      var position = _between(beforePosition, afterPosition);
+      if (position == null) {
+        // Precision between those two neighbours is gone: renumber every scope
+        // with fresh gaps and place it again -- the same fallback the real
+        // route has, and the reason the client re-reads the list after a move
+        // instead of trusting the one row it gets back.
+        var next = positionGap;
+        for (final row in _scopesInOrder()) {
+          row['position'] = next;
+          next += positionGap;
+        }
+        beforePosition = (before?['position'] as num?)?.toDouble();
+        afterPosition = (after?['position'] as num?)?.toDouble();
+        position = _between(beforePosition, afterPosition);
+      }
+
+      scope['position'] = position;
+      return jsonResponse(scope);
+    });
+
+    backend.on('PATCH', '/scopes/:id', (match) {
+      final scope = _scope(match.params['id']!);
+      if (scope == null) return _notFound('Scope');
+
+      patches.add((path: match.options.path, body: match.body));
+
+      final raw = match.body['name'];
+      if (raw is! String || raw.trim().isEmpty) {
+        return _error(400, 'name is required');
+      }
+      scope['name'] = raw.trim();
+      return jsonResponse(scope);
+    });
+
+    backend.on('DELETE', '/scopes/:id', (match) {
+      final id = match.params['id']!;
+      final scope = _scope(id);
+      if (scope == null) return _notFound('Scope');
+
+      // Archived projects count, exactly as the real guard counts them.
+      final holds = projects.values.any((project) => project['scopeId'] == id);
+      if (holds) {
+        return _error(409, 'Scope still has projects; move or delete them first');
+      }
+      if (scopes.length <= 1) {
+        return _error(409, 'The last scope cannot be deleted');
+      }
+
+      scopes.removeWhere((s) => s['id'] == id);
+      return jsonResponse(null, statusCode: 204);
+    });
+
     backend.on('GET', '/board', (match) {
       final archived = match.options.queryParameters['archived'] == 'true';
 
@@ -185,8 +302,17 @@ class FakeProjectBackend {
       final name = (match.body['name'] as String).trim();
       if (name.isEmpty) return _error(400, 'name is required');
 
+      // F7: the scope the client named, or the first one -- the same fallback
+      // the real route has (`getDefaultScopeOrThrow`), and the same 404 for a
+      // scope that does not exist.
+      final requestedScope = match.body['scopeId'] as String?;
+      if (requestedScope != null && _scope(requestedScope) == null) {
+        return _notFound('Scope');
+      }
+
       final id = addProject(
         name: name,
+        scopeId: requestedScope ?? scopes.first['id'] as String,
         // Later than every seeded project, so the new row sorts last exactly as
         // `orderBy: createdAt asc` puts it on the real board.
         createdAt: '2027-01-01T00:00:00.000Z',
@@ -211,12 +337,29 @@ class FakeProjectBackend {
 
       patches.add((path: match.options.path, body: match.body));
 
-      final raw = match.body['name'];
-      if (raw is! String || raw.trim().isEmpty) {
-        return _error(400, 'name is required');
+      // F7: both fields are optional and at least one is required -- the shape
+      // the route grew when a project became movable between scopes.
+      if (match.body.isEmpty) {
+        return _error(400, 'At least one field must be provided');
       }
 
-      project['name'] = raw.trim();
+      if (match.body.containsKey('name')) {
+        final raw = match.body['name'];
+        if (raw is! String || raw.trim().isEmpty) {
+          return _error(400, 'name is required');
+        }
+        project['name'] = raw.trim();
+      }
+
+      if (match.body.containsKey('scopeId')) {
+        final raw = match.body['scopeId'];
+        if (raw is! String || raw.isEmpty) {
+          return _error(400, 'scopeId is required');
+        }
+        if (_scope(raw) == null) return _notFound('Scope');
+        project['scopeId'] = raw;
+      }
+
       project['updatedAt'] = renamedAtStamp;
       return jsonResponse(project);
     });
@@ -481,6 +624,30 @@ class FakeProjectBackend {
   String? currentTaskId(String projectId) {
     for (final task in _annotated(projectId)) {
       if (task['isCurrent'] == true) return task['id'] as String;
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _scopesInOrder() {
+    final ordered = <Map<String, dynamic>>[...scopes];
+    ordered.sort(
+      (a, b) => (a['position'] as num).compareTo(b['position'] as num),
+    );
+    return ordered;
+  }
+
+  double _lastScopePosition() {
+    var last = 0.0;
+    for (final scope in scopes) {
+      final position = (scope['position'] as num).toDouble();
+      if (position > last) last = position;
+    }
+    return last;
+  }
+
+  Map<String, dynamic>? _scope(String id) {
+    for (final scope in scopes) {
+      if (scope['id'] == id) return scope;
     }
     return null;
   }

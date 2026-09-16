@@ -24,6 +24,15 @@ Future<bool> runMutation(
   BuildContext context,
   Future<void> Function() action, {
   required String failure,
+  /// Shown when the write succeeds. Normally null, and that is the rule rather
+  /// than laziness: almost every write in this app is optimistic, so success is
+  /// already visible as the thing the user asked for, and a snackbar saying so
+  /// would be an interruption reporting what is on screen.
+  ///
+  /// The exception is a write whose success makes something *disappear* from
+  /// the screen it was performed on -- moving a project to another scope (F7).
+  /// There the honest report is where it went.
+  String? success,
 }) async {
   // Resolved before the await: after it, this widget may be gone and looking up
   // an ancestor through a dead element is the `use_build_context_synchronously`
@@ -33,6 +42,11 @@ Future<bool> runMutation(
 
   try {
     await action();
+    if (success != null) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(success)));
+    }
     return true;
   } catch (error) {
     messenger

@@ -5,6 +5,7 @@ import '../api/api_error_message.dart';
 import '../domain/project_summary.dart';
 import '../models/board_project.dart';
 import '../providers/archive_providers.dart';
+import '../providers/scope_providers.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_name_dialog.dart';
 
@@ -31,26 +32,48 @@ class ArchiveScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final archive = ref.watch(archivedBoardProvider);
 
+    // The archive follows the switcher (F7). An archived project keeps the
+    // scope it had, so showing every scope's archive here while the board shows
+    // one would make this the only screen in the app where the switcher does
+    // not apply -- and the reason to open the archive is almost always "what
+    // else was there in *this* part of my life".
+    final scope = ref.watch(activeScopeProvider);
+    final scopeName = scope?.name;
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Архив')),
+      appBar: AppBar(
+        title: Text(
+          scopeName == null || !ref.watch(hasMultipleScopesProvider)
+              ? 'Архив'
+              : 'Архив · $scopeName',
+        ),
+      ),
       body: RefreshIndicator(
         onRefresh: () async => ref.invalidate(archivedBoardProvider),
         child: switch (archive) {
-          AsyncData(:final value) when value.isEmpty => const _Message(
-            icon: Icons.inventory_2_outlined,
-            title: 'Архив пуст',
-            body:
-                'Проект попадает сюда из его собственного экрана — «В архив» '
-                'в меню сверху. С доски он при этом исчезает, а напоминания '
-                'его задач перестают приходить.',
-          ),
+          AsyncData(:final value) when projectsInScope(value, scope).isEmpty =>
+            _Message(
+              icon: Icons.inventory_2_outlined,
+              title: value.isEmpty ? 'Архив пуст' : 'В этом скоупе архив пуст',
+              body: value.isEmpty
+                  ? 'Проект попадает сюда из его собственного экрана — «В '
+                        'архив» в меню сверху. С доски он при этом исчезает, а '
+                        'напоминания его задач перестают приходить.'
+                  : 'Архивные проекты есть, но в других скоупах — '
+                        'переключитесь над доской, чтобы их увидеть.',
+            ),
 
-          AsyncData(:final value) => ListView.separated(
-            physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: value.length,
-            separatorBuilder: (_, _) => const Divider(height: 1),
-            itemBuilder: (context, index) =>
-                _ArchivedProjectTile(entry: value[index]),
+          AsyncData(:final value) => Builder(
+            builder: (context) {
+              final rows = projectsInScope(value, scope);
+              return ListView.separated(
+                physics: const AlwaysScrollableScrollPhysics(),
+                itemCount: rows.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) =>
+                    _ArchivedProjectTile(entry: rows[index]),
+              );
+            },
           ),
 
           AsyncError(:final error) => _Message(

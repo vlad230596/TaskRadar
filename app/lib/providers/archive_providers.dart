@@ -112,7 +112,12 @@ class ProjectLifecycle extends _$ProjectLifecycle {
   /// Returns the created project so the caller can navigate straight into it --
   /// a project created from the board is empty, and the next thing anyone does
   /// is type its first task.
-  Future<Project> create(String name) async {
+  ///
+  /// [scopeId] is the scope the board was showing when the button was pressed
+  /// (F7). It is optional here only because the server has its own fallback --
+  /// the first scope -- and a caller with no board in front of it (a test, a
+  /// future quick-capture entry point) should not have to invent one.
+  Future<Project> create(String name, {String? scopeId}) async {
     final trimmed = name.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError.value(name, 'name', 'a project needs a name');
@@ -121,7 +126,7 @@ class ProjectLifecycle extends _$ProjectLifecycle {
     return _enqueue(() async {
       final project = await ref
           .read(projectApiProvider)
-          .createProject(name: trimmed);
+          .createProject(name: trimmed, scopeId: scopeId);
 
       // Not spliced in by hand. `GET /board` orders by `createdAt` ascending and
       // a board row carries a `tasks` array; inventing one here would mean
@@ -182,6 +187,36 @@ class ProjectLifecycle extends _$ProjectLifecycle {
       } catch (error) {
         // Rollback to the row this started from -- which the queue guarantees is
         // still the row on screen. See [_enqueue].
+        _publishProject(project);
+        rethrow;
+      }
+    });
+  }
+
+  /// `PATCH /projects/:id` with the other field it has (F7): which scope the
+  /// project lives in.
+  ///
+  /// Optimistic and spliced, exactly like [rename], and for exactly the same
+  /// reason: the row does not appear or disappear anywhere, it changes one
+  /// string. A move cannot touch task order, `isCurrent`, `archivedAt` or the
+  /// notes, so there is nothing a `GET /board` would correct.
+  ///
+  /// The visible effect is that the project leaves the board *currently on
+  /// screen* if it was moved elsewhere -- but that is the scope filter
+  /// (`projectsInScope`) reacting to data that is already correct, not a
+  /// refetch.
+  Future<void> moveToScope(Project project, String scopeId) {
+    if (scopeId == project.scopeId) return Future<void>.value();
+
+    return _enqueue(() async {
+      _publishProject(project.copyWith(scopeId: scopeId));
+
+      try {
+        final saved = await ref
+            .read(projectApiProvider)
+            .moveProjectToScope(project.id, scopeId: scopeId);
+        _publishProject(saved);
+      } catch (error) {
         _publishProject(project);
         rethrow;
       }

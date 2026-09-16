@@ -390,3 +390,52 @@ final class ProjectApiProvider
 }
 
 String _$projectApiHash() => r'f8c88df174ac22584db6055743cf9b67cb664f4d';
+
+/// The scope endpoints (F7). Same shape and same reasoning as [projectApi]: a
+/// stateless wrapper around the shared [ApiClient].
+
+@ProviderFor(scopeApi)
+final scopeApiProvider = ScopeApiProvider._();
+
+/// The scope endpoints (F7). Same shape and same reasoning as [projectApi]: a
+/// stateless wrapper around the shared [ApiClient].
+
+final class ScopeApiProvider
+    extends $FunctionalProvider<ScopeApi, ScopeApi, ScopeApi>
+    with $Provider<ScopeApi> {
+  /// The scope endpoints (F7). Same shape and same reasoning as [projectApi]: a
+  /// stateless wrapper around the shared [ApiClient].
+  ScopeApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'scopeApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$scopeApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<ScopeApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  ScopeApi create(Ref ref) {
+    return scopeApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(ScopeApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<ScopeApi>(value),
+    );
+  }
+}
+
+String _$scopeApiHash() => r'0fdefd2cdd41b1cbbcf2d58faceee6f7efcbe2d5';

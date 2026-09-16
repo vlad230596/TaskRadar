@@ -5,8 +5,10 @@ import '../api/api_error_message.dart';
 import '../domain/project_summary.dart';
 import '../models/board_project.dart';
 import '../models/project.dart';
+import '../models/scope.dart';
 import '../providers/archive_providers.dart';
 import '../providers/project_providers.dart';
+import '../providers/scope_providers.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_list.dart';
@@ -175,7 +177,10 @@ class _ProjectBody extends ConsumerWidget {
         appBar: AppBar(
           title: Text(view.project.name),
           bottom: TabBar(
-            tabs: <Widget>[Tab(text: tasksLabel), Tab(text: notesLabel)],
+            tabs: <Widget>[
+              Tab(text: tasksLabel),
+              Tab(text: notesLabel),
+            ],
           ),
           actions: _projectActions(view),
         ),
@@ -183,9 +188,7 @@ class _ProjectBody extends ConsumerWidget {
           children: [
             if (view.isStale || view.refreshError != null)
               _ProjectBanner(view: view, projectId: projectId),
-            Expanded(
-              child: TabBarView(children: <Widget>[taskPane, notePane]),
-            ),
+            Expanded(child: TabBarView(children: <Widget>[taskPane, notePane])),
           ],
         ),
       ),
@@ -248,9 +251,15 @@ class _WideBody extends StatelessWidget {
                 // rows, but the task rows carry controls (status, drag handle,
                 // reminder date) that start colliding first, and the task list
                 // is what the screen is opened for.
-                Expanded(flex: 3, child: _Pane(label: tasksLabel, child: taskPane)),
+                Expanded(
+                  flex: 3,
+                  child: _Pane(label: tasksLabel, child: taskPane),
+                ),
                 const VerticalDivider(width: 1, thickness: 1),
-                Expanded(flex: 2, child: _Pane(label: notesLabel, child: notePane)),
+                Expanded(
+                  flex: 2,
+                  child: _Pane(label: notesLabel, child: notePane),
+                ),
               ],
             ),
           ),
@@ -339,10 +348,17 @@ class _ProjectMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Read here rather than inside `itemBuilder`: that callback runs when the
+    // menu opens, long after this build, and a `ref.watch` from outside a build
+    // neither subscribes nor reliably sees a value that arrived in between --
+    // the item would simply be missing on a screen whose scope list had loaded.
+    final canMoveBetweenScopes = ref.watch(hasMultipleScopesProvider);
+
     return PopupMenuButton<_ProjectAction>(
       tooltip: 'Действия с проектом',
       onSelected: (action) => switch (action) {
         _ProjectAction.rename => _rename(context, ref),
+        _ProjectAction.moveToScope => _moveToScope(context, ref),
         _ProjectAction.archive => _archive(context, ref),
         _ProjectAction.unarchive => _unarchive(context, ref),
       },
@@ -355,6 +371,18 @@ class _ProjectMenu extends ConsumerWidget {
             contentPadding: EdgeInsets.zero,
           ),
         ),
+        // Only when there is somewhere to move it to (F7). With one scope this
+        // menu item would open a picker with a single option that is already
+        // selected.
+        if (canMoveBetweenScopes)
+          const PopupMenuItem<_ProjectAction>(
+            value: _ProjectAction.moveToScope,
+            child: ListTile(
+              leading: Icon(Icons.workspaces_outline),
+              title: Text('Переместить в скоуп'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
         if (_archived)
           const PopupMenuItem<_ProjectAction>(
             value: _ProjectAction.unarchive,
@@ -397,6 +425,54 @@ class _ProjectMenu extends ConsumerWidget {
     );
   }
 
+  /// Moves the project to another scope (F7).
+  ///
+  /// Here rather than on the board for the same reason archiving is here: it is
+  /// a decision you make while looking at the project, not while scrolling past
+  /// it. The write is optimistic and spliced, so the project leaves the board
+  /// currently on screen the moment it is chosen -- which looks like a
+  /// disappearance and is why the snackbar says where it went.
+  Future<void> _moveToScope(BuildContext context, WidgetRef ref) async {
+    final scopes = ref.read(scopesProvider).value ?? const <Scope>[];
+    final target = await showDialog<Scope>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Переместить в скоуп'),
+        children: [
+          for (final scope in scopes)
+            SimpleDialogOption(
+              onPressed: () => Navigator.of(context).pop(scope),
+              child: Row(
+                children: [
+                  Icon(
+                    scope.id == project.scopeId
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(scope.name)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+
+    if (target == null || target.id == project.scopeId || !context.mounted) {
+      return;
+    }
+
+    await runMutation(
+      context,
+      () => ref
+          .read(projectLifecycleProvider.notifier)
+          .moveToScope(project, target.id),
+      success: 'Проект теперь в скоупе «${target.name}».',
+      failure: 'Не удалось переместить проект.',
+    );
+  }
+
   Future<void> _archive(BuildContext context, WidgetRef ref) async {
     // A plain yes/no, unlike deleting: archiving is reversible in one tap from
     // the archive screen, and the confirmation exists only so a mis-tap in a
@@ -434,7 +510,7 @@ class _ProjectMenu extends ConsumerWidget {
   }
 }
 
-enum _ProjectAction { rename, archive, unarchive }
+enum _ProjectAction { rename, moveToScope, archive, unarchive }
 
 /// "What you are looking at is the cache / the last refresh failed."
 ///

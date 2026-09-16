@@ -356,6 +356,7 @@ void main() {
         project: const Project(
           id: 'prj_a',
           name: 'Дача',
+          scopeId: 's-main',
           archivedAt: null,
           createdAt: '2026-08-01T09:00:00.000Z',
           updatedAt: '2026-08-01T09:00:00.000Z',
@@ -365,6 +366,7 @@ void main() {
       BoardProject.fromJson(<String, dynamic>{
         'id': 'prj_b',
         'name': 'Ремонт',
+        'scopeId': 's-main',
         'archivedAt': null,
         'createdAt': '2026-08-02T09:00:00.000Z',
         'updatedAt': '2026-08-02T09:00:00.000Z',
