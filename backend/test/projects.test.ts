@@ -13,7 +13,11 @@ import type { BuildAppOptions } from "../src/app";
  * are unanswerable against a stub that echoes whatever it is handed.
  */
 const prismaMock = vi.hoisted(() => ({
-  project: { findUnique: vi.fn(), update: vi.fn() },
+  project: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+  // F7: creating a project resolves its scope, and moving one checks that the
+  // target exists. Both are plain lookups, so a pair of fakes over the same
+  // fixture rows is enough.
+  scope: { findUnique: vi.fn(), findFirst: vi.fn() },
 }));
 
 vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
@@ -36,20 +40,32 @@ const baseConfig: AuthConfig = {
 interface ProjectRow {
   id: string;
   name: string;
+  scopeId: string;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+interface ScopeRow {
+  id: string;
+  name: string;
+  position: number;
 }
 
 const T0 = new Date("2026-01-01T00:00:00.000Z");
 const ARCHIVED_AT = new Date("2026-03-01T00:00:00.000Z");
 
 let rows: ProjectRow[] = [];
+let scopeRows: ScopeRow[] = [];
 
 function seed(): void {
   rows = [
-    { id: "p-active", name: "Active", archivedAt: null, createdAt: T0, updatedAt: T0 },
-    { id: "p-archived", name: "Archived", archivedAt: ARCHIVED_AT, createdAt: T0, updatedAt: T0 },
+    { id: "p-active", name: "Active", scopeId: "s-first", archivedAt: null, createdAt: T0, updatedAt: T0 },
+    { id: "p-archived", name: "Archived", scopeId: "s-first", archivedAt: ARCHIVED_AT, createdAt: T0, updatedAt: T0 },
+  ];
+  scopeRows = [
+    { id: "s-first", name: "Первый", position: 1000 },
+    { id: "s-second", name: "Второй", position: 2000 },
   ];
 }
 
@@ -108,8 +124,33 @@ beforeEach(() => {
   seed();
   prismaMock.project.findUnique.mockReset();
   prismaMock.project.update.mockReset();
+  prismaMock.project.create.mockReset();
+  prismaMock.scope.findUnique.mockReset();
+  prismaMock.scope.findFirst.mockReset();
+
   prismaMock.project.findUnique.mockImplementation(fakeFindUnique);
   prismaMock.project.update.mockImplementation(fakeUpdate);
+  prismaMock.project.create.mockImplementation(
+    (args: { data: { name: string; scopeId: string } }) => {
+      const row: ProjectRow = {
+        id: "p-new-" + rows.length,
+        name: args.data.name,
+        scopeId: args.data.scopeId,
+        archivedAt: null,
+        createdAt: T0,
+        updatedAt: T0,
+      };
+      rows.push(row);
+      return { ...row };
+    },
+  );
+  prismaMock.scope.findUnique.mockImplementation(
+    (args: { where: { id: string } }) => scopeRows.find((s) => s.id === args.where.id) ?? null,
+  );
+  // "First by position" is the route's own definition of the default scope.
+  prismaMock.scope.findFirst.mockImplementation(
+    () => [...scopeRows].sort((a, b) => a.position - b.position)[0] ?? null,
+  );
 });
 
 describe("PATCH /projects/:id -- renaming", () => {
@@ -138,6 +179,9 @@ describe("PATCH /projects/:id -- renaming", () => {
       "createdAt",
       "id",
       "name",
+      // F7 added this one, and the pairing above is what keeps the two routes
+      // from drifting apart when the next field arrives.
+      "scopeId",
       "updatedAt",
     ]);
   });
@@ -223,8 +267,10 @@ describe("PATCH /projects/:id -- validation", () => {
   });
 
   it("rejects the same names POST /projects rejects", async () => {
-    // Aliased schemas (updateProjectSchema === createProjectSchema) are only
-    // worth anything if the two routes are actually observed to agree.
+    // The two schemas stopped being the same object in F7: a project can now be
+    // moved between scopes, so PATCH takes two optional fields while POST takes
+    // a required name. The rule they still share -- what counts as an acceptable
+    // name -- is therefore worth observing rather than assuming.
     for (const name of ["", "   ", undefined]) {
       const patch = await rename("p-active", { name });
       const post = await app.inject({
@@ -329,5 +375,94 @@ describe("no regression in the existing project routes", () => {
     expect(res.statusCode).toBe(200);
     const args = prismaMock.project.update.mock.calls[0]![0] as { data: Record<string, unknown> };
     expect(Object.keys(args.data)).toEqual(["archivedAt"]);
+  });
+});
+
+describe("POST /projects -- which scope it lands in (F7)", () => {
+  async function create(payload: unknown) {
+    return app.inject({
+      method: "POST",
+      url: "/projects",
+      headers: { authorization: "Bearer " + token },
+      payload: payload as Record<string, unknown>,
+    });
+  }
+
+  it("puts the project in the scope the client named", async () => {
+    const res = await create({ name: "\u041d\u043e\u0432\u044b\u0439", scopeId: "s-second" });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as ProjectRow).scopeId).toBe("s-second");
+  });
+
+  it("falls back to the first scope when the client names none", async () => {
+    // Keeps `POST /projects {name}` -- a curl one-liner, a seed script, anything
+    // written before scopes existed -- working, and lands the project where the
+    // board opens.
+    const res = await create({ name: "\u041d\u043e\u0432\u044b\u0439" });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as ProjectRow).scopeId).toBe("s-first");
+  });
+
+  it("answers 404 for a scope that does not exist, and creates nothing", async () => {
+    // Not a 500 from a foreign key violation, which is what leaving this to the
+    // database would produce.
+    const res = await create({ name: "\u041d\u043e\u0432\u044b\u0439", scopeId: "s-nope" });
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { message: string }).message).toMatch(/scope/i);
+    expect(prismaMock.project.create).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH /projects/:id -- moving between scopes (F7)", () => {
+  it("moves the project and answers with the updated row", async () => {
+    const res = await rename("p-active", { scopeId: "s-second" });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as ProjectRow).scopeId).toBe("s-second");
+    expect(rows.find((p) => p.id === "p-active")!.scopeId).toBe("s-second");
+  });
+
+  it("does not require a name in order to move", async () => {
+    // The whole reason updateProjectSchema stopped being an alias of
+    // createProjectSchema: demanding a name here would make every move rewrite
+    // the name too.
+    const res = await rename("p-active", { scopeId: "s-second" });
+    expect(res.statusCode).toBe(200);
+    expect(rows.find((p) => p.id === "p-active")!.name).toBe("Active");
+  });
+
+  it("writes only the fields that were sent", async () => {
+    await rename("p-active", { scopeId: "s-second" });
+    const args = prismaMock.project.update.mock.calls[0]![0] as { data: Record<string, unknown> };
+    expect(Object.keys(args.data)).toEqual(["scopeId"]);
+  });
+
+  it("renames and moves in one request", async () => {
+    const res = await rename("p-active", { name: "Renamed", scopeId: "s-second" });
+    expect(res.statusCode).toBe(200);
+    const body = res.json() as ProjectRow;
+    expect(body.name).toBe("Renamed");
+    expect(body.scopeId).toBe("s-second");
+  });
+
+  it("answers 404 for an unknown scope, and changes nothing", async () => {
+    const res = await rename("p-active", { scopeId: "s-nope" });
+    expect(res.statusCode).toBe(404);
+    expect(prismaMock.project.update).not.toHaveBeenCalled();
+    expect(rows.find((p) => p.id === "p-active")!.scopeId).toBe("s-first");
+  });
+
+  it("moves an archived project without unarchiving it", async () => {
+    // Same argument as renaming one: the archive is reversible, not frozen, and
+    // sorting old projects into scopes is exactly what the archive screen is
+    // for.
+    const res = await rename("p-archived", { scopeId: "s-second" });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as ProjectRow).archivedAt).not.toBeNull();
+    expect(rows.find((p) => p.id === "p-archived")!.archivedAt).toEqual(ARCHIVED_AT);
+  });
+
+  it("rejects an empty scopeId with 400", async () => {
+    expect((await rename("p-active", { scopeId: "" })).statusCode).toBe(400);
+    expect(prismaMock.project.update).not.toHaveBeenCalled();
   });
 });

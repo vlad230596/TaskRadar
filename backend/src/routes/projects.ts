@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { NotFoundError, ConflictError } from "../lib/errors";
 import { canHardDeleteProject } from "../domain/projectDeleteGuard";
+import { getDefaultScopeOrThrow, getScopeOrThrow } from "./scopes";
 import {
   createProjectSchema,
   updateProjectSchema,
@@ -52,7 +53,23 @@ export async function getProjectOrThrow(projectId: string) {
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects", async (request, reply) => {
     const body = createProjectSchema.parse(request.body);
-    const project = await prisma.project.create({ data: { name: body.name } });
+
+    /*
+     * The scope is resolved before the insert, not left to the foreign key.
+     *
+     * An unknown `scopeId` would otherwise come back as a Prisma foreign-key
+     * violation, which the error handler has no case for -- a 500 for what is
+     * plainly a client mistake. Checking first turns it into the 404 the client
+     * already knows how to read, and it is one cheap lookup on a path that is
+     * hit a few times a week.
+     */
+    const scope = body.scopeId
+      ? await getScopeOrThrow(body.scopeId)
+      : await getDefaultScopeOrThrow();
+
+    const project = await prisma.project.create({
+      data: { name: body.name, scopeId: scope.id },
+    });
     reply.status(201).send(project);
   });
 
@@ -63,6 +80,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const projects = await prisma.project.findMany({
       where: {
         archivedAt: showArchived ? { not: null } : null,
+        // Absent means every scope. See the note on `listProjectsQuerySchema`
+        // for why the client filters the board itself instead of using this.
+        ...(query.scopeId ? { scopeId: query.scopeId } : {}),
       },
       orderBy: { createdAt: "asc" },
     });
@@ -119,9 +139,29 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     // error handler would turn into an opaque 500).
     await getProjectOrThrow(id);
 
+    // Same for the scope, and for the same reason as in POST: an unknown
+    // `scopeId` is a 404 about the scope, not a 500 about a constraint.
+    if (body.scopeId !== undefined) {
+      await getScopeOrThrow(body.scopeId);
+    }
+
+    /*
+     * MOVING BETWEEN SCOPES IS A PLAIN FIELD UPDATE (F7), with no side effects
+     * anywhere -- and that is worth one line of proof rather than trust.
+     *
+     * Tasks keep their `position` (it orders tasks within a *project*, which
+     * did not change), `isCurrent` is computed per project from those same
+     * positions, notes are untouched, and `archivedAt` is not in the payload --
+     * so a project cannot change board membership as a side effect of moving
+     * between scopes. The client can therefore splice the updated row into the
+     * lists it already holds instead of re-reading anything.
+     */
     const project = await prisma.project.update({
       where: { id },
-      data: { name: body.name },
+      data: {
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.scopeId !== undefined ? { scopeId: body.scopeId } : {}),
+      },
     });
     reply.send(project);
   });

@@ -3,6 +3,7 @@ import fastifyCookie from "@fastify/cookie";
 import fastifyJwt from "@fastify/jwt";
 import { healthRoutes } from "./routes/health";
 import { authRoutes } from "./routes/auth";
+import { scopeRoutes } from "./routes/scopes";
 import { projectRoutes } from "./routes/projects";
 import { taskRoutes } from "./routes/tasks";
 import { noteRoutes } from "./routes/notes";
@@ -59,6 +60,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   await app.register(healthRoutes);
   await app.register(authRoutes(authConfig));
+  await app.register(scopeRoutes);
   await app.register(projectRoutes);
   await app.register(taskRoutes);
   await app.register(noteRoutes);

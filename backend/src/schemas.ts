@@ -30,31 +30,101 @@ export const projectIdParamSchema = z.object({
   projectId: z.string().min(1),
 });
 
+// ---- Scopes ----
+
+/**
+ * A scope is a space projects live in: "work at company A", "home", "the
+ * dacha". The board shows exactly one at a time (F7).
+ *
+ * One field, same shape as a project's name and for the same reasons -- see the
+ * note on `updateProjectSchema` below about when an alias stops being enough.
+ */
+export const createScopeSchema = z.object({
+  name: z.string().trim().min(1, "name is required"),
+});
+
+export const updateScopeSchema = createScopeSchema;
+
+/**
+ * Body of `PATCH /scopes/:id/position`.
+ *
+ * Deliberately identical in shape to `updateTaskPositionSchema`: both answer
+ * "put this between those two", both take neighbours **by id** rather than a
+ * target index, and both accept `null` for "no neighbour on that side". Naming
+ * the neighbours by id is what survives a rebalance -- see
+ * src/domain/position.ts.
+ */
+export const updateScopePositionSchema = z
+  .object({
+    beforeScopeId: z.string().min(1).nullable().optional(),
+    afterScopeId: z.string().min(1).nullable().optional(),
+  })
+  .refine((body) => body.beforeScopeId !== undefined || body.afterScopeId !== undefined, {
+    message:
+      "At least one of beforeScopeId/afterScopeId must be provided (use null for 'no neighbour on that side')",
+  });
+
 // ---- Projects ----
 
 export const createProjectSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
+  /**
+   * Which scope the project is created in (F7).
+   *
+   * Optional, and the route falls back to the first scope by position. That
+   * default is not laziness about validation: it keeps `POST /projects {name}`
+   * -- a curl one-liner, a seed script, anything written before scopes existed
+   * -- working exactly as it did, and there is always at least one scope for it
+   * to mean (the migration seeds one). The client always sends it, because the
+   * board it was created from is already showing one specific scope.
+   */
+  scopeId: z.string().min(1).optional(),
 });
 
 /**
- * Body of `PATCH /projects/:id`.
+ * Body of `PATCH /projects/:id`: rename, move to another scope, or both.
  *
- * Intentionally the very same schema object as `createProjectSchema`, not a
- * copy: a name that is acceptable when a project is created must stay acceptable
- * when it is corrected, and aliasing makes the two impossible to drift apart
- * (same trim, same "name is required", same 400 body).
+ * This used to be an alias of `createProjectSchema`, with a note saying it
+ * would stop being one as soon as a project had a second editable field. F7 is
+ * that moment: a project can now be moved between scopes, and a PATCH that
+ * demanded a `name` in order to change a `scopeId` would force every move to
+ * rewrite the name too.
  *
- * `name` is required rather than optional-with-a-refine, unlike
- * `updateNoteSchema` and `updateTaskSchema`. Those carry several editable fields
- * and need "at least one of them"; a project has exactly one, so making it
- * optional would only buy the ability to send `{}` and have nothing happen. If a
- * second editable field is ever added, this stops being an alias and grows the
- * same optional/refine shape as the others.
+ * The rules that made the alias worth having are kept by construction -- the
+ * `name` rule below is the same trim and the same message as when a project is
+ * created, so a name that is acceptable at creation stays acceptable at
+ * correction. What changes is that both fields are optional and at least one
+ * must be present, which is the shape `updateTaskSchema` and `updateNoteSchema`
+ * already use.
+ *
+ * `archivedAt` is still not here: `/archive` and `/unarchive` remain the only
+ * routes that move a project between those two states, so neither a rename nor
+ * a move between scopes can resurrect or hide a project as a side effect.
  */
-export const updateProjectSchema = createProjectSchema;
+export const updateProjectSchema = z
+  .object({
+    name: z.string().trim().min(1, "name is required").optional(),
+    scopeId: z.string().min(1).optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "At least one field must be provided",
+  });
 
+/**
+ * Query for `GET /projects`, and (aliased below) for `GET /board`.
+ *
+ * `scopeId` filters to one space. It is optional, and **the Flutter client does
+ * not use it for the board** -- it asks for every project and filters locally.
+ * That is deliberate and worth stating here, because the parameter existing
+ * invites the opposite: local reminders are armed from the board snapshot, so a
+ * server-filtered board would silently stop raising reminders for every scope
+ * the user is not currently looking at. Switching scopes also becomes instant
+ * and offline-capable when the whole board is already in memory. The filter
+ * stays for curl, for scripts, and for a future client that pages.
+ */
 export const listProjectsQuerySchema = z.object({
   archived: z.enum(["true", "false"]).optional(),
+  scopeId: z.string().min(1).optional(),
 });
 
 // ---- Board ----

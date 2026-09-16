@@ -23,9 +23,40 @@ enum TaskStatus {
   blocked
 }
 
+model Scope {
+  id   String @id @default(cuid())
+  name String
+  // Ordering key across scopes: the same gapped-float scheme as Task.position,
+  // for the same reasons (see src/domain/position.ts). Scopes are few -- a
+  // handful per person -- so the argument about avoiding O(n) renumbering
+  // matters less here than it does for tasks; reusing the scheme is about
+  // having one ordering mechanism in this codebase rather than two that behave
+  // subtly differently when something is dragged.
+  position Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  projects Project[]
+
+  @@index([position])
+  @@map("scopes")
+}
+
 model Project {
-  id         String    @id @default(cuid())
-  name       String
+  id      String @id @default(cuid())
+  name    String
+  // Which space this project belongs to (F7). Required rather than nullable: a
+  // project with no scope would be invisible on a board that always shows
+  // exactly one scope -- "where did my project go" -- so the migration creates
+  // a default scope and puts every existing project in it.
+  scopeId String
+  // `Restrict`, not `Cascade`: deleting a scope must never take its projects
+  // (and their tasks and notes) with it. The route refuses a non-empty scope
+  // with a 409 long before this matters; the constraint is what makes that
+  // impossible rather than merely unlikely.
+  scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Restrict)
+
   archivedAt DateTime?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
@@ -33,6 +64,7 @@ model Project {
   tasks Task[]
   notes Note[]
 
+  @@index([scopeId])
   @@map("projects")
 }
 

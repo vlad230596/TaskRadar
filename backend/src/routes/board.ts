@@ -45,6 +45,12 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
     const projects = await prisma.project.findMany({
       where: {
         archivedAt: showArchived ? { not: null } : null,
+        // F7: optional, and the Flutter client does not use it -- it fetches
+        // every scope's projects and filters locally, because the local
+        // reminder queue is armed from this response and a server-filtered
+        // board would stop raising reminders for scopes nobody is looking at.
+        // The long version is on `listProjectsQuerySchema` in ../schemas.ts.
+        ...(query.scopeId ? { scopeId: query.scopeId } : {}),
       },
       orderBy: { createdAt: "asc" },
       include: {
