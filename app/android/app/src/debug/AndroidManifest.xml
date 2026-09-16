@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- INTERNET is declared in the main manifest (it is needed by every build
+         type, not just development) — see the comment there. -->
+
+    <!--
+      Cleartext HTTP, debug builds only.
+
+      Android 9+ blocks cleartext traffic by default, and the failure looks like a
+      generic connection error rather than "policy blocked this", so it is easy to
+      spend an afternoon blaming the backend. Until F5 puts the server behind HTTPS,
+      the phone reaches the dev backend at plain `http://<lan-ip>:3001`, so the
+      debug build has to opt in.
+
+      Deliberately NOT in the main manifest: the release APK built in F5 points at a
+      real HTTPS host, and leaving cleartext enabled there would silently allow a
+      downgraded connection to carry the 30-day bearer token in the open.
+    -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

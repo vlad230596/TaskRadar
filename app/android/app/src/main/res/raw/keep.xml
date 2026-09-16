@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Protects notification resources from Android's resource shrinker.
+
+  Why this file exists: a notification icon is looked up *by name at runtime*
+  (the plugin is handed the string "@mipmap/ic_launcher"), so R8's resource
+  shrinker sees no reference to it from code and is free to delete it in a
+  release build. When that happens the system cannot resolve the icon and drops
+  the notification without posting it and without logging anything useful.
+
+  That failure only appears in release builds, only on a device, and looks
+  exactly like the vendor power-management problem this iteration is measuring.
+  Keeping every drawable and the launcher mipmap costs a few kilobytes and
+  removes a whole category of false negative from the F1 experiment.
+
+  See the flutter_local_notifications README, section "Release build
+  configuration".
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/*,@mipmap/ic_launcher" />

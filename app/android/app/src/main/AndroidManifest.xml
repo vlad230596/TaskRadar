@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Note for anyone editing the comments here: the rest of this repository
+      punctuates an aside with a doubled ASCII hyphen, and XML forbids exactly
+      that sequence inside a comment. The manifest merger then rejects the whole
+      file with "Error parsing AndroidManifest.xml" and says nothing about which
+      line or why. The em dashes below are therefore load-bearing rather than a
+      style choice, and the encoding declaration above exists to make them
+      explicit.
+    -->
+    <!-- The Flutter template only declares INTERNET in the debug and profile
+         manifests (the tool needs it for hot reload), which is a classic trap: the
+         app talks to the server on every screen, so a release APK built without
+         this line installs fine and then fails every request with an opaque socket
+         error. Declared here so it applies to all build types. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!--
+      ===== Local reminders (F1) =====
+
+      Everything below exists because of one product fact: a reminder that does
+      not arrive makes this app pointless (see flutter-migration-plan.md, the
+      section on why the PWA was abandoned). The previous PWA failed precisely
+      here, so each of the lines below is a place where the feature silently
+      stops working if it is absent.
+
+      POST_NOTIFICATIONS is declared by the plugin itself since its v16, but it
+      is repeated here on purpose: it is the permission the app has to *ask* for
+      at runtime on Android 13+, and a reader of this manifest should see that
+      the app posts notifications without having to go read a dependency's
+      manifest. When it is denied, nothing throws — zonedSchedule succeeds, the
+      alarm fires, and the system drops the notification. That silence is why the
+      bench screen displays the flag.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+
+    <!--
+      Without this, Android forgets every scheduled alarm the moment the phone
+      reboots, and there is no error anywhere: the queue is simply empty
+      afterwards. Together with the ScheduledNotificationBootReceiver below, the
+      plugin re-arms everything it had stored. "Survives a reboot" is an explicit
+      acceptance criterion of F1 — a phone that reboots overnight for a system
+      update must still produce the 09:00 reminder.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+
+    <!--
+      Exact alarms, Android 12+.
+
+      A day-granularity reminder does not need minute precision in principle,
+      but an *inexact* alarm is batched with other wakeups and can drift by
+      hours. "Напомнить утром" arriving at 14:00 is a different, much less useful
+      product, so we start from exact and degrade only if the permission is
+      missing (LocalNotificationGateway picks inexactAllowWhileIdle then, and the
+      bench says so out loud).
+
+      Both permissions are declared, and that is not redundancy:
+
+      - SCHEDULE_EXACT_ALARM is auto-granted on Android 12 but is user-revocable
+        from Android 13 on, so the app must be able to ask for it
+        (requestExactAlarmsPermission opens the system "Alarms & reminders" page);
+      - USE_EXACT_ALARM is granted at install time and cannot be revoked, which
+        is what makes the overnight test meaningful — but Google restricts it to
+        apps whose core function is alarms/calendars and audits it on Play.
+        TaskRadar is sideloaded onto one personal phone and will never be
+        published (see flutter-migration-plan.md, F5), so the restriction does
+        not apply. If that ever changes, drop this line and keep the one above.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+
+    <application
+        android:label="TaskRadar"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <!-- Specifies an Android theme to apply to this Activity as soon as
+                 the Android process has started. This theme is visible to the user
+                 while the Flutter UI initializes. After that, this theme continues
+                 to determine the Window background behind the Flutter UI. -->
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+        <!--
+          The two receivers from flutter_local_notifications. Since the plugin's
+          v16 they are NOT declared by the plugin's own manifest, so an app that
+          forgets them compiles, installs, schedules alarms that appear in
+          `pendingNotificationRequests()` — and shows nothing when they fire.
+          There is no warning of any kind.
+
+          ScheduledNotificationReceiver is what actually posts a scheduled
+          notification when its alarm goes off.
+
+          ScheduledNotificationBootReceiver re-arms everything after the events
+          that wipe the alarm queue. BOOT_COMPLETED is the obvious one;
+          MY_PACKAGE_REPLACED matters just as much during development, where the
+          app is reinstalled several times a day and would otherwise silently
+          lose the very alarm being tested. The two QUICKBOOT actions are the
+          non-standard equivalents some HTC/Xiaomi ROMs send instead of
+          BOOT_COMPLETED — harmless everywhere else, and this is exactly the
+          class of device whose power management F1 is measuring.
+
+          exported="false": they are only ever triggered by the system and by
+          this app, so nothing else should be able to poke them.
+        -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
+        <!-- Don't delete the meta-data below.
+             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+    </application>
+    <!-- Required to query activities that can process text, see:
+         https://developer.android.com/training/package-visibility and
+         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+
+         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

@@ -1,0 +1,92 @@
+name: taskradar
+description: "TaskRadar native client (Android + Windows)."
+# Personal tool, never published to pub.dev.
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # State management. See flutter-migration-plan.md: async providers with caching
+  # and invalidation match "server data + point mutations + refetch" directly.
+  #
+  # The three riverpod lines are pinned to exact versions, not `^`, and that is
+  # load-bearing rather than cautious. The runtime, the annotations and the code
+  # generator are released in lockstep with `==` constraints between them, so
+  # there is exactly one self-consistent triple reachable from this SDK:
+  #
+  #   flutter_riverpod 3.2.1 -> riverpod 3.2.1
+  #   riverpod_annotation 4.0.2 -> riverpod 3.2.1
+  #   riverpod_generator 4.0.3 -> riverpod_annotation 4.0.2
+  #
+  # Everything newer needs Dart >=3.12 (we are on 3.11.5), or drags in
+  # analyzer ^12 / meta ^1.18 while the Flutter SDK pins meta to 1.17.0. With `^`
+  # constraints pub picks a *newer* flutter_riverpod that no annotation version
+  # can pair with and the resolve fails with a wall of unrelated-looking text.
+  # Bump all three lines together or none of them.
+  flutter_riverpod: 3.2.1
+  riverpod_annotation: 4.0.2
+
+  # HTTP. Chosen over `http` for interceptors: the Bearer header and the app-wide
+  # 401 reaction are one interceptor each instead of a wrapper around every call.
+  dio: ^5.11.1
+
+  freezed_annotation: ^3.1.0
+  # Held below 4.12: json_serializable 6.13.1+ (the first release that wants
+  # json_annotation 4.12) switched to a dart_style that needs analyzer >=10,
+  # which riverpod_generator 4.0.3 cannot accept. Same lockstep problem as the
+  # riverpod block -- the ceiling here exists only to keep the two generators
+  # able to share one analyzer.
+  json_annotation: ^4.11.0
+
+  # Token storage: Android Keystore / Windows DPAPI rather than SharedPreferences.
+  # Pinned to the 10.x line to match the sibling CashFlow app, so the two projects
+  # on this machine share one platform-channel implementation and one set of
+  # Android/Windows quirks. 11.x exists but diverges from that baseline.
+  flutter_secure_storage: ^10.0.0
+
+  # Local notifications (F1). The whole point of the native client: the app
+  # schedules its own alarms, no FCM, no server-side cron, no push keys.
+  #
+  # 22.x is the first line that builds against this SDK (it needs Flutter
+  # >=3.38.1 / Dart >=3.10; we are on 3.41.8 / 3.11.5). It also pulls the
+  # Windows/Linux/web federated implementations in automatically -- see
+  # `lib/notifications/notification_gateway.dart` for what is actually
+  # supported on which platform.
+  flutter_local_notifications: ^22.3.1
+
+  # `zonedSchedule` takes a `TZDateTime`, not a `DateTime`: the OS needs to be
+  # told *which* 09:00 is meant, and a bare local `DateTime` cannot express that
+  # across a DST transition. This package is also pure Dart, which is why the
+  # fire-time arithmetic in `lib/domain/reminder_schedule.dart` is unit-testable
+  # without a device.
+  timezone: ^0.11.1
+
+  # `timezone` ships the tz database but has no idea which zone the device is
+  # in -- without this, `tz.local` stays UTC and every reminder fires at
+  # 09:00 UTC, i.e. at the wrong hour everywhere except the UK in winter. That
+  # failure is invisible in code review and only shows up as "the notification
+  # came at noon". See `NotificationTimeZone` for the fallback when this fails.
+  flutter_timezone: ^5.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^6.0.0
+
+  build_runner: ^2.4.0
+  freezed: ^3.2.0
+  json_serializable: '>=6.13.0 <6.13.1'
+  # Exact pin -- see the riverpod block in `dependencies` above.
+  riverpod_generator: 4.0.3
+
+flutter:
+  uses-material-design: true
