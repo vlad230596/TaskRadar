@@ -1,0 +1,160 @@
+name: Integration CI
+
+# Runs the production shape of the stack -- built image, real PostgreSQL, real
+# migration step, real Caddy matcher list -- and talks to it over HTTP.
+#
+# This workflow carries most of the deployment's verification weight, because
+# the development machine has no Docker and the VDS must not be used as a test
+# bed. Everything here is a check that would otherwise only fail after a
+# release.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE: docker compose -f deploy/compose.ci.yaml
+  BASE_URL: http://127.0.0.1:18091
+  CI_EMAIL: ci@taskradar.invalid
+  CI_PASSWORD: taskradar-ci-only
+  SHADOW_DATABASE_URL: postgresql://taskradar:taskradar-ci-only@postgres:5432/taskradar_shadow
+
+jobs:
+  stack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      # The site block is pasted into the shared Caddy configuration by hand, and
+      # a syntax error there takes down every application on the host, not just
+      # TaskRadar. The address comes from the environment so the example file
+      # contains no invented domain; the value below is a throwaway used only to
+      # make the file complete enough to parse.
+      - name: Validate the production Caddy site block
+        run: |
+          docker run --rm \
+            --env TASKRADAR_SITE_ADDRESS=taskradar.ci.invalid:8443 \
+            --volume "$PWD/deploy/Caddyfile.taskradar.example:/etc/caddy/Caddyfile:ro" \
+            caddy:2.10-alpine caddy validate --config /etc/caddy/Caddyfile
+
+      - name: Build the stack images
+        run: $COMPOSE build
+
+      - name: Start PostgreSQL
+        run: $COMPOSE up -d postgres --wait --wait-timeout 120
+
+      - name: Check prisma/migrations against prisma/schema.prisma
+        # The most likely way to break a Prisma deployment is to edit the schema
+        # and forget to generate the migration: everything passes locally,
+        # because the development database was migrated with `migrate dev`, and
+        # then production ends up without the column. `migrate diff --exit-code`
+        # replays the committed migrations into an empty shadow database and
+        # exits non-zero if the result differs from the schema.
+        run: |
+          $COMPOSE exec -T postgres createdb -U taskradar taskradar_shadow
+          $COMPOSE run --rm --no-deps migrate \
+            /app/node_modules/.bin/prisma migrate diff \
+            --from-migrations prisma/migrations \
+            --to-schema-datamodel prisma/schema.prisma \
+            --shadow-database-url "$SHADOW_DATABASE_URL" \
+            --exit-code
+
+      - name: Apply migrations
+        # The same one-off service the production deploy script runs. An empty
+        # database plus this step is what creates the schema -- there is no
+        # fallback inside the backend's startup.
+        run: $COMPOSE run --rm --no-deps migrate
+
+      - name: Apply migrations again (must be a no-op)
+        # `migrate deploy` runs on every release, so being idempotent is part of
+        # its contract. If this fails, a second deploy of the same version would
+        # fail on the server.
+        run: $COMPOSE run --rm --no-deps migrate
+
+      - name: Start the backend behind Caddy
+        run: $COMPOSE up -d --wait --wait-timeout 180
+
+      - name: Public health route
+        run: |
+          body="$(curl --fail --silent --show-error "$BASE_URL/health")"
+          echo "$body"
+          test "$body" = '{"status":"ok"}'
+
+      - name: Guarded routes answer 401 without a token
+        # Distinguishes the three failure modes that all look alike from a phone:
+        # 401 means the app is up and the guard works, 404 means the Caddy
+        # matcher list is missing the prefix, 502 means the backend is not
+        # reachable on the ingress network.
+        run: |
+          for path in /board /projects /auth/me; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL$path")"
+            echo "$path -> $status"
+            test "$status" = '401'
+          done
+
+      - name: Unrouted paths are refused at the edge
+        run: |
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL/nope")"
+          echo "/nope -> $status"
+          test "$status" = '404'
+
+      - name: Wrong password is rejected
+        run: |
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'Content-Type: application/json' \
+            --data "{\"email\":\"$CI_EMAIL\",\"password\":\"definitely-not-it\"}" \
+            "$BASE_URL/auth/login")"
+          echo "login(bad) -> $status"
+          test "$status" = '401'
+
+      - name: Real login and an authenticated request
+        # This is the step that proves the native client's whole path works in a
+        # production-shaped image: bcrypt actually verifies a hash (the native
+        # addon loads), a token is issued, the bearer token is accepted, and a
+        # real query reaches the migrated database.
+        run: |
+          login="$(curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASSWORD\"}" \
+            "$BASE_URL/auth/login")"
+          token="$(node -p "JSON.parse(process.argv[1]).token" "$login")"
+          test -n "$token"
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer $token" \
+            "$BASE_URL/auth/me" >/dev/null
+
+          board="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $token" \
+            "$BASE_URL/board?archived=false")"
+          echo "$board"
+          # GET /board answers with a bare array of projects (it mirrors GET
+          # /projects). An empty array is the correct answer for a freshly
+          # migrated database; what matters is that the query ran at all instead
+          # of failing on a missing table.
+          node -e "if (!Array.isArray(JSON.parse(process.argv[1]))) { throw new Error('unexpected board shape'); }" "$board"
+
+      - name: Container logs on failure
+        if: failure()
+        run: $COMPOSE logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        # -v removes the CI database volume so a rerun starts from an empty
+        # database, which is what makes the migration step meaningful.
+        run: $COMPOSE down -v --remove-orphans

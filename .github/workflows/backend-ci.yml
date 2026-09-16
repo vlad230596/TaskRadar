@@ -1,0 +1,90 @@
+name: Backend CI
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # The unit tests mock Prisma and never open a connection, but `prisma
+  # generate` and the client's module initialisation both insist that
+  # DATABASE_URL resolves. A placeholder keeps that requirement satisfied
+  # without any database in the job.
+  DATABASE_URL: postgresql://placeholder:placeholder@127.0.0.1:5432/placeholder
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      # TODO(owner): pin this action to a commit digest like the others in this
+      # repository, and align the major version with what you use elsewhere.
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the ARG NODE_IMAGE in backend/Dockerfile. Keeping CI and the
+          # image on the same Node version means a native-module or engine
+          # problem shows up in both places rather than only in production.
+          node-version: '24.19.0'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Generate Prisma client
+        working-directory: backend
+        # Not `npm run prisma:generate`: that script wraps the CLI in dotenv-cli
+        # pointed at the repo-root .env, which does not exist in CI.
+        run: npx prisma generate
+
+      - name: Verify the Prisma schema
+        working-directory: backend
+        run: npx prisma validate
+
+      - name: Lint
+        working-directory: backend
+        run: npm run lint
+
+      - name: Typecheck and compile
+        working-directory: backend
+        run: npm run build
+
+      - name: Test
+        working-directory: backend
+        run: npm test
+
+      - name: Check the Prisma CLI version pinned in the Dockerfile
+        # The Dockerfile installs the CLI separately (it is a devDependency and
+        # the production image drops those), so the version lives in two places.
+        # A silent drift between the CLI and @prisma/client is the kind of thing
+        # that only surfaces as a broken migration on the server.
+        run: |
+          dockerfile_version="$(sed -n 's/^ARG PRISMA_CLI_VERSION=\(.*\)$/\1/p' backend/Dockerfile)"
+          package_version="$(node -p "require('./backend/package.json').devDependencies.prisma")"
+          echo "Dockerfile: $dockerfile_version, package.json: $package_version"
+          test -n "$dockerfile_version"
+          test "$dockerfile_version" = "$package_version"
+
+      - name: Build the backend image
+        # Proves the multi-stage build works at all: the bcrypt prebuild
+        # resolves on this base image, `prisma generate` succeeds inside it, and
+        # the require() smoke test at the end of the Dockerfile passes. None of
+        # that can be checked on the Windows development machine, which has no
+        # Docker.
+        run: docker build --pull --tag taskradar-backend:ci backend

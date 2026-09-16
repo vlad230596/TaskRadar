@@ -1,0 +1,8 @@
+# Install as /etc/sudoers.d/taskradar-deploy, root:root 0440, and check with
+# `visudo -c` before logging out.
+#
+# The deploy account may run exactly one root command and nothing else: no
+# docker group membership (which would be equivalent to root), no shell, no
+# access to the other tenants on this host. Every argument the CI workflow
+# passes is validated inside the script itself.
+taskradar-deploy ALL=(root) NOPASSWD: /usr/local/sbin/taskradar-deploy *

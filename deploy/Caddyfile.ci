@@ -1,0 +1,26 @@
+# CI-only ingress, used by deploy/compose.ci.yaml.
+#
+# Plain HTTP on :8080 (no TLS, no real hostname), but the path allowlist and the
+# upstream port are copied verbatim from Caddyfile.taskradar.example. That is the
+# entire point of this file: a typo in the production matcher list shows up as a
+# failing integration check rather than as a 404 nobody can reproduce locally.
+:8080 {
+	header {
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	request_body {
+		max_size 1MB
+	}
+
+	@api path /health /auth/* /board /projects /projects/* /tasks/* /notes/*
+	handle @api {
+		reverse_proxy backend:3001
+	}
+
+	handle {
+		respond 404
+	}
+}

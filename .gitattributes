@@ -1,0 +1,27 @@
+# Line endings for the deployment artifacts (F5).
+#
+# This repository is developed on Windows with core.autocrlf=true, which means a
+# fresh clone materialises text files with CRLF in the working tree. Copying a
+# CRLF shell script to the VDS produces one of the least helpful errors in
+# existence: `$'\r': command not found`, pointing at a line that looks correct.
+# The same applies to a Caddyfile fragment pasted into the shared configuration.
+#
+# Deliberately narrow: no `* text=auto` catch-all, so nothing here changes how
+# the Flutter client's or the backend's source files are checked out.
+*.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+Caddyfile* text eol=lf
+*.sudoers text eol=lf
+*.env.example text eol=lf
+
+# Read only by tools that accept either ending, but keeping them LF means the
+# compose file the server sees is byte-identical to the one CI validated. Scoped
+# to these paths rather than `*.yaml` so that nothing under app/ changes.
+/.github/workflows/*.yml text eol=lf
+/compose.prod.yaml text eol=lf
+/deploy/*.yaml text eol=lf
+
+# PowerShell backup scripts stay on the Windows convention: they only ever run
+# on the machine that pulls the backups.
+*.ps1 text eol=crlf

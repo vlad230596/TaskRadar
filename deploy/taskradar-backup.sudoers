@@ -1,0 +1,8 @@
+# Install as /etc/sudoers.d/taskradar-backup, root:root 0440, and check with
+# `visudo -c` before logging out.
+#
+# No wildcard here, unlike the deploy rule: the exporter takes no arguments, so
+# the backup account cannot influence what is dumped or where it goes. Combined
+# with the forced SSH command (see BACKUPS.md) the key can do one thing only --
+# stream this project's database to stdout.
+taskradar-backup ALL=(root) NOPASSWD: /usr/local/sbin/taskradar-backup-export-root

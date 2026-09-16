@@ -1,0 +1,68 @@
+name: CI
+
+# Orchestrator. `CI / Required checks` is the single job worth protecting the
+# branch with: adding a component workflow below extends the gate automatically
+# instead of needing another branch-protection entry.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    uses: ./.github/workflows/backend-ci.yml
+    with:
+      ref: ${{ inputs.ref }}
+
+  integration:
+    uses: ./.github/workflows/integration-ci.yml
+    with:
+      ref: ${{ inputs.ref }}
+
+  # No Flutter job here yet: the client is being built in app/ and its checks
+  # are not part of the deployment work. Add an `app-ci.yml` reusable workflow
+  # and list it in `needs` below when it exists -- the required gate is designed
+  # to grow that way.
+
+  required:
+    name: Required checks
+    # `always()` plus explicit result checks, rather than relying on job
+    # failure: a skipped or cancelled component must not count as a pass.
+    if: always()
+    needs: [backend, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify every component check
+        env:
+          BACKEND_RESULT: ${{ needs.backend.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+        run: |
+          results=(
+            "$BACKEND_RESULT"
+            "$INTEGRATION_RESULT"
+          )
+          printf 'Component results: %s\n' "${results[*]}"
+          for result in "${results[@]}"; do
+            test "$result" = success
+          done

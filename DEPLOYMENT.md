@@ -1,0 +1,328 @@
+# TaskRadar — деплой (итерация F5)
+
+Разворачивается **только бэкенд**: Fastify + Prisma + PostgreSQL за общим Caddy.
+Клиент — нативное приложение, оно не хостится; подписанный APK прикладывается к
+GitHub Release (см. «Клиент» ниже).
+
+TaskRadar встаёт на тот же VDS **третьим арендатором** рядом с CashFlow и
+OfficeCooking по той же модели изоляции. Единственное, что делится между
+проектами, — ingress-Caddy. Всё остальное своё.
+
+---
+
+## Решения, которые нужны от владельца
+
+Без них применять нечего — в файлах на этих местах стоят плейсхолдеры и
+`TODO(owner)`.
+
+1. **Хост и порт ингресса.** Отдельное имя (например, поддомен duckdns) или
+   ещё один порт на уже используемом имени. Важно: HSTS привязан к имени, а не к
+   порту, и одно имя на два приложения означает общий HSTS и общую историю
+   сертификата. Порт, уже занятый другим арендатором, уронит Caddy целиком, то
+   есть все приложения на хосте. Подставляется в `TASKRADAR_SITE_ADDRESS`
+   (`deploy/Caddyfile.taskradar.example`) и в `APP_ORIGIN`
+   (`deploy/production.env.example`).
+2. **Имя арендатора.** Во всех артефактах — `taskradar` (compose-проект,
+   `/opt/taskradar`, пользователи `taskradar-deploy` / `taskradar-backup`, образ
+   `taskradar-backend`, сеть `taskradar-ingress`, лок
+   `/run/lock/taskradar-deploy.lock`). Если такое имя уже где-то занято на
+   сервере — переименовать надо согласованно во всех перечисленных местах.
+3. **Владелец образа в GHCR.** Workflow берёт `${{ github.repository_owner }}`,
+   так что править обычно нечего; проверить надо только, что GHCR-пакет
+   `taskradar-backend` создаётся приватным.
+4. **Прод-секреты.** Свой пароль PostgreSQL, свой `JWT_SECRET`, свой
+   `AUTH_PASSWORD_HASH`. Ни одно значение не переносится из dev-`.env`.
+5. **Публиковать ли APK и каким ключом.** Сейчас релиз APK заблокирован: в
+   `app/android/app/build.gradle.kts` release-сборка подписывается **debug**-ключом
+   (там так и написано `TODO`). Пока это не исправлено, workflow `app-release.yml`
+   останавливается на первом шаге — осознанно, см. «Клиент».
+6. **Версия Flutter для CI-сборки APK.** Передаётся входом workflow; закрепить
+   стоит ту же, на которой ведётся разработка.
+7. **Закрепление GitHub Actions по digest.** Все action'ы, кроме
+   `actions/setup-node`, закреплены теми же SHA, что в CashFlow. Для
+   `setup-node` указан тег `v4` с `TODO` — проверить и закрепить.
+8. **Пути локальных бэкапов** (`D:\Backups\TaskRadar\...`) — по аналогии с
+   CashFlow; подтвердить или заменить, см. `BACKUPS.md`.
+
+---
+
+## Модель изоляции
+
+Своё у TaskRadar:
+
+- compose-проект `taskradar`;
+- каталог `/opt/taskradar`;
+- том PostgreSQL `taskradar_postgres-data`;
+- неизменяемый образ `taskradar-backend` в GHCR (деплоится только по digest);
+- свои учётные данные БД и `.env` с доступом только у root;
+- пользователь деплоя `taskradar-deploy` и одна разрешённая sudo-команда;
+- пользователь бэкапов `taskradar-backup` и форсированная SSH-команда;
+- каталог бэкапов `/var/backups/taskradar`;
+- лок деплоя `/run/lock/taskradar-deploy.lock`;
+- выделенная external-сеть `taskradar-ingress`.
+
+**Ни PostgreSQL, ни бэкенд не публикуют порты на хост.** Caddy достаёт бэкенд
+через `taskradar-ingress` по алиасу `taskradar-backend:3001`. Эта сеть не
+соединяет TaskRadar ни с CashFlow, ни с OfficeCooking — ни с их приложениями,
+ни с их базами.
+
+Общий Caddy правится только после бэкапа его текущих файлов. Требуемое
+изменение ограничено двумя вещами: подключить сервис Caddy к сети
+`taskradar-ingress` и добавить site-блок из
+`deploy/Caddyfile.taskradar.example`. Перед пересозданием контейнера —
+`caddy validate`.
+
+---
+
+## Чем TaskRadar осознанно отличается от CashFlow
+
+| | CashFlow | TaskRadar | Почему |
+|---|---|---|---|
+| Фронтенд-образ | `cashflow-frontend` (Flutter web + nginx) | нет | Клиент нативный. Нет статики — нечего раздавать |
+| Что проксирует Caddy | `/api/*` в Flask, остальное в SPA | только перечисленные API-префиксы, остальное 404 | На этом origin нет ни одного HTML-документа |
+| CSP / X-Frame-Options | есть | нет | Оба ограничивают загрузку подресурсов документом; документа нет |
+| Dev-стенд на сервере | `cashflow-dev` (свой порт, том, лок) | нет | Инструмент на одного пользователя; постоянный второй арендатор удваивает поверхность без выгоды |
+| Миграции | `alembic upgrade head` в одноразовом контейнере | `prisma migrate deploy` в отдельном сервисе `migrate` | То же решение, другой инструмент — обоснование ниже |
+| Проверка версии после деплоя | публичный `/version` | метка образа `org.opencontainers.image.version` | У бэкенда нет роутов `/version` и `/ready`; единственный публичный роут — `/health` |
+| APK | job внутри release-workflow | отдельный `app-release.yml`, пока заблокирован | Бэкенд не должен ждать сборку клиента; подпись release-ключом ещё не настроена |
+| Перенос данных при установке | миграция SQLite → Postgres | нет | Это greenfield: прода нет, старых данных нет |
+
+---
+
+## Файлы на VDS
+
+```text
+/opt/taskradar/compose.prod.yaml
+/opt/taskradar/.env                          root:root 0600
+/opt/taskradar/.release.env                  создаётся деплоем
+/usr/local/sbin/taskradar-deploy             root:root 0755
+/usr/local/sbin/taskradar-backup-export-root root:root 0755
+/usr/local/bin/taskradar-backup-export       root:root 0755
+/etc/sudoers.d/taskradar-deploy              root:root 0440
+/etc/sudoers.d/taskradar-backup              root:root 0440
+```
+
+Что откуда берётся:
+
+| На сервере | В репозитории |
+|---|---|
+| `/opt/taskradar/compose.prod.yaml` | `compose.prod.yaml` |
+| `/opt/taskradar/.env` | по шаблону `deploy/production.env.example` |
+| `/usr/local/sbin/taskradar-deploy` | `scripts/deploy-production.sh` |
+| `/usr/local/sbin/taskradar-backup-export-root` | `scripts/export-production-backup.sh` |
+| `/usr/local/bin/taskradar-backup-export` | `scripts/taskradar-backup-forced-command.sh` |
+| `/etc/sudoers.d/taskradar-*` | `deploy/taskradar-*.sudoers` |
+| site-блок общего Caddy | `deploy/Caddyfile.taskradar.example` |
+
+Шаблон прод-окружения называется `production.env.example`, а не
+`.env.production.example` как в CashFlow: в `.gitignore` этого репозитория есть
+`.env.*` с исключением только для `.env.example`, так что файл со «своим»
+именем не попал бы в git вообще.
+
+---
+
+## Первичная установка
+
+Рассчитано на **чистый сервер**: прод TaskRadar нигде не развёрнут, старых
+образов, томов и данных не существует. Ни одного шага «сохраните текущие
+данные» здесь нет и быть не должно — сохранять нечего.
+
+1. **Сеть ингресса.** Создаётся руками, а не Compose, потому что в неё должен
+   войти контейнер Caddy из другого compose-проекта:
+
+   ```bash
+   docker network create taskradar-ingress
+   ```
+
+2. **Учётные записи.** Обе — без интерактивной оболочки и **без членства в
+   группе `docker`**: группа docker эквивалентна root, и весь смысл отдельных
+   пользователей в том, что каждому разрешена ровно одна root-команда через
+   sudo.
+
+   ```bash
+   useradd --system --create-home --shell /usr/sbin/nologin taskradar-deploy
+   useradd --system --create-home --shell /usr/sbin/nologin taskradar-backup
+   ```
+
+3. **Каталоги и файлы.**
+
+   ```bash
+   install -d -m 700 /opt/taskradar
+   install -d -m 700 /var/backups/taskradar
+   # compose.prod.yaml -> /opt/taskradar/, скрипты -> /usr/local/{sbin,bin}/
+   ```
+
+   `visudo -c` после установки файлов в `/etc/sudoers.d/` — до выхода из
+   сессии.
+
+4. **`/opt/taskradar/.env`** по `deploy/production.env.example`, `root:root
+   0600`. Читать комментарии в шаблоне, особенно про одинарные кавычки вокруг
+   `AUTH_PASSWORD_HASH` (в bcrypt-хэше есть `$`, а Compose раскрывает
+   переменные внутри значений env-файла) и про `COOKIE_SECURE=true`.
+
+5. **SSH-ключи.** Для `taskradar-deploy` — ключ из секретов GitHub, без
+   форсированной команды (её роль играет единственное правило sudo). Для
+   `taskradar-backup` — отдельный ключ с форсированной командой, см.
+   `BACKUPS.md`.
+
+6. **Общий Caddy — до первого релиза.** Порядок именно такой, иначе финальная
+   проверка релиза, которая ходит через публичный origin, не сможет пройти:
+
+   - забэкапить текущий Caddyfile и compose-файл того проекта, где живёт Caddy;
+   - подключить сервис Caddy к сети `taskradar-ingress`;
+   - добавить site-блок из `deploy/Caddyfile.taskradar.example`, подставив
+     решённые хост и порт;
+   - `caddy validate` на объединённой конфигурации, потом пересоздать контейнер.
+
+   До первого деплоя новый site-блок будет отвечать 502 — это нормально: имя
+   `taskradar-backend` ещё некому разрешать.
+
+7. **Первый релиз.** Запустить workflow `Release TaskRadar backend` с версии
+   вида `0.1.0`. Он соберёт и опубликует образ, дождётся подтверждения, создаст
+   тег и вызовет `taskradar-deploy` на сервере. Схему в пустой базе создаёт сам
+   деплой (шаг миграций) — руками ничего применять не нужно.
+
+8. **Проверка.** `taskradar-deploy` уже проверяет `GET /health` и что `GET
+   /board` без токена отвечает 401. Дополнительно стоит один раз залогиниться
+   боевыми учётными данными и убедиться, что приходит `token`.
+
+9. **Бэкапы.** Настроить сразу после первого релиза, не «когда-нибудь потом» —
+   `BACKUPS.md`.
+
+---
+
+## Миграции схемы
+
+`prisma migrate deploy` выполняется **отдельным одноразовым сервисом `migrate`**
+из того же образа, а не из entrypoint бэкенда. Причины (они же в комментарии в
+`compose.prod.yaml`):
+
+- при нескольких репликах старт из entrypoint — гонка: все инстансы
+  одновременно лезут за advisory-локом и применяют одну и ту же миграцию;
+- даже при одной реплике упавшая миграция внутри entrypoint выглядит как
+  crash-loop приложения: контейнер перезапускается, релиз «unhealthy», а
+  настоящая ошибка тонет в шуме перезапусков;
+- у отдельного шага есть свой код возврата, поэтому деплой останавливается
+  **до** того, как новый код начнёт обслуживать запросы;
+- откат контейнера и состояние схемы остаются различимыми. Смешав их в одном
+  процессе, эту асимметрию легко не заметить — а она никуда не девается.
+
+`profiles: ["migrate"]` держит сервис вне `docker compose up`: одноразовый
+контейнер, завершившийся с кодом 0, ломал бы `up --wait`.
+
+Важное про greenfield: «нет старых данных» не значит «схема появится сама». В
+пустой базе без `migrate deploy` не будет таблиц, и бэкенд упадёт на первом же
+запросе. Уже закоммиченная миграция `20260818095113_init` ровно для этого и
+нужна — на первом деплое её применение это не перенос данных, а создание схемы.
+
+`migrate deploy` только применяет уже закоммиченные миграции: он ничего не
+генерирует и не трогает схему, которой нет в `prisma/migrations/`. Поэтому
+расхождение между `prisma/schema.prisma` и каталогом миграций проверяется в CI
+(`prisma migrate diff --exit-code` в `integration-ci.yml`) — иначе «поправил
+схему, забыл сгенерировать миграцию» обнаруживается уже на сервере, отсутствующей
+колонкой.
+
+---
+
+## Релизы
+
+`Release TaskRadar backend` запускается вручную с `main`, версия — `X.Y.Z`.
+Шаги: полный прогон CI на конкретном коммите → ожидание в защищённом
+Environment `release-approval` → только после подтверждения создаётся
+аннотированный тег → сборка, публикация и attestation образа → вызов
+root-скрипта на сервере, который:
+
+1. берёт лок деплоя;
+2. проверяет SemVer и то, что образ задан **digest**-ссылкой на
+   `ghcr.io/<owner>/taskradar-backend`;
+3. тянет образ и сверяет метку `org.opencontainers.image.version` с версией
+   релиза;
+4. пишет `.release.env` (сохраняя предыдущий);
+5. поднимает только PostgreSQL и ждёт его healthcheck;
+6. делает дамп перед миграцией в `/var/backups/taskradar`;
+7. применяет миграции Prisma одноразовым контейнером;
+8. поднимает бэкенд;
+9. проверяет через публичный origin: `GET /health` отвечает
+   `{"status":"ok"}`, `GET /board` без токена отвечает 401.
+
+Шаг 6 на самом первом релизе делает дамп пустой базы — это корректный результат,
+а не особый случай. Начиная со второго релиза это единственное, что стоит между
+неудачной миграцией и потерей данных.
+
+GitHub Environment `production` требует:
+
+| Имя | Тип |
+|---|---|
+| `VPS_HOST` | secret |
+| `VPS_USER` (`taskradar-deploy`) | secret |
+| `VPS_SSH_PRIVATE_KEY` | secret |
+| `VPS_SSH_KNOWN_HOSTS` | secret |
+| `VPS_PORT` (`22`) | variable |
+| `PRODUCTION_URL` | variable |
+
+Environment `release-approval` — с владельцем как обязательным ревьюером; тегов
+он не создаёт, теги создаёт job `approve` после подтверждения.
+
+`latest` в проде не используется никогда: деплой принимает только digest.
+
+### Откат
+
+Не часть первичной установки — на чистом сервере откатываться некуда. На
+будущее: предыдущий релиз лежит в `/opt/taskradar/.release.env.previous`,
+поэтому возврат контейнера — это повторный `docker compose --env-file .env
+--env-file .release.env.previous -f compose.prod.yaml up -d --no-build`.
+**Откат контейнера не откатывает миграции БД.** Если релиз включал миграцию,
+сначала решается судьба схемы (дамп из шага 6 — та самая точка возврата), и
+только потом откатывается код.
+
+---
+
+## Клиент
+
+Веб-версии у TaskRadar нет, Caddy раздаёт только API. Приложение ходит на тот же
+домен по HTTPS.
+
+APK берётся из **GitHub Release** соответствующего тега (`app-release.yml`
+прикладывает `taskradar-<version>.apk` и файл с SHA-256 и делает attestation) —
+так же, как CashFlow раздаёт свои подписанные APK. На VDS APK не выкладывается:
+это дало бы раздачу подписанного бинарника с того же origin, где лежат данные,
+без какой-либо пользы.
+
+Базовый URL вшивается в сборку (`--dart-define=TASKRADAR_API_URL=...`,
+`AppConfig.apiBaseUrl`) — перенаправить уже собранный APK нельзя. URL обязан быть
+`https://`: `usesCleartextTraffic` включён только в debug-манифесте, поэтому
+release-сборка с `http://` установится и будет валить каждый запрос невнятной
+сетевой ошибкой.
+
+**TODO(owner): release-подпись.** Сейчас `app/android/app/build.gradle.kts`
+подписывает release debug-ключом. Workflow `app-release.yml` на этом
+останавливается и не даёт приложить такой APK к Release: debug-ключ не секрет
+(кто угодно может подписать обновление для этого applicationId), а при его
+пересоздании Android отказывается обновлять уже установленное приложение —
+лечится только переустановкой с потерей локального состояния. Нужен
+`signingConfig`, читающий `TASKRADAR_ANDROID_KEYSTORE_PATH`,
+`TASKRADAR_ANDROID_KEYSTORE_PASSWORD`, `TASKRADAR_ANDROID_KEY_ALIAS`,
+`TASKRADAR_ANDROID_KEY_PASSWORD`, плюс Actions-секреты
+`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`,
+`ANDROID_KEY_PASSWORD`. Файл в `app/` в этой итерации сознательно не правился.
+
+---
+
+## Что проверяется в CI, а что нет
+
+Docker на машине разработчика не установлен (это осознанное отклонение, см.
+`implementation-plan.md`), поэтому **ни образ, ни compose-стек локально не
+собирались и не запускались ни разу**. Вся проверка перенесена в CI:
+
+- `backend-ci.yml` — lint, тесты, `tsc`, `prisma validate`, сверка версии
+  Prisma CLI между `Dockerfile` и `package.json`, сборка образа (именно она
+  первый раз проверит нативный `bcrypt` и генерацию Prisma внутри образа);
+- `integration-ci.yml` — `caddy validate` на прод-site-блоке, расхождение
+  миграций и схемы, применение миграций в пустую базу, повторное применение
+  (идемпотентность), затем через настоящий Caddy: `/health`, 401 на закрытых
+  роутах, 404 на нероутируемом пути, отказ неверного пароля, реальный логин и
+  запрос с Bearer-токеном.
+
+Непроверяемое в принципе до применения на сервере: сам VDS (сеть, sudoers,
+форсированные команды), site-блок в объединённой конфигурации общего Caddy,
+`APP_ORIGIN`-проверки в `taskradar-deploy`, бэкапы и восстановление.

@@ -1,0 +1,142 @@
+# TaskRadar production stack.
+#
+# Tenant isolation model (see DEPLOYMENT.md): this project shares exactly one
+# thing with the other applications on the VDS -- the Caddy ingress. Neither
+# PostgreSQL nor the backend publishes a host port; Caddy reaches the backend
+# over the dedicated external network `taskradar-ingress` using the alias
+# `taskradar-backend`. Anything that would publish a port here, or attach these
+# services to another tenant's network, breaks that model.
+name: taskradar
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-taskradar}
+      POSTGRES_USER: ${POSTGRES_USER:-taskradar}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # $$ escapes the Compose interpolation, so the shell inside the container
+      # expands these, not Compose.
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    # No `ports:` on purpose. The database is reachable only from this Compose
+    # project's default network.
+    logging: *default-logging
+
+  # One-off schema migration step, deliberately NOT part of the backend's
+  # startup.
+  #
+  # Why a separate service instead of `prisma migrate deploy` in the backend
+  # entrypoint:
+  #
+  #   * more than one replica would race: every instance would try to take the
+  #     advisory lock and apply the same migration on boot, and the losers either
+  #     block or fail depending on timing;
+  #   * even with a single replica, a failed migration inside the entrypoint
+  #     looks like an application crash-loop. The container restarts, the release
+  #     appears "unhealthy" rather than "not migrated", and the real error
+  #     scrolls past in the restart noise;
+  #   * a separate step has its own exit code, so the deploy script can stop the
+  #     release *before* any new code starts serving traffic;
+  #   * it keeps the two halves of a rollback distinguishable: reverting to the
+  #     previous image is a container operation, while the schema stays where the
+  #     migration left it. Mixing both into one process hides that asymmetry.
+  #
+  # `profiles` keeps it out of `docker compose up`: it is started only by
+  # `docker compose run --rm migrate`, which enables the profile implicitly. A
+  # one-off container that exits 0 would otherwise make `up --wait` fail.
+  migrate:
+    image: ${BACKEND_IMAGE:-taskradar-backend:local}
+    profiles: ["migrate"]
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-taskradar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-taskradar}
+      # The Prisma CLI writes a version-check checkpoint under $HOME and calls
+      # home to see whether a newer release exists. The root filesystem is
+      # read-only and the container has no business making outbound requests
+      # during a deploy, so point HOME at the tmpfs and switch the check off.
+      HOME: /tmp
+      CHECKPOINT_DISABLE: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Invoked through the local binary rather than `npx` so that nothing tries
+    # to resolve or install a package while the filesystem is read-only.
+    command: ["/app/node_modules/.bin/prisma", "migrate", "deploy"]
+    logging: *default-logging
+
+  backend:
+    image: ${BACKEND_IMAGE:-taskradar-backend:local}
+    build:
+      context: ./backend
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+    restart: unless-stopped
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://${POSTGRES_USER:-taskradar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-taskradar}
+      # Single-user auth, defined entirely by these three variables (there is no
+      # users table). All are required: src/lib/authConfig.ts validates them at
+      # startup and throws, so a misconfigured deployment refuses to boot instead
+      # of serving an app nobody can log into.
+      AUTH_EMAIL: ${AUTH_EMAIL:?set AUTH_EMAIL in .env}
+      AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?set AUTH_PASSWORD_HASH in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      # Must be exactly the string "true" in production -- see the comment in
+      # deploy/production.env.example. Only "true"/"false" parse; anything else
+      # (TRUE, 1, yes) fails validation and the container will not start.
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # GET /health is the only route the auth guard lets through unauthenticated
+      # (PUBLIC_ROUTES in src/lib/authGuard.ts), which is what makes it usable as
+      # a probe. Written with node's global fetch because this image is
+      # bookworm-slim: it has neither curl nor wget.
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 15s
+    networks:
+      # Reachable from its own database network and from the shared ingress.
+      # The alias is the name the shared Caddyfile proxies to.
+      default: {}
+      taskradar-ingress:
+        aliases: [taskradar-backend]
+    logging: *default-logging
+
+volumes:
+  postgres-data:
+
+networks:
+  # Created once by hand (see DEPLOYMENT.md), not by Compose, because the Caddy
+  # container from another Compose project has to join it too.
+  taskradar-ingress:
+    external: true

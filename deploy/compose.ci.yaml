@@ -1,0 +1,96 @@
+# CI-only stack for the integration check.
+#
+# It exists because the production stack cannot be exercised on the development
+# machine (no Docker there) and must not be exercised on the VDS. Everything
+# here mirrors compose.prod.yaml except for the parts that only make sense in
+# production: no restart policy, no volume, no external ingress network, and the
+# gateway publishes a loopback port so the runner can make requests.
+#
+# All credentials below are throwaway values committed on purpose: they are what
+# makes a *real* login possible in CI. They are not secrets, they never leave the
+# runner, and they must never appear in /opt/taskradar/.env.
+name: taskradar-ci
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: taskradar_ci
+      POSTGRES_USER: taskradar
+      POSTGRES_PASSWORD: taskradar-ci-only
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U taskradar -d taskradar_ci"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  migrate:
+    build:
+      context: ../backend
+    profiles: ["migrate"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      DATABASE_URL: postgresql://taskradar:taskradar-ci-only@postgres:5432/taskradar_ci
+      HOME: /tmp
+      CHECKPOINT_DISABLE: "1"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["/app/node_modules/.bin/prisma", "migrate", "deploy"]
+
+  backend:
+    build:
+      context: ../backend
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: postgresql://taskradar:taskradar-ci-only@postgres:5432/taskradar_ci
+      AUTH_EMAIL: ci@taskradar.invalid
+      # bcrypt hash (cost 12) of "taskradar-ci-only".
+      #
+      # Every `$` is doubled: Compose interpolates the compose file itself, so a
+      # single `$2b` would be read as a reference to a variable named `2b` and
+      # the backend would receive a mangled value. The same trap applies to the
+      # production .env file, where the fix is different -- see
+      # deploy/production.env.example.
+      AUTH_PASSWORD_HASH: "$$2b$$12$$DLhWadr0UmR3UnxZEjx2AOn3KDZjjfg5HIhjP/Q0pDOdyQaCeUoT."
+      JWT_SECRET: taskradar-ci-only-jwt-secret-value-0123456789
+      # False here even though production sets true: the CI gateway speaks plain
+      # HTTP, and a Secure cookie would be dropped by any HTTP client that
+      # honours the attribute. The native app carries a bearer token anyway, so
+      # this does not weaken what the check covers.
+      COOKIE_SECURE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  gateway:
+    image: caddy:2.10-alpine
+    ports:
+      # Loopback only, and a port unlikely to collide with anything else on the
+      # runner.
+      - 127.0.0.1:18091:8080
+    volumes:
+      - ./Caddyfile.ci:/etc/caddy/Caddyfile:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20

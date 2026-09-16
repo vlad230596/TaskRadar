@@ -1,0 +1,144 @@
+name: Release TaskRadar Android APK
+
+# Packages the native client and attaches it to the GitHub Release for an
+# existing tag.
+#
+# Why the APK lives in a GitHub Release rather than on the VDS: the client is
+# sideloaded onto one personal phone (TaskRadar will never be published to Play,
+# see flutter-migration-plan.md). A Release gives a private, authenticated,
+# versioned download with a checksum and a build attestation, and it keeps the
+# TaskRadar ingress serving nothing but the API -- adding a download path to
+# Caddy would mean hosting a signed binary on the same origin that holds the
+# data, for no benefit.
+#
+# Separate from release.yml on purpose: the backend must be deployable without
+# waiting for a client build, and a client build must not be able to block a
+# server fix.
+#
+# BLOCKED until the Android release signing config exists -- see the first step.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Existing SemVer tag to build the APK from
+        required: true
+        type: string
+      flutter_version:
+        description: Exact Flutter version to build with (empty = latest stable)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+      # TODO(owner): set the repository variable TASKRADAR_API_URL to the same
+      # origin as APP_ORIGIN in /opt/taskradar/.env. It is a build-time constant
+      # in the client (AppConfig.apiBaseUrl), so an APK cannot be repointed
+      # afterwards.
+      TASKRADAR_API_URL: ${{ vars.TASKRADAR_API_URL }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.version }}
+
+      - name: Require a real release signing config
+        # Guard, not paperwork. app/android/app/build.gradle.kts currently signs
+        # the release build type with the *debug* keystore ("TODO: Add your own
+        # signing config"). A debug-signed APK installs and runs, so nothing
+        # would look wrong -- until the debug keystore is regenerated (a fresh
+        # checkout, another machine, a reinstalled SDK), at which point Android
+        # refuses to update the installed app and the only way forward is
+        # uninstalling it and losing its local state. Worse, the debug key is
+        # not a secret, so anyone could sign an update for this application id.
+        #
+        # Producing such an APK from CI and attaching it to a Release would make
+        # all of that durable, so the job stops here instead.
+        run: |
+          gradle_file=app/android/app/build.gradle.kts
+          if grep -q 'signingConfigs.getByName("debug")' "$gradle_file"; then
+            echo "$gradle_file still signs the release build with the debug keystore." >&2
+            echo 'Add a real release signingConfig reading these environment variables:' >&2
+            echo '  TASKRADAR_ANDROID_KEYSTORE_PATH' >&2
+            echo '  TASKRADAR_ANDROID_KEYSTORE_PASSWORD' >&2
+            echo '  TASKRADAR_ANDROID_KEY_ALIAS' >&2
+            echo '  TASKRADAR_ANDROID_KEY_PASSWORD' >&2
+            echo 'then store the keystore and its passwords as Actions secrets.' >&2
+            exit 65
+          fi
+          test -n "$TASKRADAR_API_URL"
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: stable
+          cache: true
+
+      - name: Configure Android release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > app/android/app/release-keystore.jks
+          chmod 600 app/android/app/release-keystore.jks
+
+      - name: Build the signed release APK
+        working-directory: app
+        env:
+          TASKRADAR_ANDROID_KEYSTORE_PATH: ${{ github.workspace }}/app/android/app/release-keystore.jks
+          TASKRADAR_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          TASKRADAR_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          TASKRADAR_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # The API URL is passed explicitly: AppConfig's default is
+        # http://localhost:3001, which is correct for desktop development and
+        # useless on a phone. A release build must also never fall back to
+        # cleartext -- usesCleartextTraffic is enabled in the debug manifest
+        # only, so an http:// value here produces an APK whose every request
+        # fails with an opaque socket error.
+        run: |
+          case "$TASKRADAR_API_URL" in
+            https://*) ;;
+            *) echo 'TASKRADAR_API_URL must be an https:// origin.' >&2; exit 64 ;;
+          esac
+          flutter pub get
+          flutter build apk --release \
+            --build-name "$VERSION" \
+            --build-number "$GITHUB_RUN_NUMBER" \
+            --dart-define="TASKRADAR_API_URL=$TASKRADAR_API_URL"
+          mv build/app/outputs/flutter-apk/app-release.apk "../taskradar-$VERSION.apk"
+          cd ..
+          sha256sum "taskradar-$VERSION.apk" > "taskradar-$VERSION.apk.sha256"
+
+      - name: Attest the APK
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: taskradar-${{ inputs.version }}.apk
+
+      - name: Publish the APK to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" \
+              "taskradar-$VERSION.apk" \
+              "taskradar-$VERSION.apk.sha256" \
+              --clobber
+          else
+            # --verify-tag: refuse to invent a tag here. Tags are created only by
+            # the approved backend release workflow.
+            gh release create "$VERSION" \
+              "taskradar-$VERSION.apk" \
+              "taskradar-$VERSION.apk.sha256" \
+              --verify-tag \
+              --title "TaskRadar $VERSION" \
+              --generate-notes
+          fi

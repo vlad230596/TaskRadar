@@ -1,0 +1,24 @@
+# Keep the build context to exactly what the image needs: package manifests,
+# tsconfig.json, src/ and prisma/.
+#
+# node_modules is the critical exclusion, not a size optimisation: this
+# repository is developed on Windows, so a host node_modules carries a
+# Windows-built bcrypt binary and Windows Prisma engines. Copying those into a
+# Linux image produces "invalid ELF header" at require time, long after the
+# build has reported success.
+node_modules
+dist
+
+# Tests, linters and formatters have no job inside a production image; they run
+# in CI against the repository instead.
+test
+coverage
+eslint.config.js
+.prettierrc.json
+.prettierignore
+
+# Belt and braces: secrets live in the repo-root .env (gitignored) and are
+# injected as container environment variables, never baked into a layer.
+.env
+.env.*
+*.log

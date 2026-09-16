@@ -1,0 +1,66 @@
+# TaskRadar site block for the SHARED Caddy instance on the VDS.
+#
+# Add this as a separate site block to the existing configuration -- it is the
+# only file outside /opt/taskradar that TaskRadar touches. Back up the current
+# shared Caddyfile and Compose file first, then `caddy validate` the merged
+# configuration before recreating Caddy (see DEPLOYMENT.md).
+#
+# The address is taken from the environment so that this example contains no
+# invented domain. Either export TASKRADAR_SITE_ADDRESS for the Caddy container,
+# or substitute the literal value while pasting the block in:
+#
+#     TASKRADAR_SITE_ADDRESS=taskradar.<your-domain>:<your-ingress-port>
+#
+# TODO(owner): decide the hostname and the ingress port. A port that is already
+# taken by another tenant makes Caddy fail to start, which takes every
+# application on the host down with it, so check the existing site blocks first.
+{$TASKRADAR_SITE_ADDRESS} {
+	encode zstd gzip
+
+	header {
+		# The client is a native app over HTTPS only; there is no scenario where
+		# a downgrade to plain HTTP is wanted. HSTS is host-scoped, not
+		# port-scoped: it will apply to every port on this hostname, which is
+		# another reason to give TaskRadar its own hostname rather than another
+		# port on a hostname shared with a different application.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# Nothing here needs to advertise the proxy.
+		-Server
+	}
+
+	# This host serves a JSON API and nothing else: no HTML, no static assets, no
+	# frontend image. That is why there is no Content-Security-Policy and no
+	# X-Frame-Options block -- both only constrain how a *document* may load
+	# subresources or be framed, and this origin never returns a document.
+
+	# Fastify's own default body limit is 1 MB; rejecting oversized bodies at the
+	# edge keeps them from being buffered by Node at all. Caddy applies
+	# directives in its own fixed order regardless of where they appear, but this
+	# sits above the handlers so that reading order matches execution order.
+	request_body {
+		max_size 1MB
+	}
+
+	# Explicit allowlist of the API surface, so the only paths that reach Node
+	# are the ones the app actually serves. Everything else is refused at the
+	# edge without ever touching the backend.
+	#
+	# TRAP: this list has to be updated when a new top-level route is added to
+	# backend/src/routes/. A forgotten prefix looks like a client bug -- 404 from
+	# Caddy is indistinguishable from 404 from Fastify -- so the same prefixes are
+	# exercised through Caddy by the integration check in
+	# .github/workflows/integration-ci.yml, using deploy/Caddyfile.ci.
+	@api path /health /auth/* /board /projects /projects/* /tasks/* /notes/*
+	handle @api {
+		# Matches the alias and port from compose.prod.yaml. Resolution works only
+		# because the Caddy container is attached to the `taskradar-ingress`
+		# network.
+		reverse_proxy taskradar-backend:3001
+	}
+
+	handle {
+		respond 404
+	}
+}
