@@ -10,12 +10,14 @@ import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/screens/board_screen.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
+import 'package:taskradar/screens/settings_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_notification_gateway.dart';
+import 'support/fake_settings_store.dart';
 import 'support/fixtures.dart';
 
 /// Widget tests for the board screen: every state it can be in, and the three
@@ -54,6 +56,9 @@ void main() {
           // test VM, but only the fake keeps these tests from depending on
           // that.
           notificationGatewayProvider.overrideWithValue(gateway),
+          // The reminder hour is persisted from F4 on; the real store is a
+          // `shared_preferences` platform channel the test VM does not have.
+          settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
         ],
         // `onGenerateRoute` as well as `home`, matching `app.dart`: from F3 a
         // board card pushes a named route, and without the generator a tap
@@ -254,13 +259,26 @@ void main() {
       expect(backend.requests, hasLength(2));
     });
 
-    testWidgets('the notification bench is still reachable', (tester) async {
+    testWidgets('the overflow menu reaches the archive and the settings', (
+      tester,
+    ) async {
       await pumpBoard(tester);
 
-      await tester.tap(find.byTooltip(NotificationBenchScreen.title));
+      // F4 moved the bench out of the app bar and into settings, and put the
+      // archive and the settings behind one menu -- see the note on
+      // `_BoardMenuAction`.
+      await tester.tap(find.byTooltip('Ещё'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Архив'), findsOneWidget);
+      expect(find.text('Настройки'), findsOneWidget);
+      expect(find.text('Выйти'), findsOneWidget);
+
+      await tester.tap(find.text('Настройки'));
       await settle(tester);
 
-      expect(find.byType(NotificationBenchScreen), findsOneWidget);
+      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.text(NotificationBenchScreen.title), findsOneWidget);
     });
   });
 
@@ -273,7 +291,7 @@ void main() {
       await pumpBoard(tester);
 
       expect(find.text('Проектов пока нет'), findsOneWidget);
-      expect(find.textContaining('старый веб-клиент'), findsOneWidget);
+      expect(find.textContaining('Кнопка «Проект»'), findsOneWidget);
       expect(find.byType(CircularProgressIndicator), findsNothing);
     });
   });

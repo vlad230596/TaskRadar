@@ -26,6 +26,38 @@ abstract interface class NotificationGateway {
   /// call more than once.
   Future<void> initialize();
 
+  /// Registers the handler for a notification the user tapped **while this
+  /// isolate was alive** -- app in the foreground, or resumed from the
+  /// background (F4).
+  ///
+  /// ## Why this is not the whole story
+  ///
+  /// It cannot see the case that matters most. When the app is not running, the
+  /// tap starts the process, and `flutter_local_notifications` states plainly
+  /// that the response callback is **not** invoked for the notification that
+  /// launched the app -- that tap is only readable through
+  /// [takeLaunchPayload]. Wiring this alone gives a deep link that works
+  /// perfectly in every test on a warm app and silently does nothing at 09:00
+  /// on a phone that spent the night with the app swiped away, which is the only
+  /// time it is actually needed.
+  ///
+  /// ## Why the handler is settable rather than a constructor argument
+  ///
+  /// The gateway is created by a provider; the thing that knows how to navigate
+  /// is created later, by another. Taps that arrive in between are **buffered**
+  /// and delivered when a handler appears -- an implementation may not drop
+  /// them.
+  void setTapHandler(void Function(String? payload) handler);
+
+  /// The payload of the notification that **launched** the app, or null.
+  ///
+  /// Consuming: the second call answers null. The alternative -- a plain getter
+  /// re-read whenever convenient -- is a bug on Android, where `onNewIntent`
+  /// replaces the activity's launch intent, so a later read would return the
+  /// payload of a *background* tap that [setTapHandler] has already delivered,
+  /// and the app would navigate twice.
+  Future<String?> takeLaunchPayload();
+
   /// Asks the OS for whatever is still missing, showing system prompts.
   ///
   /// Must only be called from a user gesture -- Android shows the

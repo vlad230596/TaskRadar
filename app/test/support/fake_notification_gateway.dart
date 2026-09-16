@@ -41,6 +41,47 @@ class FakeNotificationGateway implements NotificationGateway {
   int cancelAllCount = 0;
   int pendingCount = 0;
 
+  /// What [takeLaunchPayload] answers on its first call -- "the app was started
+  /// by a tap on this notification". Set it before the providers come up.
+  String? launchPayload;
+
+  /// How many times [takeLaunchPayload] was called, so a test can prove the
+  /// cold-start payload is read exactly once per run (reading it twice
+  /// double-navigates on a real Android device).
+  int launchPayloadReads = 0;
+
+  void Function(String? payload)? _tapHandler;
+  final List<String?> _bufferedTaps = <String?>[];
+
+  /// Simulates a tap on a notification while the app is alive. Buffered when
+  /// nobody has registered a handler yet, exactly as the real gateway does.
+  void tap(String? payload) {
+    final handler = _tapHandler;
+    if (handler == null) {
+      _bufferedTaps.add(payload);
+      return;
+    }
+    handler(payload);
+  }
+
+  @override
+  void setTapHandler(void Function(String? payload) handler) {
+    _tapHandler = handler;
+    final buffered = List<String?>.of(_bufferedTaps);
+    _bufferedTaps.clear();
+    for (final payload in buffered) {
+      handler(payload);
+    }
+  }
+
+  @override
+  Future<String?> takeLaunchPayload() async {
+    launchPayloadReads++;
+    final payload = launchPayload;
+    launchPayload = null;
+    return payload;
+  }
+
   /// When set, every mutating call throws it. Used to prove the scheduler turns
   /// a platform failure into a report rather than an exception.
   Object? failure;

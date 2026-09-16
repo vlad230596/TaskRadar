@@ -54,6 +54,22 @@ dependencies:
   # manager -- a read cache has no business showing up there.
   path_provider: ^2.1.5
 
+  # The one user setting this app has (F4): the hour the morning reminders fire
+  # at. Deliberately NOT the board snapshot's file-plus-schema-version machinery
+  # -- that exists to make a cache whose every failure mode maps to "there is no
+  # cache", and a two-integer preference needs none of it.
+  #
+  # `shared_preferences` over a hand-rolled JSON file because it is already the
+  # platform's own answer on both targets (Android SharedPreferences, a JSON
+  # file in the roaming app-data folder on Windows), because a preference has no
+  # schema to migrate, and because the next settings (F7's remembered scope,
+  # F8's ASR model path) are the same shape and will cost one line each.
+  #
+  # NOT for the token: that stays in `flutter_secure_storage`. SharedPreferences
+  # is world-readable to anything with root or a backup extractor, which is
+  # exactly the distinction the two packages exist to keep.
+  shared_preferences: ^2.5.2
+
   # Token storage: Android Keystore / Windows DPAPI rather than SharedPreferences.
   # Pinned to the 10.x line to match the sibling CashFlow app, so the two projects
   # on this machine share one platform-channel implementation and one set of

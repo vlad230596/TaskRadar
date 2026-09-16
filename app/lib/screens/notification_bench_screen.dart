@@ -72,7 +72,6 @@ class _NotificationBenchScreenState
             onShowNow: _showNow,
             onInTwoMinutes: _scheduleInTwoMinutes,
             onTomorrow: _scheduleTomorrow,
-            onPickTime: _pickReminderTime,
           ),
           const SizedBox(height: 12),
           _SyntheticSetCard(
@@ -139,7 +138,10 @@ class _NotificationBenchScreenState
 
   Future<void> _scheduleTomorrow() async {
     final location = await _location();
-    final at = ref.read(reminderSettingsProvider);
+    // `.value ?? default` rather than awaiting the future: this is a diagnostic
+    // button, and the settled hour is on screen right next to it. See
+    // `_OneOffTestsCard`.
+    final at = ref.read(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
     final today = tz.TZDateTime.now(location);
     final fireAt = tz.TZDateTime(
       location,
@@ -179,21 +181,6 @@ class _NotificationBenchScreenState
     );
 
     _refreshEverything();
-  }
-
-  Future<void> _pickReminderTime() async {
-    final current = ref.read(reminderSettingsProvider);
-    final picked = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay(hour: current.hour, minute: current.minute),
-    );
-    if (picked == null) return;
-
-    // Writing the setting is all that is needed: `reminderSyncProvider` watches
-    // it and re-arms the whole queue by itself.
-    ref
-        .read(reminderSettingsProvider.notifier)
-        .setTime(ReminderTime(picked.hour, picked.minute));
   }
 
   /// Fills the target set with rows that cover every branch of
@@ -380,17 +367,16 @@ class _OneOffTestsCard extends ConsumerWidget {
     required this.onShowNow,
     required this.onInTwoMinutes,
     required this.onTomorrow,
-    required this.onPickTime,
   });
 
   final VoidCallback onShowNow;
   final VoidCallback onInTwoMinutes;
   final VoidCallback onTomorrow;
-  final VoidCallback onPickTime;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final at = ref.watch(reminderSettingsProvider);
+    final at =
+        ref.watch(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
 
     return _Section(
       title: 'Разовые проверки',
@@ -411,14 +397,10 @@ class _OneOffTestsCard extends ConsumerWidget {
           ],
         ),
         const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: onPickTime,
-          icon: const Icon(Icons.schedule),
-          label: Text('Час напоминания: ${at.format()}'),
-        ),
-        const Text(
-          'Время напоминания на F1 живёт только в памяти — после перезапуска '
-          'снова 09:00. Настройка и её хранение — на F4.',
+        Text(
+          'Час напоминания — ${at.format()}. С F4 он настраивается на экране '
+          '«Настройки» и переживает перезапуск; здесь он только показан, '
+          'чтобы не было двух мест, где его можно поменять.',
         ),
       ],
     );

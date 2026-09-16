@@ -6,6 +6,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/api_exception.dart';
 import '../api/patch_field.dart';
 import '../api/project_api.dart';
+import '../domain/reminders.dart';
 import '../domain/task_reorder.dart';
 import '../models/board_project.dart';
 import '../models/note.dart';
@@ -185,6 +186,57 @@ class ProjectTasks extends _$ProjectTasks {
         },
       );
     });
+  }
+
+  /// Sets or clears a blocked task's reminder date (F4).
+  ///
+  /// [date] is a calendar date as `YYYY-MM-DD`, never an instant -- see
+  /// [calendarDateForApi] for the two obvious serialisations that are both off
+  /// by a day, and `domain/reminders.dart` for the reading half of the same
+  /// trap. Null means "clear it", which reaches the wire as an explicit
+  /// [PatchField.clear]; the optimistic row is corrected by the server's answer
+  /// a moment later, which is how the stored value ends up as UTC midnight
+  /// (`2026-10-01` goes out, `2026-10-01T00:00:00.000Z` comes back) without this
+  /// method having to know that.
+  ///
+  /// ## Why there is no reconcile here, and why the alarms still change
+  ///
+  /// `isCurrent` is "the first `pending` task in position order": it depends on
+  /// status and order, and on nothing else. A reminder date can move neither, so
+  /// this takes the no-extra-request path that [editTitle] takes.
+  ///
+  /// The alarms follow anyway, and without a single scheduler call: the settled
+  /// list goes into the board through [Board.applyProjectTasks] (which every
+  /// mutation here does), `boardReminderBridge` sees a new list and republishes
+  /// the target set, and `reminderSync` re-arms. Rule 3 at the top of this file.
+  ///
+  /// Refuses a task that is not blocked. A date on a `pending` or `done` task is
+  /// invisible (only a blocked row shows it) and produces no alarm
+  /// (`remindersFromBoard` filters on the status), so setting one would be a
+  /// write whose entire effect is a value that resurfaces the next time someone
+  /// blocks the task -- which is the exact bug [setStatus] clears the date to
+  /// avoid.
+  Future<void> setRemindAt(Task task, String? date) {
+    if (task.status != TaskStatus.blocked) {
+      throw StateError(
+        'task ${task.id} is ${task.status.name}; only a blocked task has a '
+        'reminder date',
+      );
+    }
+
+    return _editText(
+      task,
+      // The optimistic value is what the *picker* produced, not what the server
+      // will store. It is a bare `2026-10-01` where the row will end up holding
+      // `2026-10-01T00:00:00.000Z` -- and every reader in the app takes the
+      // `YYYY-MM-DD` prefix, so both render and compare identically. That is the
+      // representation earning its keep rather than an accident.
+      (rows, index) => rows[index].copyWith(remindAt: date),
+      () => _api.updateTask(
+        task.id,
+        remindAt: PatchField<String>.toOrClear(date),
+      ),
+    );
   }
 
   /// Renames a task. No reconcile: a title cannot change the order or which task

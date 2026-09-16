@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../screens/archive_screen.dart';
 import '../screens/project_screen.dart';
+import '../screens/settings_screen.dart';
 
 /// The app's routes, and the seam F4 plugs the notification deep link into.
 ///
@@ -53,12 +55,33 @@ abstract final class AppRoutes {
   /// The project screen. See [ProjectRouteArgs].
   static const String project = '/project';
 
+  /// The archive: projects taken off the board, and the only place a project
+  /// can be deleted from (F4).
+  static const String archive = '/archive';
+
+  /// Settings. One setting so far -- the hour reminders fire at (F4).
+  static const String settings = '/settings';
+
   /// Hooked up as `MaterialApp.onGenerateRoute`.
   ///
   /// Returns null for anything it does not recognise, which lets
   /// `WidgetsApp` fall through to `onUnknownRoute` / assert in debug rather than
   /// silently showing a blank page.
   static Route<void>? onGenerateRoute(RouteSettings settings) {
+    if (settings.name == archive) {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => const ArchiveScreen(),
+      );
+    }
+
+    if (settings.name == AppRoutes.settings) {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => const SettingsScreen(),
+      );
+    }
+
     if (settings.name != project) return null;
 
     final args = settings.arguments;
@@ -97,13 +120,27 @@ abstract final class AppRoutes {
     );
   }
 
+  /// Opens the archive.
+  static Future<void> openArchive(BuildContext context) =>
+      Navigator.of(context).pushNamed<void>(archive);
+
+  /// Opens settings.
+  static Future<void> openSettings(BuildContext context) =>
+      Navigator.of(context).pushNamed<void>(settings);
+
   /// Opens a project from outside the widget tree -- a notification tap, or
   /// anything else that starts at a platform channel.
   ///
   /// Returns false when there is no navigator yet (the app is still starting, or
   /// is on the login screen, where pushing a project screen would be wrong
-  /// anyway). The caller is expected to remember the intent and retry, which is
-  /// F4's problem and not this function's.
+  /// anyway). The caller is expected to remember the intent and retry.
+  ///
+  /// **F4's answer to "remember and retry"**: the intent is not held here at
+  /// all. `NotificationLink` holds it as provider state and
+  /// `widgets/notification_link_scope.dart` calls this only once it is itself
+  /// mounted -- i.e. once the user is signed in and a navigator provably exists.
+  /// A false return is therefore a bug rather than a normal condition, and the
+  /// scope logs it instead of silently swallowing the tap.
   static bool openProjectFromBackground({
     required String projectId,
     String? highlightTaskId,

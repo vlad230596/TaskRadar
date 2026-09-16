@@ -4,7 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error_message.dart';
 import '../domain/project_summary.dart';
 import '../models/board_project.dart';
+import '../models/project.dart';
+import '../providers/archive_providers.dart';
 import '../providers/project_providers.dart';
+import '../widgets/mutation_feedback.dart';
 import '../widgets/note_list.dart';
 import '../widgets/task_list.dart';
 
@@ -145,6 +148,12 @@ class _ProjectBody extends ConsumerWidget {
                   ),
                 ),
               ),
+            // Archiving lives here rather than on the board card, because here
+            // is where the decision is made: you archive a project after
+            // looking at what is left in it, not while scrolling past it. It is
+            // also behind a menu rather than on a button, since it is a
+            // once-a-month action sharing an app bar with a tab strip.
+            _ProjectMenu(project: view.project),
           ],
         ),
         body: Column(
@@ -191,6 +200,91 @@ class _ProjectBody extends ConsumerWidget {
     );
   }
 }
+
+/// The project's own actions (F4). Archiving, and -- for a project that is
+/// already archived -- bringing it back.
+///
+/// There is no "переименовать" here, and that is not an oversight in the UI: the
+/// backend has **no `PATCH /projects/:id`**. `POST /projects` and the two
+/// archive routes are the whole of a project's write surface
+/// (`backend/src/routes/projects.ts`), so a name is fixed at creation for every
+/// client there has ever been. It is a missing endpoint.
+class _ProjectMenu extends ConsumerWidget {
+  const _ProjectMenu({required this.project});
+
+  final Project project;
+
+  bool get _archived => project.archivedAt != null;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return PopupMenuButton<_ProjectAction>(
+      tooltip: 'Действия с проектом',
+      onSelected: (action) => switch (action) {
+        _ProjectAction.archive => _archive(context, ref),
+        _ProjectAction.unarchive => _unarchive(context, ref),
+      },
+      itemBuilder: (_) => <PopupMenuEntry<_ProjectAction>>[
+        if (_archived)
+          const PopupMenuItem<_ProjectAction>(
+            value: _ProjectAction.unarchive,
+            child: ListTile(
+              leading: Icon(Icons.unarchive_outlined),
+              title: Text('Вернуть из архива'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          )
+        else
+          const PopupMenuItem<_ProjectAction>(
+            value: _ProjectAction.archive,
+            child: ListTile(
+              leading: Icon(Icons.inventory_2_outlined),
+              title: Text('В архив'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _archive(BuildContext context, WidgetRef ref) async {
+    // A plain yes/no, unlike deleting: archiving is reversible in one tap from
+    // the archive screen, and the confirmation exists only so a mis-tap in a
+    // menu does not silently take a project off the board.
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Убрать проект с доски?',
+      message:
+          '«${project.name}» уйдёт в архив: с доски пропадёт, напоминания его '
+          'задач приходить перестанут. Вернуть можно в любой момент.',
+      confirmLabel: 'В архив',
+    );
+    if (!confirmed || !context.mounted) return;
+
+    final navigator = Navigator.of(context);
+    final ok = await runMutation(
+      context,
+      () => ref.read(projectLifecycleProvider.notifier).archive(project.id),
+      failure: 'Не удалось архивировать проект.',
+    );
+
+    // Back to the board on success. Staying would leave the user inside a
+    // project that is no longer on the board they came from, looking at a
+    // screen whose every control still works -- which is true (an archived
+    // project is still editable) and confusing.
+    if (ok && navigator.canPop()) navigator.pop();
+  }
+
+  Future<void> _unarchive(BuildContext context, WidgetRef ref) {
+    return runMutation(
+      context,
+      () => ref.read(projectLifecycleProvider.notifier).unarchive(project.id),
+      failure: 'Не удалось вернуть проект из архива.',
+    );
+  }
+}
+
+enum _ProjectAction { archive, unarchive }
 
 /// "What you are looking at is the cache / the last refresh failed."
 ///

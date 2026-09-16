@@ -5,6 +5,7 @@ import '../notifications/local_notification_gateway.dart';
 import '../notifications/notification_gateway.dart';
 import '../notifications/notification_time_zone.dart';
 import '../notifications/reminder_scheduler.dart';
+import 'dependencies.dart';
 
 part 'reminder_providers.g.dart';
 
@@ -28,17 +29,49 @@ NotificationGateway notificationGateway(Ref ref) => LocalNotificationGateway();
 Future<NotificationTimeZone> notificationTimeZone(Ref ref) =>
     NotificationTimeZone.resolve();
 
-/// The hour reminders fire at.
+/// The hour reminders fire at, persisted (F4).
 ///
-/// In memory only for F1. F4 adds the settings screen and persists it; when it
-/// does, the only change here is where `build()` reads its initial value from --
-/// every consumer already re-syncs on change.
+/// ## Why this became asynchronous
+///
+/// F1 kept it in memory with a default and said the only F4 change would be
+/// where `build()` reads from. It is one step bigger than that, and the step is
+/// worth taking: reading from disk is a future, so the choice is between
+///
+/// - publishing the default immediately and overwriting it when the store
+///   answers -- which arms the whole queue at 09:00, then cancels and re-arms it
+///   at the saved hour a few milliseconds later, on every single cold start; or
+/// - making the settle part of the value, so [ReminderSync] simply waits.
+///
+/// The second is both cheaper and honest, and it costs nothing downstream:
+/// [reminderSync] is already async (the plugin and the timezone are), so one
+/// more awaited input changes no consumer's shape. The property F1 built the
+/// graph around is untouched -- changing this **is** the reschedule, and nothing
+/// calls the scheduler.
+///
+/// A store that cannot be read is not an error state: [SettingsStore] answers
+/// null and the default applies. A settings screen that showed a red error
+/// because a preference file was missing would be absurd.
 @Riverpod(keepAlive: true)
 class ReminderSettings extends _$ReminderSettings {
   @override
-  ReminderTime build() => ReminderTime.defaultMorning;
+  Future<ReminderTime> build() async =>
+      await ref.watch(settingsStoreProvider).readReminderTime() ??
+      ReminderTime.defaultMorning;
 
-  void setTime(ReminderTime time) => state = time;
+  /// Applies a new hour and persists it.
+  ///
+  /// The state is set **before** the write and is not rolled back if the write
+  /// throws. That is the opposite of the rule for server writes (see
+  /// `project_providers.dart`), and deliberately so: there is no other party
+  /// here to disagree with, the user's choice is a fact about this session
+  /// whether or not the disk accepted it, and re-arming alarms at the hour they
+  /// asked for is strictly better than re-arming them at the old one. The only
+  /// thing lost by a failed write is the value surviving a restart, which is
+  /// what the thrown error is for -- the caller reports it.
+  Future<void> setTime(ReminderTime time) async {
+    state = AsyncData(time);
+    await ref.read(settingsStoreProvider).writeReminderTime(time);
+  }
 }
 
 /// The set of reminders that *should* be armed right now.
@@ -78,7 +111,7 @@ class ReminderSync extends _$ReminderSync {
 
     return scheduler.sync(
       reminders: ref.watch(reminderTargetsProvider),
-      at: ref.watch(reminderSettingsProvider),
+      at: await ref.watch(reminderSettingsProvider.future),
     );
   }
 

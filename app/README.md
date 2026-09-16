@@ -50,12 +50,13 @@ lib/
   storage/       secure token storage, board snapshot file
   providers/     riverpod: singletons, session state, board, project, forms
   navigation/    the one router, and the seam F4's deep link plugs into
-  screens/       splash / login / board / project / note editor /
-                 notification bench (F1, temporary)
+  screens/       splash / login / board / project / note editor / archive /
+                 settings / notification bench (F1, kept as a diagnostic)
   widgets/       reusable pieces of the screens
 test/
   support/       fake HTTP transport (routed + stateful), fake token storage,
-                 fake notification gateway, fake snapshot store, JSON fixtures
+                 fake notification gateway, fake snapshot store, fake settings
+                 store, JSON fixtures
 ```
 
 ## The board and its read cache (F2)
@@ -85,11 +86,13 @@ a second `GET /board`. See "Inside a project" below.
 
 The snapshot (`lib/storage/board_snapshot_store.dart`) is a versioned JSON file
 in the application-support directory. It is **read-only cache**: no write ever
-originates from it, and F3/F4 mutations will require the network, as
-`../flutter-migration-plan.md` insists. Every way it can be untrustworthy
-(absent, truncated, corrupt, older schema) maps to "there is no snapshot", which
-the screen shows as *loading* — never as an empty board, because "you have no
-projects" and "the cache is unreadable" look identical and mean the opposite.
+originates from it, and every F3/F4 mutation requires the network, as
+`../flutter-migration-plan.md` insists. It also earns its keep a second time in
+F4: it is what lets a reminder tapped with no signal still find the project its
+task belongs to. Every way it can be untrustworthy (absent, truncated, corrupt,
+older schema) maps to "there is no snapshot", which the screen shows as
+*loading* — never as an empty board, because "you have no projects" and "the
+cache is unreadable" look identical and mean the opposite.
 **The token is not in it**; that stays in `flutter_secure_storage`.
 
 One framework default is overridden on purpose: Riverpod 3 retries a failed
@@ -110,8 +113,8 @@ flutter test test/live_board_contract_test.dart test/live_project_contract_test.
   --dart-define=TASKRADAR_LIVE_PASSWORD=...
 ```
 
-`live_project_contract_test.dart` (F3) does the same for the **write** path; see
-"Checking the writes against the real server" below.
+`live_project_contract_test.dart` does the same for the **write** path, F3's and
+F4's; see "Checking the writes against the real server" below.
 
 ## Inside a project (F3)
 
@@ -218,6 +221,132 @@ sending `content-type: application/json` on bodiless requests, so **every
 faked transport can see that, because a fake does not read the header. The fix is
 in `ApiClient._onRequest`; the regression guard is in `test/api_client_test.dart`.
 
+## The day inside the app (F4)
+
+F4 is the iteration after which this replaces the old way of working, so the
+measure for every decision in it was "can a working day happen entirely in
+here". Three things were missing for that and are now present: a blocker can be
+given a date, a reminder can be acted on from the lock screen, and projects can
+be created, archived and deleted without opening the web client.
+
+### The blocker cycle
+
+`widgets/task_list.dart`: choosing "Блокер" on a task that has no date opens the
+date picker immediately, because "blocked" and "waiting until Tuesday" are one
+thought and the second tap is the one that does not happen on a phone. The
+result is an app full of dateless blockers -- tasks that are stuck and will
+never say so again, which is the failure this product exists to prevent.
+Cancelling the picker is a real answer; the row then says so in words and the
+date can be added later by tapping that line.
+
+**The date that goes to the server is a calendar date, never an instant.**
+`domain/reminders.dart` now carries both halves of the timezone trap: reading
+(`reminderCalendarDate`, ported from `frontend/src/lib/reminders.ts` in F2) and
+writing (`calendarDateForApi`). The two obvious ways to serialise what
+`showDatePicker` returns are both off by a day, in opposite directions --
+`picked.toUtc()` stores the previous day east of UTC, a naked local timestamp
+reads as UTC and shifts the other way west of it. Sending `YYYY-MM-DD` built
+from local wall-clock parts sidesteps the instant entirely, which is right
+because there is no instant here: the user picked a *day*. It is also
+byte-for-byte what the React client sent from its `<input type="date">`, so an
+old row and a new one are indistinguishable.
+
+Setting a date takes **one request** and no re-read: `isCurrent` is "the first
+`pending` task in position order", so a date can move neither the order nor the
+current task. The alarms still change, with nothing in the write path mentioning
+the scheduler -- see rule 3 in `providers/project_providers.dart`.
+
+### The reminder hour is a setting now
+
+`screens/settings_screen.dart`, persisted through `storage/settings_store.dart`
+(`shared_preferences`, not the snapshot's file-plus-schema-version machinery and
+not `flutter_secure_storage`; the long version is in that file).
+
+`ReminderSettings` became **asynchronous** in the process, and that is the one
+structural change F1 did not predict. Publishing the 09:00 default and
+correcting it when the disk answers would arm the entire queue at the wrong hour
+and re-arm it milliseconds later, on every cold start. Making the settle part of
+the value costs nothing downstream, because `reminderSync` was already async.
+
+Changing the hour re-arms everything by itself. Nothing calls "reschedule".
+
+### Tapping a reminder opens the task
+
+`providers/notification_link_providers.dart` plus
+`widgets/notification_link_scope.dart`.
+
+**A notification tap reaches a Flutter app two different ways, and only one of
+them is obvious.** With the app alive (foreground, or backgrounded with the
+process still around) the plugin invokes the response callback registered at
+`initialize`. With the app **not running**, the tap starts the process and that
+callback is *not* invoked for it -- `flutter_local_notifications` says so in as
+many words, and the tap is readable only through
+`getNotificationAppLaunchDetails`. Wire only the callback and the deep link works
+in every test on a warm app and silently does nothing at 09:00 on a phone that
+spent the night with the app swiped away, which is the only time it is needed.
+
+Both are wired. The launch details are read **once, inside
+`LocalNotificationGateway.initialize`**, and handed out once, which matters on
+Android: `onNewIntent` calls `setIntent`, so a later read would return a
+*background* tap the callback has already delivered and the app would navigate
+twice. Taps that arrive before the navigation layer has subscribed are buffered
+rather than dropped.
+
+**The payload says `task:<id>`; the route needs a `projectId`.** There is no
+`GET /tasks/:id` in the backend -- no route anywhere answers a question about a
+task by id alone -- so the mapping comes from board data
+(`projectIdForTask`). That turns out to be the better answer than widening the
+payload: an id embedded when the alarm was armed is a cached copy that can go
+stale over the weeks between arming and tapping, while the board is the current
+truth by construction. It also works offline, which is half the reason the
+snapshot holds tasks.
+
+Resolution is three steps, in this order: what is already on screen (cache
+included, so a reminder tapped in a basement still opens), then one board
+refresh, then the archive (a project can be archived after its alarm was armed
+and its tasks still open). A refresh that did not land short-circuits to "не
+удалось" rather than "задача удалена" -- telling someone their task is gone when
+the truth is that the train went into a tunnel is the worst available answer.
+Both failures are an `AlertDialog` on the board, not a snackbar and not an empty
+screen: the user is looking at the phone for one specific reason.
+
+The whole graph is mounted **inside** the session switch (`app.dart`), so a tap
+by a signed-out user never fires a request that 401s and bounces them around.
+Nothing is lost by waiting -- the tap sits in the gateway's buffer or in the
+launch intent, neither of which expires.
+
+### Archive, delete, create
+
+`providers/archive_providers.dart`, `screens/archive_screen.dart`, and the menu
+on the project screen.
+
+Archive is reversible, delete is not, and the second is only reachable through
+the first -- `backend/src/domain/projectDeleteGuard.ts` answers 409 for an active
+project. That split is copied from Trello on purpose
+(`../project-tracker-brief.md`): the frequent gesture and the unrecoverable one
+must not be the same gesture in the same place. The client states the rule
+before the round trip rather than after the 409, but the guard stays server-side.
+
+**The delete confirmation is not a yes/no.** Deleting a project takes its tasks
+and its notes with it, and a yes/no in front of that is a speed bump a person
+walking to the kitchen clears without reading. `confirmByTyping` in
+`widgets/mutation_feedback.dart` asks the user to type the project's name, which
+changes what is being measured: "are you sure" is a question about a mood, "which
+project" is a question about a fact, and a mis-tap cannot answer it.
+
+These four writes **invalidate** the board rather than splicing it
+(`Board.applyProjectTasks` is for a row that is still there with different
+tasks). That invalidation is also what disarms an archived project's reminders,
+with no scheduler call anywhere: the refreshed board no longer contains its
+blocked tasks, so the target set shrinks and the queue follows. An archived
+project must stop nagging -- that is what archiving it means.
+
+**Renaming a project is not possible**, from this client or any other: there is
+no `PATCH /projects/:id` in the backend. `POST /projects` and the two archive
+routes are a project's entire write surface. That is a missing endpoint, not a
+missing screen, and `archive_screen_test.dart` has a test that should start
+looking wrong the day it appears.
+
 ## Local reminders (F1)
 
 The app schedules its own alarms through `flutter_local_notifications`; there is
@@ -232,16 +361,24 @@ no FCM and nothing server-side. The split is deliberate:
 
 The scheduler's entire API is "here is the complete set of reminders that should
 exist, make it so" (`ReminderScheduler.sync`). Nobody calls it: `reminderSync`
-*watches* `reminderTargets`, so replacing the target set **is** the reschedule.
+*watches* `reminderTargets` and `reminderSettings`, so replacing the target set
+-- or changing the hour -- **is** the reschedule.
 F2 plugged the real data into that seam — `boardReminderBridge` writes
 `remindersFromBoard(board)` after every board change (cached or fresh) and the
 queue follows. The bench screen still writes synthetic rows to the same place,
 and nothing downstream can tell the difference.
 
+F4 added three more writers to that same seam and **no second place that re-arms
+anything**: setting a task's reminder date, changing the hour, and archiving or
+unarchiving a project. Each one changes an input the graph already watches.
+
 **Verifying it actually works is a manual, on-device job** — see
 [`NOTIFICATIONS-CHECKLIST.md`](NOTIFICATIONS-CHECKLIST.md). Nothing in `flutter
 test` can tell you whether a vendor's battery optimiser kills the alarm
-overnight, and that is the exact risk F1 exists to measure.
+overnight, and that is the exact risk F1 exists to measure. F4 added section 9
+to that checklist: the persisted hour, the day the date picker actually sends,
+and -- the one that fails silently -- tapping a reminder with the app **swiped
+away**, which is a different code path from tapping it with the app alive.
 
 Android specifics live in `android/app/src/main/AndroidManifest.xml` (runtime
 notification permission, exact alarms, boot receiver) and

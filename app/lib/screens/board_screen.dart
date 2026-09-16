@@ -4,10 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error_message.dart';
 import '../models/board_project.dart';
 import '../navigation/app_routes.dart';
+import '../providers/archive_providers.dart';
 import '../providers/board_providers.dart';
 import '../providers/session_provider.dart';
+import '../widgets/mutation_feedback.dart';
 import '../widgets/project_card.dart';
-import 'notification_bench_screen.dart';
 
 /// The board: every active project, one card each, top to bottom.
 ///
@@ -37,8 +38,12 @@ class BoardScreen extends ConsumerWidget {
      * home, mounted for as long as the app is in use, and the bridge is
      * keepAlive so it outlives any navigation away from here.
      *
-     * F4 gives reminders a real owner (a settings screen plus the workmanager
-     * task) and this line moves there.
+     * F4 considered moving this to the settings screen and did not: a settings
+     * screen is somewhere you go twice a year, and a provider that only exists
+     * while it is open would mean the alarms were only maintained while someone
+     * was looking at the settings. The right owner is the screen that is always
+     * there, which is this one. The deep-link bridge is mounted the same way,
+     * one level up -- see `widgets/notification_link_scope.dart`.
      */
     ref.watch(boardReminderBridgeProvider);
 
@@ -58,23 +63,51 @@ class BoardScreen extends ConsumerWidget {
               )
             : null,
         actions: [
-          IconButton(
-            // TEMPORARY (F1/F2). The bench is still the only way to check the
-            // notification stack on a device; it goes away with F4.
-            tooltip: NotificationBenchScreen.title,
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (_) => const NotificationBenchScreen(),
+          // One menu rather than four icons. F4 added the archive and the
+          // settings screen, and a row of five app-bar buttons on a phone is
+          // both unreadable and easy to hit by accident -- including "Выйти",
+          // which is next to nothing worth an accidental tap.
+          PopupMenuButton<_BoardMenuAction>(
+            tooltip: 'Ещё',
+            onSelected: (action) => _onMenu(context, ref, action),
+            itemBuilder: (_) => const <PopupMenuEntry<_BoardMenuAction>>[
+              PopupMenuItem<_BoardMenuAction>(
+                value: _BoardMenuAction.archive,
+                child: ListTile(
+                  leading: Icon(Icons.inventory_2_outlined),
+                  title: Text('Архив'),
+                  contentPadding: EdgeInsets.zero,
+                ),
               ),
-            ),
-            icon: const Icon(Icons.notifications_active_outlined),
-          ),
-          IconButton(
-            tooltip: 'Выйти',
-            onPressed: () => ref.read(sessionProvider.notifier).signOut(),
-            icon: const Icon(Icons.logout),
+              PopupMenuItem<_BoardMenuAction>(
+                value: _BoardMenuAction.settings,
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Настройки'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              PopupMenuDivider(),
+              PopupMenuItem<_BoardMenuAction>(
+                value: _BoardMenuAction.signOut,
+                child: ListTile(
+                  leading: Icon(Icons.logout),
+                  title: Text('Выйти'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+      // Creating a project is the one action on this screen, so it gets the one
+      // place a thumb reaches without looking. Until F4 it was not possible from
+      // the app at all, which made "live a whole day inside it" false by
+      // construction: a new project meant opening the old web client.
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => _createProject(context, ref),
+        icon: const Icon(Icons.add),
+        label: const Text('Проект'),
       ),
       body: RefreshIndicator(
         onRefresh: () => ref.read(boardProvider.notifier).refresh(),
@@ -103,6 +136,105 @@ class BoardScreen extends ConsumerWidget {
   }
 }
 
+enum _BoardMenuAction { archive, settings, signOut }
+
+void _onMenu(BuildContext context, WidgetRef ref, _BoardMenuAction action) {
+  switch (action) {
+    case _BoardMenuAction.archive:
+      AppRoutes.openArchive(context);
+    case _BoardMenuAction.settings:
+      AppRoutes.openSettings(context);
+    case _BoardMenuAction.signOut:
+      ref.read(sessionProvider.notifier).signOut();
+  }
+}
+
+/// Asks for a name and creates the project, then opens it.
+///
+/// Opening it is not a flourish: a project created from the board is empty, and
+/// the next thing anyone does is type its first task. Landing on the board
+/// instead would mean finding the new card and tapping it, which is two gestures
+/// spent on a question that was already answered.
+Future<void> _createProject(BuildContext context, WidgetRef ref) async {
+  final name = await showDialog<String>(
+    context: context,
+    builder: (_) => const _NewProjectDialog(),
+  );
+  if (name == null || !context.mounted) return;
+
+  String? createdId;
+  final ok = await runMutation(
+    context,
+    () async {
+      createdId = (await ref
+              .read(projectLifecycleProvider.notifier)
+              .create(name))
+          .id;
+    },
+    failure: 'Не удалось создать проект.',
+  );
+
+  if (!ok || createdId == null || !context.mounted) return;
+  await AppRoutes.openProject(context, projectId: createdId!);
+}
+
+/// The one field there is. `POST /projects` accepts a name and nothing else --
+/// a project's body is its notes, which are written from inside it.
+class _NewProjectDialog extends StatefulWidget {
+  const _NewProjectDialog();
+
+  @override
+  State<_NewProjectDialog> createState() => _NewProjectDialogState();
+}
+
+class _NewProjectDialogState extends State<_NewProjectDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _controller.text.trim();
+    // Silently ignoring an empty name rather than showing a validation error:
+    // the server would reject it anyway, and the empty field is already the
+    // whole message.
+    if (name.isEmpty) return;
+    Navigator.of(context).pop(name);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Новый проект'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.sentences,
+        textInputAction: TextInputAction.done,
+        decoration: const InputDecoration(
+          hintText: 'Название проекта',
+          border: OutlineInputBorder(),
+        ),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: _controller.text.trim().isEmpty ? null : _submit,
+          child: const Text('Создать'),
+        ),
+      ],
+    );
+  }
+}
+
 class _BoardList extends ConsumerWidget {
   const _BoardList({required this.view});
 
@@ -125,8 +257,8 @@ class _BoardList extends ConsumerWidget {
               icon: Icons.inbox_outlined,
               title: 'Проектов пока нет',
               body:
-                  'Активных проектов на доске нет. Создать проект пока можно '
-                  'только через старый веб-клиент — это F4 вместе с архивом.',
+                  'Кнопка «Проект» внизу заводит первый. Если проекты были и '
+                  'пропали — посмотрите в архиве, он в меню сверху.',
               scrollable: false,
             ),
           )

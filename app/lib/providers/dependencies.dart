@@ -5,6 +5,7 @@ import '../api/auth_api.dart';
 import '../api/board_api.dart';
 import '../api/project_api.dart';
 import '../storage/board_snapshot_store.dart';
+import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
 
 part 'dependencies.g.dart';
@@ -31,6 +32,15 @@ TokenStorage tokenStorage(Ref ref) => TokenStorage();
 /// filesystem.
 @Riverpod(keepAlive: true)
 BoardSnapshotStore boardSnapshotStore(Ref ref) => BoardSnapshotStore();
+
+/// Persisted user preferences (F4): currently the reminder hour.
+///
+/// Here rather than in `reminder_providers.dart` for the same reason as
+/// [tokenStorage] and [boardSnapshotStore]: it owns a platform channel, so it
+/// must not be re-created per screen and tests must be able to replace it with
+/// something that does not have one.
+@Riverpod(keepAlive: true)
+SettingsStore settingsStore(Ref ref) => PreferencesSettingsStore();
 
 @Riverpod(keepAlive: true)
 ApiClient apiClient(Ref ref) => createConfiguredApiClient();

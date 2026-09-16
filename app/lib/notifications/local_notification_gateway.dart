@@ -2,7 +2,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
-import '../domain/reminder_schedule.dart';
 import 'notification_gateway.dart';
 
 /// The real [NotificationGateway], on top of `flutter_local_notifications`.
@@ -60,6 +59,18 @@ class LocalNotificationGateway implements NotificationGateway {
   /// the plugin fails to register.
   bool _unavailable = false;
 
+  /// Set by [setTapHandler]; see the interface for why it arrives late.
+  void Function(String? payload)? _tapHandler;
+
+  /// Taps that arrived before anyone was listening. Ordered, and drained in
+  /// order the moment a handler is registered.
+  final List<String?> _bufferedTaps = <String?>[];
+
+  /// The launch payload, read once during [initialize] and handed out once by
+  /// [takeLaunchPayload].
+  String? _launchPayload;
+  bool _launchPayloadTaken = false;
+
   @override
   NotificationSupport get support {
     if (_unavailable) return NotificationSupport.none;
@@ -107,6 +118,32 @@ class LocalNotificationGateway implements NotificationGateway {
       // Android 8+ requires the channel to exist before anything is posted to
       // it.
       await _android?.createNotificationChannel(remindersChannel);
+
+      /*
+       * The cold-start half of the deep link (F4), read here and nowhere else.
+       *
+       * Two reasons the read is pinned to this exact moment rather than done
+       * lazily when someone asks:
+       *
+       * 1. `initialize` is the earliest point at which the answer exists and
+       *    the last point at which it is unambiguous. On Android the plugin
+       *    answers from the activity's *current* intent, and `onNewIntent`
+       *    calls `setIntent` -- so after any background tap the "launch"
+       *    details describe that tap instead. Reading now, before any
+       *    `onNewIntent` can have been processed by us, keeps the two paths
+       *    from reporting the same tap twice.
+       * 2. it must not depend on whether a handler has been registered. The
+       *    launching tap never reaches `onDidReceiveNotificationResponse` at
+       *    all, so an app that only wires the callback loses precisely the case
+       *    the whole iteration exists for.
+       *
+       * A null result covers "not launched by a notification" and every
+       * platform that does not implement it; both mean "there is no deep link".
+       */
+      final launch = await _plugin.getNotificationAppLaunchDetails();
+      if (launch != null && launch.didNotificationLaunchApp) {
+        _launchPayload = launch.notificationResponse?.payload;
+      }
     } catch (error) {
       // See [_unavailable]. Degrading to "this platform cannot do reminders" is
       // right even in production: the rest of the app keeps working and the
@@ -119,13 +156,50 @@ class LocalNotificationGateway implements NotificationGateway {
     _initialized = true;
   }
 
-  /// Foreground tap handling.
+  /// Tap handling for a notification that arrived while this isolate was alive
+  /// (foreground, or resumed from the background).
   ///
-  /// F1 only logs: there is nowhere meaningful to navigate yet. F4 turns the
-  /// payload into a deep link to the task -- the payload format is already
-  /// fixed (see [reminderPayload]) so that change is confined to this method.
+  /// Not the cold start -- see the note in [initialize].
   void _onNotificationTapped(NotificationResponse response) {
     debugPrint('Notification tapped: payload=${response.payload}');
+    _deliver(response.payload);
+  }
+
+  void _deliver(String? payload) {
+    final handler = _tapHandler;
+    if (handler == null) {
+      // Nobody is listening *yet*. Dropping it here would lose a tap that
+      // happened during the couple of frames between the plugin coming up and
+      // the navigation layer subscribing, which is a race that only ever loses
+      // on a slow device -- i.e. one nobody would reproduce.
+      _bufferedTaps.add(payload);
+      return;
+    }
+    handler(payload);
+  }
+
+  @override
+  void setTapHandler(void Function(String? payload) handler) {
+    _tapHandler = handler;
+    if (_bufferedTaps.isEmpty) return;
+
+    final buffered = List<String?>.of(_bufferedTaps);
+    _bufferedTaps.clear();
+    for (final payload in buffered) {
+      handler(payload);
+    }
+  }
+
+  @override
+  Future<String?> takeLaunchPayload() async {
+    // `initialize` is what reads it; calling this before that would answer null
+    // forever after. It is idempotent, so asking is cheaper than documenting an
+    // ordering requirement nobody will remember.
+    await initialize();
+
+    if (_launchPayloadTaken) return null;
+    _launchPayloadTaken = true;
+    return _launchPayload;
   }
 
   @override

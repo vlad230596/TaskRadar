@@ -14,6 +14,7 @@ import 'package:taskradar/screens/splash_screen.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_notification_gateway.dart';
+import 'support/fake_settings_store.dart';
 import 'support/fake_token_storage.dart';
 import 'support/fixtures.dart';
 
@@ -46,6 +47,9 @@ void main() {
           // "this platform cannot do reminders" in the test VM, but these tests
           // are about navigation and should not depend on that.
           notificationGatewayProvider.overrideWithValue(FakeNotificationGateway()),
+          // Likewise a platform channel: the reminder hour is persisted from F4
+          // on, and `reminderSync` waits for it before arming anything.
+          settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
         ],
         child: const TaskRadarApp(),
       ),
@@ -58,6 +62,18 @@ void main() {
     for (var i = 0; i < 10; i++) {
       await tester.pump(const Duration(milliseconds: 10));
     }
+  }
+
+  /// Signs out through the board's overflow menu.
+  ///
+  /// F4 moved "Выйти" off the app bar and behind that menu -- five icons in a
+  /// row on a phone is unreadable, and the one next to an accidental tap should
+  /// not be the one that ends the session.
+  Future<void> signOut(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Ещё'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Выйти'));
+    await settle(tester);
   }
 
   /// A responder covering the endpoints a signed-in cold start hits.
@@ -201,8 +217,7 @@ void main() {
     await settle(tester);
     expect(find.byType(BoardScreen), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Выйти'));
-    await settle(tester);
+    await signOut(tester);
 
     expect(find.byType(LoginScreen), findsOneWidget);
     expect(storage.token, isNull);
@@ -233,8 +248,7 @@ void main() {
     await settle(tester);
     expect(find.text('До выхода'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Выйти'));
-    await settle(tester);
+    await signOut(tester);
     expect(find.byType(LoginScreen), findsOneWidget);
 
     await tester.enterText(find.byType(TextFormField).first, 'owner@example.com');

@@ -7,6 +7,7 @@ import 'package:taskradar/api/api_exception.dart';
 import 'package:taskradar/models/board_project.dart';
 import 'package:taskradar/models/note.dart';
 import 'package:taskradar/models/task.dart';
+import 'package:taskradar/domain/reminders.dart';
 import 'package:taskradar/models/task_status.dart';
 import 'package:taskradar/providers/board_providers.dart';
 import 'package:taskradar/providers/dependencies.dart';
@@ -18,6 +19,7 @@ import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_project_backend.dart';
+import 'support/fake_settings_store.dart';
 import 'support/fixtures.dart';
 
 /// The F3 write path: optimistic frame, rollback, reconcile, and the effect a
@@ -65,6 +67,9 @@ void main() {
         apiClientProvider.overrideWithValue(backend.client),
         boardSnapshotStoreProvider.overrideWithValue(snapshots),
         notificationGatewayProvider.overrideWithValue(gateway),
+        // The reminder hour is persisted from F4 on; the real store is a
+        // `shared_preferences` platform channel the test VM does not have.
+        settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
       ],
     );
     addTearDown(container.dispose);
@@ -562,6 +567,184 @@ void main() {
         );
       },
     );
+  });
+
+  group('the reminder date (F4)', () {
+    /// A blocked task in a fresh project, plus the container that owns it.
+    Future<(ProviderContainer, String, Task)> blockedTask({
+      String? remindAt,
+    }) async {
+      final projectId = server.addProject(name: 'Dacha');
+      server.addTask(
+        projectId: projectId,
+        title: 'Waiting for the cable',
+        status: 'blocked',
+        remindAt: remindAt,
+      );
+
+      final container = makeContainer();
+      final tasks = await loadTasks(container, projectId);
+      return (container, projectId, tasks.single);
+    }
+
+    test('sends a bare calendar date, never an instant', () async {
+      final (container, projectId, task) = await blockedTask();
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, '2026-10-01');
+
+      final patch = server.patches.last;
+      expect(patch.path, '/tasks/${task.id}');
+      expect(
+        patch.body['remindAt'],
+        '2026-10-01',
+        reason:
+            'the server coerces this to UTC midnight of that day; an instant '
+            'would be off by the local offset',
+      );
+      // And nothing else was touched -- a `description: null` here would erase
+      // text nobody edited, with a 200.
+      expect(patch.body.keys, <String>['remindAt']);
+    });
+
+    test(
+      'the stored value comes back as UTC midnight and is read as that day',
+      () async {
+        final (container, projectId, task) = await blockedTask();
+
+        await container
+            .read(projectTasksProvider(projectId).notifier)
+            .setRemindAt(task, '2026-10-01');
+
+        final stored = tasksNow(container, projectId).single.remindAt;
+        expect(stored, '2026-10-01T00:00:00.000Z');
+        expect(reminderCalendarDate(stored!), '2026-10-01');
+      },
+    );
+
+    test('clearing sends an explicit null, not an omitted key', () async {
+      final (container, projectId, task) = await blockedTask(
+        remindAt: '2026-10-01T00:00:00.000Z',
+      );
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, null);
+
+      // `containsKey` is the whole assertion: an absent key means "leave it
+      // alone" to the server, and the date would survive.
+      expect(server.patches.last.body.containsKey('remindAt'), isTrue);
+      expect(server.patches.last.body['remindAt'], isNull);
+      expect(tasksNow(container, projectId).single.remindAt, isNull);
+    });
+
+    test('costs one request -- a date cannot move the current task', () async {
+      final (container, projectId, task) = await blockedTask();
+      final before = backend.requests.length;
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, '2026-10-01');
+
+      expect(
+        backend.requests.length - before,
+        1,
+        reason:
+            'isCurrent depends on status and order only, so there is nothing '
+            'to re-read',
+      );
+    });
+
+    test('refuses a task that is not blocked, without a request', () async {
+      final projectId = server.addProject(name: 'Dacha');
+      server.addTask(projectId: projectId, title: 'An ordinary one');
+
+      final container = makeContainer();
+      final tasks = await loadTasks(container, projectId);
+      final before = backend.requests.length;
+
+      expect(
+        () => container
+            .read(projectTasksProvider(projectId).notifier)
+            .setRemindAt(tasks.single, '2026-10-01'),
+        throwsStateError,
+      );
+      expect(backend.requests.length, before);
+    });
+
+    test('a failed write rolls the date back and says so', () async {
+      final (container, projectId, task) = await blockedTask(
+        remindAt: '2026-10-01T00:00:00.000Z',
+      );
+
+      backend.alwaysFailToConnect();
+
+      await expectLater(
+        container
+            .read(projectTasksProvider(projectId).notifier)
+            .setRemindAt(task, '2026-11-11'),
+        throwsA(isA<NetworkException>()),
+      );
+
+      expect(
+        tasksNow(container, projectId).single.remindAt,
+        '2026-10-01T00:00:00.000Z',
+        reason: 'no network, no write, no pretending otherwise',
+      );
+    });
+
+    test('the whole blocker cycle: block, date, board, clear', () async {
+      final projectId = server.addProject(name: 'Dacha');
+      server.addTask(projectId: projectId, title: 'Waiting for the cable');
+
+      final container = makeContainer();
+      container.listen(boardViewProvider, (_, _) {});
+      container.listen(boardReminderBridgeProvider, (_, _) {});
+      await container.read(boardProvider.future);
+      await pumpEventQueue();
+
+      final notifier = container.read(projectTasksProvider(projectId).notifier);
+      var task = (await loadTasks(container, projectId)).single;
+
+      // 1. block it -- F3 leaves the date alone on the way in, deliberately,
+      // because setting it is this iteration's job.
+      await notifier.setStatus(task, TaskStatus.blocked);
+      task = tasksNow(container, projectId).single;
+      expect(task.status, TaskStatus.blocked);
+      expect(task.remindAt, isNull);
+      await pumpEventQueue();
+      expect(
+        container.read(reminderTargetsProvider),
+        isEmpty,
+        reason: 'a blocker with no date has nothing to arm',
+      );
+
+      // 2. pick a date. Two days out, so it is armed at any hour of the day.
+      final date = remindAt(2).substring(0, 10);
+      await notifier.setRemindAt(task, date);
+      await pumpEventQueue();
+
+      // 3. it is on the board, and in the OS queue, with nothing in this test
+      // touching the scheduler.
+      final row = container.read(boardProvider).requireValue.projects.single;
+      expect(row.tasks.single.remindAt, '${date}T00:00:00.000Z');
+
+      await container.read(reminderSyncProvider.future);
+      expect(gateway.queue, hasLength(1));
+      expect(gateway.queue.values.single.payload, 'task:${task.id}');
+
+      // 4. unblock it. F3 clears the date on the way out, so the alarm goes
+      // with it -- the asymmetry that keeps a stale date from resurfacing the
+      // next time the task is blocked.
+      task = tasksNow(container, projectId).single;
+      await notifier.setStatus(task, TaskStatus.pending);
+      await pumpEventQueue();
+
+      expect(tasksNow(container, projectId).single.remindAt, isNull);
+      await container.read(reminderSyncProvider.future);
+      expect(gateway.queue, isEmpty);
+    });
   });
 
   group('the board follows a write inside a project', () {

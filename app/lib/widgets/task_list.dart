@@ -268,11 +268,95 @@ class _TaskRowState extends ConsumerState<_TaskRow> {
   /// lasts is more noise than a plain one.
   bool get _unconfirmed => isOptimisticId(widget.task.id);
 
-  Future<void> _setStatus(TaskStatus status) => runMutation(
-    context,
-    () => _tasks.setStatus(widget.task, status),
-    failure: 'Не удалось изменить статус.',
-  );
+  /// Changes the status, and -- when the change is *into* `blocked` on a task
+  /// that has no date yet -- offers the date picker immediately.
+  ///
+  /// ## Why the two are chained rather than left as two separate gestures
+  ///
+  /// "Блокер" and "жду до вторника" are one thought. The React client left them
+  /// separate and the date field simply appeared under the row, which works on a
+  /// desktop where it is one glance away; on a phone the row is already at the
+  /// edge of the screen and the extra tap is the one that does not happen, so
+  /// the app fills up with dateless blockers -- i.e. with tasks that are stuck
+  /// and will never say so again. That is the failure mode the whole product
+  /// exists to prevent (`../../README.md`).
+  ///
+  /// Cancelling the picker is a real answer, not a mistake: "blocked, and I do
+  /// not know when" is a legitimate state, the row says so in words, and the
+  /// date can be added later by tapping that line.
+  Future<void> _setStatus(TaskStatus status) async {
+    final wasBlocked = widget.task.status == TaskStatus.blocked;
+    final hadDate = widget.task.remindAt != null;
+
+    final ok = await runMutation(
+      context,
+      () => _tasks.setStatus(widget.task, status),
+      failure: 'Не удалось изменить статус.',
+    );
+
+    if (!ok || !mounted) return;
+    if (status != TaskStatus.blocked || wasBlocked || hadDate) return;
+
+    await _pickReminderDate();
+  }
+
+  /// The date picker, for setting or changing the reminder day.
+  ///
+  /// The row handed to `setRemindAt` is read fresh from the notifier rather than
+  /// taken from `widget.task`: this is reached straight after a status change,
+  /// and `widget.task` is the row from before it -- still `pending`, which
+  /// `setRemindAt` refuses. The rebuild that would fix it has not happened yet
+  /// because this is all one async gesture.
+  Future<void> _pickReminderDate() async {
+    final task = _currentRow() ?? widget.task;
+
+    final picked = await showDatePicker(
+      context: context,
+      // The day already chosen, re-assembled from its calendar parts rather
+      // than parsed as an instant -- `remindAtAsLocalDay` is where that
+      // distinction lives, and getting it wrong opens the picker a day early
+      // for anyone west of UTC.
+      initialDate: task.remindAt == null
+          ? DateTime.now()
+          : remindAtAsLocalDay(task.remindAt!) ?? DateTime.now(),
+      // Today, not "no lower bound": a reminder in the past can never fire
+      // (`reminderFireTime` refuses it), so offering one would be offering a
+      // button that silently does nothing.
+      firstDate: DateTime.now(),
+      // Ten years is not a product decision, it is the smallest number that is
+      // unreachable in practice; `showDatePicker` requires a bound.
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+      helpText: 'Когда напомнить',
+      cancelText: 'Отмена',
+      confirmText: 'Готово',
+    );
+    if (picked == null || !mounted) return;
+
+    await _saveRemindAt(calendarDateForApi(picked));
+  }
+
+  Future<void> _clearReminderDate() => _saveRemindAt(null);
+
+  Future<void> _saveRemindAt(String? date) async {
+    final task = _currentRow() ?? widget.task;
+    await runMutation(
+      context,
+      () => _tasks.setRemindAt(task, date),
+      failure: date == null
+          ? 'Не удалось убрать дату напоминания.'
+          : 'Не удалось сохранить дату напоминания.',
+    );
+  }
+
+  /// This row as the notifier currently holds it, or null if it is gone.
+  Task? _currentRow() {
+    final rows = ref.read(projectTasksProvider(widget.projectId)).value;
+    if (rows == null) return null;
+    for (final row in rows) {
+      if (row.id == widget.task.id) return row;
+    }
+    return null;
+  }
 
   Future<void> _commitTitle(String value) async {
     // Closed before the write, not after it: the optimistic list already shows
@@ -446,7 +530,12 @@ class _TaskRowState extends ConsumerState<_TaskRow> {
                     ),
 
                   if (task.status == TaskStatus.blocked)
-                    _ReminderLine(task: task, now: widget.now),
+                    _ReminderLine(
+                      task: task,
+                      now: widget.now,
+                      onPick: _unconfirmed ? null : _pickReminderDate,
+                      onClear: _unconfirmed ? null : _clearReminderDate,
+                    ),
                 ],
               ),
             ),
@@ -620,18 +709,31 @@ class _DescriptionDialogState extends State<_DescriptionDialog> {
   }
 }
 
-/// The reminder date under a blocked task.
+/// The reminder date under a blocked task: shown, set, changed and removed.
 ///
-/// Read-only in F3: setting it needs a date picker, which is F4 together with
-/// the notification wiring. It is *shown* now because a blocked task whose date
-/// has arrived is the one row in the whole app that asks for action today, and
-/// the project screen would be the odd one out if the board said so and this
-/// did not.
+/// A blocked task whose date has arrived is the one row in the whole app that
+/// asks for action *today*, and a blocked task with no date at all is a task
+/// that will never ask again -- so both states are stated in words, and both
+/// lead to the same picker.
+///
+/// The date is only ever offered for a `blocked` task, mirroring the rule the
+/// data follows: `remindersFromBoard` arms an alarm only for a blocked task, and
+/// `setStatus` clears the date on the way out of `blocked`. An input that
+/// existed for the other statuses would be an input whose value does nothing.
 class _ReminderLine extends StatelessWidget {
-  const _ReminderLine({required this.task, this.now});
+  const _ReminderLine({
+    required this.task,
+    this.now,
+    this.onPick,
+    this.onClear,
+  });
 
   final Task task;
   final DateTime? now;
+
+  /// Null for a row the server has not confirmed yet -- it has no id to PATCH.
+  final Future<void> Function()? onPick;
+  final Future<void> Function()? onClear;
 
   @override
   Widget build(BuildContext context) {
@@ -640,13 +742,18 @@ class _ReminderLine extends StatelessWidget {
     final remindAt = task.remindAt;
 
     if (remindAt == null) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 2, bottom: 4),
-        child: Text(
-          'Блокер без даты напоминания — дата появится на F4',
-          style: theme.textTheme.bodySmall?.copyWith(
-            color: scheme.onSurfaceVariant,
-            fontStyle: FontStyle.italic,
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          onPressed: onPick,
+          icon: const Icon(Icons.event_available, size: 16),
+          label: const Text('напомнить…'),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            minimumSize: const Size(0, 30),
+            visualDensity: VisualDensity.compact,
+            foregroundColor: scheme.onSurfaceVariant,
+            textStyle: theme.textTheme.bodySmall,
           ),
         ),
       );
@@ -659,29 +766,60 @@ class _ReminderLine extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            due ? Icons.notifications_active : Icons.event,
-            size: 15,
-            color: due ? scheme.error : scheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 5),
-          // Flexible, not a bare Text: the row is `mainAxisSize.min`, so an
-          // unconstrained Text would size to its natural width and overflow a
-          // narrow column instead of ellipsising. A malformed `remindAt` is
-          // printed verbatim by `formatReminderDate` (deliberately -- see
-          // `domain/reminders.dart`), and that string can be any length at all.
+          // Flexible around the tappable half, not just around the Text inside
+          // it: a Row hands its *non-flexible* children unbounded main-axis
+          // constraints, so a `Flexible` nested two levels down would never see
+          // a width to shrink into and a long date string would overflow.
           Flexible(
-            child: Text(
-              due
-                  ? 'Напомнить · ${formatReminderDate(remindAt)}'
-                  : 'Ждём до ${formatReminderDate(remindAt)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.labelMedium?.copyWith(
-                color: due ? scheme.error : scheme.onSurfaceVariant,
-                fontWeight: due ? FontWeight.w600 : null,
+            child: InkWell(
+              onTap: onPick,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      due ? Icons.notifications_active : Icons.event,
+                      size: 15,
+                      color: due ? scheme.error : scheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 5),
+                    // A malformed `remindAt` is printed verbatim by
+                    // `formatReminderDate` (deliberately -- see
+                    // `domain/reminders.dart`), and that string can be any
+                    // length at all, so the text ellipsises rather than
+                    // widening the row.
+                    Flexible(
+                      child: Text(
+                        due
+                            ? 'Напомнить · ${formatReminderDate(remindAt)}'
+                            : 'Ждём до ${formatReminderDate(remindAt)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          color: due ? scheme.error : scheme.onSurfaceVariant,
+                          fontWeight: due ? FontWeight.w600 : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+          ),
+          // No confirmation on the clear. It is not destructive in the way a
+          // delete is -- the date is one tap away from being set again, and the
+          // task itself is untouched -- and a dialog in front of it would make
+          // the frequent correction ("wrong day") as heavy as the rare one.
+          IconButton(
+            tooltip: 'Убрать дату напоминания',
+            onPressed: onClear,
+            icon: const Icon(Icons.event_busy, size: 16),
+            visualDensity: VisualDensity.compact,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            padding: EdgeInsets.zero,
+            color: scheme.onSurfaceVariant,
           ),
         ],
       ),

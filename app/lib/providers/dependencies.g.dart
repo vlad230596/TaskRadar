@@ -149,6 +149,67 @@ final class BoardSnapshotStoreProvider
 String _$boardSnapshotStoreHash() =>
     r'16db2ea1889e40d5ab88ca0b364e8184c0f3bcba';
 
+/// Persisted user preferences (F4): currently the reminder hour.
+///
+/// Here rather than in `reminder_providers.dart` for the same reason as
+/// [tokenStorage] and [boardSnapshotStore]: it owns a platform channel, so it
+/// must not be re-created per screen and tests must be able to replace it with
+/// something that does not have one.
+
+@ProviderFor(settingsStore)
+final settingsStoreProvider = SettingsStoreProvider._();
+
+/// Persisted user preferences (F4): currently the reminder hour.
+///
+/// Here rather than in `reminder_providers.dart` for the same reason as
+/// [tokenStorage] and [boardSnapshotStore]: it owns a platform channel, so it
+/// must not be re-created per screen and tests must be able to replace it with
+/// something that does not have one.
+
+final class SettingsStoreProvider
+    extends $FunctionalProvider<SettingsStore, SettingsStore, SettingsStore>
+    with $Provider<SettingsStore> {
+  /// Persisted user preferences (F4): currently the reminder hour.
+  ///
+  /// Here rather than in `reminder_providers.dart` for the same reason as
+  /// [tokenStorage] and [boardSnapshotStore]: it owns a platform channel, so it
+  /// must not be re-created per screen and tests must be able to replace it with
+  /// something that does not have one.
+  SettingsStoreProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'settingsStoreProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$settingsStoreHash();
+
+  @$internal
+  @override
+  $ProviderElement<SettingsStore> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  SettingsStore create(Ref ref) {
+    return settingsStore(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(SettingsStore value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<SettingsStore>(value),
+    );
+  }
+}
+
+String _$settingsStoreHash() => r'fc6e4d6b835941fdeca07545e3d09d378f5a0068';
+
 @ProviderFor(apiClient)
 final apiClientProvider = ApiClientProvider._();
 

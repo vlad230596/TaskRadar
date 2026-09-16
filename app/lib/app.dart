@@ -7,6 +7,7 @@ import 'providers/session_provider.dart';
 import 'screens/board_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'widgets/notification_link_scope.dart';
 
 /// Root widget.
 ///
@@ -66,8 +67,15 @@ class TaskRadarApp extends ConsumerWidget {
           ),
         ),
         home: switch (session) {
+          // F4: the board is wrapped rather than replaced. `NotificationLinkScope`
+          // is where a reminder tap turns into a route, and it sits *inside* the
+          // session switch on purpose -- resolving a task reads the board, which
+          // needs a session, and a tap by a signed-out user would otherwise fire
+          // a request that 401s and bounces them around. The tap is not lost by
+          // waiting: it is held in the gateway's buffer or in the launch intent
+          // until this exists. See the long note in that file.
           AsyncData(:final value) => value == SessionStatus.signedIn
-              ? const BoardScreen()
+              ? const NotificationLinkScope(child: BoardScreen())
               : const LoginScreen(),
 
           // `Session.build` catches everything it expects, so reaching here

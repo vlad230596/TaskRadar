@@ -52,6 +52,10 @@ class FakeProjectBackend {
 
   static const double positionGap = 1000;
 
+  /// What `archivedAt` becomes on archive. Fixed rather than `DateTime.now()`
+  /// so an assertion can name the exact value.
+  static const String archivedAtStamp = '2026-09-16T13:00:00.000Z';
+
   String _id(String prefix) => '${prefix}_${++_nextId}';
 
   // --- seeding ---------------------------------------------------------------
@@ -155,10 +159,56 @@ class FakeProjectBackend {
       ]);
     });
 
+    // Registered before `/projects/:id` so the longer paths win.
+    backend.on('POST', '/projects/:id/archive', (match) {
+      final project = _activeProject(match.params['id']!);
+      if (project == null) return _notFound('Project');
+      project['archivedAt'] = archivedAtStamp;
+      return jsonResponse(project);
+    });
+
+    backend.on('POST', '/projects/:id/unarchive', (match) {
+      final project = _activeProject(match.params['id']!);
+      if (project == null) return _notFound('Project');
+      project['archivedAt'] = null;
+      return jsonResponse(project);
+    });
+
+    backend.on('POST', '/projects', (match) {
+      final name = (match.body['name'] as String).trim();
+      if (name.isEmpty) return _error(400, 'name is required');
+
+      final id = addProject(
+        name: name,
+        // Later than every seeded project, so the new row sorts last exactly as
+        // `orderBy: createdAt asc` puts it on the real board.
+        createdAt: '2027-01-01T00:00:00.000Z',
+      );
+      return jsonResponse(projects[id], statusCode: 201);
+    });
+
     backend.on('GET', '/projects/:id', (match) {
       final project = _activeProject(match.params['id']!);
       if (project == null) return _notFound('Project');
       return jsonResponse(project);
+    });
+
+    backend.on('DELETE', '/projects/:id', (match) {
+      final id = match.params['id']!;
+      final project = _activeProject(id);
+      if (project == null) return _notFound('Project');
+
+      // `canHardDeleteProject`: archive first, or 409. Reproduced here because
+      // the client's refusal to even ask is only worth testing against a server
+      // that would have refused too.
+      if (project['archivedAt'] == null) {
+        return _error(409, 'Project must be archived before it can be deleted');
+      }
+
+      projects.remove(id);
+      tasks.removeWhere((task) => task['projectId'] == id);
+      notes.removeWhere((note) => note['projectId'] == id);
+      return ResponseBody.fromString('', 204);
     });
 
     backend.on('GET', '/projects/:id/tasks', (match) {

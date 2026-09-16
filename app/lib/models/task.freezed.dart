@@ -25,11 +25,16 @@ mixin _$Task {
 /// `position` is a **Float** in the Prisma schema, and that is load-bearing:
 /// `backend/src/domain/position.ts` picks a new position by bisecting the
 /// gap between the two neighbours, so the fourth or fifth reorder into the
-/// same spot produces 1062.5 and JSON carries it as `1062.5`. Declared as
-/// `int`, `json_serializable` emits `json['position'] as int`, which throws a
-/// `TypeError` on that value -- a crash that cannot happen on seeded data
-/// and appears only after a few drags in one place, which is the worst
-/// possible time to find out.
+/// same spot produces 1062.5 and JSON carries it as `1062.5`.
+///
+/// Declared `int`, this does **not** crash, which is worse than if it did:
+/// `json_serializable` emits `(json['position'] as num).toInt()`, so 1062.5
+/// silently becomes 1062. Two rows bisected into the same integer gap then
+/// collapse to the same position on the client while the server has them
+/// distinct and ordered -- a divergence with no error, no log line, and no
+/// way to notice except by watching a list come back in a different order
+/// than it went out. Seeded data (1000/2000/3000) can never show it; a few
+/// drags into one spot can.
 ///
 /// The client reads this field for diagnostics only. **List order is the
 /// server's order** (`GET /projects/:id/tasks` sorts by `position` for us);
@@ -267,11 +272,16 @@ class _Task implements Task {
 /// `position` is a **Float** in the Prisma schema, and that is load-bearing:
 /// `backend/src/domain/position.ts` picks a new position by bisecting the
 /// gap between the two neighbours, so the fourth or fifth reorder into the
-/// same spot produces 1062.5 and JSON carries it as `1062.5`. Declared as
-/// `int`, `json_serializable` emits `json['position'] as int`, which throws a
-/// `TypeError` on that value -- a crash that cannot happen on seeded data
-/// and appears only after a few drags in one place, which is the worst
-/// possible time to find out.
+/// same spot produces 1062.5 and JSON carries it as `1062.5`.
+///
+/// Declared `int`, this does **not** crash, which is worse than if it did:
+/// `json_serializable` emits `(json['position'] as num).toInt()`, so 1062.5
+/// silently becomes 1062. Two rows bisected into the same integer gap then
+/// collapse to the same position on the client while the server has them
+/// distinct and ordered -- a divergence with no error, no log line, and no
+/// way to notice except by watching a list come back in a different order
+/// than it went out. Seeded data (1000/2000/3000) can never show it; a few
+/// drags into one spot can.
 ///
 /// The client reads this field for diagnostics only. **List order is the
 /// server's order** (`GET /projects/:id/tasks` sorts by `position` for us);

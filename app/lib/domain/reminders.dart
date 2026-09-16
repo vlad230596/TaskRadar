@@ -56,11 +56,52 @@ String? reminderCalendarDate(String remindAt) =>
 /// [now] exists so tests can stand on a fixed day. Only its `year`/`month`/`day`
 /// are read, which is what makes such a test deterministic: a caller passes
 /// `DateTime(2026, 8, 17)` and gets `2026-08-17` on any machine, in any zone.
-String localTodayCalendarDate([DateTime? now]) {
-  final today = now ?? DateTime.now();
-  return '${today.year.toString().padLeft(4, '0')}-'
-      '${today.month.toString().padLeft(2, '0')}-'
-      '${today.day.toString().padLeft(2, '0')}';
+String localTodayCalendarDate([DateTime? now]) =>
+    calendarDateForApi(now ?? DateTime.now());
+
+/// The `YYYY-MM-DD` string to send as `remindAt`, taken from a [DateTime]'s
+/// **local wall-clock** year/month/day and nothing else (F4).
+///
+/// ## Why this exists rather than `toIso8601String().substring(0, 10)`
+///
+/// This is the *writing* half of the trap this file is about, and it fails in
+/// the mirror image of the reading half. `showDatePicker` hands back a local
+/// `DateTime` at local midnight. Both obvious serialisations are wrong:
+///
+/// - `picked.toUtc().toIso8601String()` converts that local midnight to an
+///   instant. East of UTC it lands on the **previous** day (Moscow's
+///   `2026-10-01 00:00 +03:00` is `2026-09-30T21:00Z`), so picking the 1st
+///   stores the 30th;
+/// - `picked.toIso8601String()` sends a naked local timestamp with no offset,
+///   which `z.coerce.date()` on the server reads as **UTC**, quietly shifting
+///   the date the other way for anyone west of UTC.
+///
+/// Sending only the date parts sidesteps the instant entirely, which is right
+/// because there is no instant here: the user picked a *day*. The server's
+/// `z.coerce.date()` turns a bare `YYYY-MM-DD` into UTC midnight of that day --
+/// exactly the representation [calendarDateFromRemindAt] reads back, so a value
+/// written here round-trips to the same calendar date in every timezone on
+/// earth. It is also byte-for-byte what the React client sent
+/// (`toDateInputValue` plus an `<input type="date">`, whose value is a bare
+/// date), so an existing row and a new one are indistinguishable.
+String calendarDateForApi(DateTime day) =>
+    '${day.year.toString().padLeft(4, '0')}-'
+    '${day.month.toString().padLeft(2, '0')}-'
+    '${day.day.toString().padLeft(2, '0')}';
+
+/// A stored `remindAt` as the local-midnight [DateTime] a date picker wants for
+/// its `initialDate`, or null when the value cannot be read.
+///
+/// Note what this is *not*: a conversion of the stored instant into local time.
+/// It re-assembles the calendar date's parts as a local `DateTime`, which is the
+/// only reading under which "the picker opens on the day the badge shows" is
+/// true everywhere. `DateTime.parse(remindAt).toLocal()` would open the picker
+/// on the previous day for every user west of UTC -- the same off-by-one this
+/// file's header describes, arriving through the picker instead of the badge.
+DateTime? remindAtAsLocalDay(String remindAt) {
+  final date = calendarDateFromRemindAt(remindAt);
+  if (date == null) return null;
+  return DateTime(date.year, date.month, date.day);
 }
 
 /// True once the reminder's calendar date has arrived or passed.

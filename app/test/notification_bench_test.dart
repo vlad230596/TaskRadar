@@ -4,10 +4,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/domain/reminder_schedule.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
+import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
 
 import 'support/fake_notification_gateway.dart';
+import 'support/fake_settings_store.dart';
 
 /// The bench screen is the actual deliverable of F1 -- if its buttons are wired
 /// to nothing, the evening on the phone is wasted and nobody finds out until
@@ -52,7 +54,12 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [notificationGatewayProvider.overrideWithValue(gateway)],
+        overrides: [
+          notificationGatewayProvider.overrideWithValue(gateway),
+          // The reminder hour is persisted from F4 on, and the real store is a
+          // `shared_preferences` platform channel the test VM does not have.
+          settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
+        ],
         child: const MaterialApp(home: NotificationBenchScreen()),
       ),
     );

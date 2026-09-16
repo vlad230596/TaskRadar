@@ -207,4 +207,104 @@ void main() {
       expect(isReminderDue('', now: DateTime(2026, 8, 18)), isFalse);
     });
   });
+
+  group('calendarDateForApi -- the writing half of the timezone trap (F4)', () {
+    // `showDatePicker` hands back a local `DateTime` at local midnight. These
+    // pin what must be sent for it, and the two obvious wrong answers.
+    test('is the local wall-clock date, with no instant anywhere in it', () {
+      expect(calendarDateForApi(DateTime(2026, 10, 1)), '2026-10-01');
+      expect(calendarDateForApi(DateTime(2026, 1, 5)), '2026-01-05');
+      expect(calendarDateForApi(DateTime(999, 12, 31)), '0999-12-31');
+    });
+
+    test('ignores the time of day the picker happens to carry', () {
+      // `initialDate: DateTime.now()` produces a local *moment*, not midnight.
+      // The date part is the whole of the answer.
+      expect(calendarDateForApi(DateTime(2026, 10, 1, 23, 59, 59)), '2026-10-01');
+      expect(calendarDateForApi(DateTime(2026, 10, 1, 0, 0, 1)), '2026-10-01');
+    });
+
+    test('east of UTC: does not send the previous day', () {
+      // Moscow (UTC+3). `picked.toUtc()` is 2026-09-30T21:00Z, so the naive
+      // serialisation stores the 30th for someone who picked the 1st. This is
+      // that case written out with a real offset, without needing the test
+      // process to be in that zone.
+      final moscowMidnight = DateTime.utc(
+        2026,
+        10,
+        1,
+      ).subtract(const Duration(hours: 3));
+      expect(moscowMidnight.toIso8601String().substring(0, 10), '2026-09-30');
+
+      // The app never takes that path: it reads the local date parts of the
+      // value the picker returned.
+      expect(calendarDateForApi(DateTime(2026, 10, 1)), '2026-10-01');
+    });
+
+    test('west of UTC: what it sends survives the server round trip', () {
+      // New York (UTC-5): a local `DateTime` serialised with no offset reads as
+      // UTC on the server and comes back as the *next* day locally. A bare
+      // calendar date cannot: the server's `z.coerce.date()` turns it into UTC
+      // midnight of exactly that day, which is what the reader takes the prefix
+      // of.
+      const sent = '2026-10-01';
+      const stored = '${sent}T00:00:00.000Z';
+      expect(reminderCalendarDate(stored), sent);
+      expect(calendarDateForApi(DateTime(2026, 10, 1, 19)), sent);
+    });
+
+    test('round-trips through the stored form for every day of a year', () {
+      // The property that actually matters, checked exhaustively rather than on
+      // three hand-picked days: whatever the picker gives, the value the server
+      // stores reads back as the same calendar date.
+      var day = DateTime(2026);
+      while (day.year == 2026) {
+        final sent = calendarDateForApi(day);
+        expect(reminderCalendarDate('${sent}T00:00:00.000Z'), sent);
+        day = DateTime(day.year, day.month, day.day + 1);
+      }
+    });
+
+    test('localTodayCalendarDate is the same function', () {
+      // Not an implementation detail worth hiding: "today" and "the day the
+      // user picked" must be formatted identically, or the due comparison in
+      // `isReminderDue` would compare two different spellings.
+      expect(
+        localTodayCalendarDate(DateTime(2026, 8, 17)),
+        calendarDateForApi(DateTime(2026, 8, 17)),
+      );
+    });
+  });
+
+  group('remindAtAsLocalDay -- what the picker opens on', () {
+    test('re-assembles the calendar date as a local DateTime', () {
+      final day = remindAtAsLocalDay('2026-10-01T00:00:00.000Z');
+      expect(day, DateTime(2026, 10, 1));
+      // Local, not UTC: `showDatePicker` compares against local `firstDate` /
+      // `lastDate`, and a UTC value would be off by the offset.
+      expect(day!.isUtc, isFalse);
+    });
+
+    test('agrees with the badge, whatever the machine timezone is', () {
+      // The picker and the row must open on the same day. Both go through the
+      // calendar-date prefix rather than through a parsed instant, so this
+      // holds in every zone -- which is the point, since
+      // `DateTime.parse(...).toLocal()` would put the picker on the 30th for
+      // anyone west of UTC while the row still said 01.10.
+      const stored = '2026-10-01T00:00:00.000Z';
+      final day = remindAtAsLocalDay(stored)!;
+
+      expect(formatReminderDate(stored), '01.10');
+      expect(calendarDateForApi(day), reminderCalendarDate(stored));
+    });
+
+    test('a bare date works too', () {
+      expect(remindAtAsLocalDay('2026-11-30'), DateTime(2026, 11, 30));
+    });
+
+    test('an unreadable value has no day', () {
+      expect(remindAtAsLocalDay('не-дата'), isNull);
+      expect(remindAtAsLocalDay('2026-02-31T00:00:00.000Z'), isNull);
+    });
+  });
 }
