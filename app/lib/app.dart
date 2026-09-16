@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'navigation/app_routes.dart';
 import 'notifications/reminder_lifecycle.dart';
 import 'providers/session_provider.dart';
 import 'screens/board_screen.dart';
@@ -21,6 +22,20 @@ import 'screens/splash_screen.dart';
 /// A real router (nested project/task routes, notification deep links) becomes
 /// necessary at F4. It should be introduced *below* this switch, routing only
 /// within the signed-in half, so this property survives.
+///
+/// ## F3: that router now exists, and it did stay below the switch
+///
+/// `home` is still the session switch and still the only rule about being
+/// signed in. What F3 added is `onGenerateRoute` for the pages *pushed on top*
+/// of it (see `navigation/app_routes.dart`): a push cannot escape the switch,
+/// because flipping the session replaces `home`, which tears the whole navigator
+/// -- and everything pushed onto it -- down. So a 401 during a task edit still
+/// lands on the login screen with no route guard anywhere and no `BuildContext`
+/// in the HTTP layer.
+///
+/// F4 reuses that: `AppRoutes.openProjectFromBackground` needs only the
+/// navigator key wired in below, and the notification handler becomes a caller
+/// rather than a reason to restructure this widget.
 class TaskRadarApp extends ConsumerWidget {
   const TaskRadarApp({super.key});
 
@@ -37,6 +52,10 @@ class TaskRadarApp extends ConsumerWidget {
       child: MaterialApp(
         title: 'TaskRadar',
         debugShowCheckedModeBanner: false,
+        // Reachable without a BuildContext, for F4's notification tap. Harmless
+        // until then; see `navigation/app_routes.dart`.
+        navigatorKey: appNavigatorKey,
+        onGenerateRoute: AppRoutes.onGenerateRoute,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         ),

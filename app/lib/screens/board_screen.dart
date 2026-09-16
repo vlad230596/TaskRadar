@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../api/api_exception.dart';
+import '../api/api_error_message.dart';
 import '../models/board_project.dart';
+import '../navigation/app_routes.dart';
 import '../providers/board_providers.dart';
 import '../providers/session_provider.dart';
 import '../widgets/project_card.dart';
@@ -90,7 +91,7 @@ class BoardScreen extends ConsumerWidget {
             icon: Icons.cloud_off,
             title: 'Не удалось загрузить доску',
             body:
-                '${describeBoardError(error)}\n\nЛокального снимка тоже нет — '
+                '${describeApiError(error)}\n\nЛокального снимка тоже нет — '
                 'показать нечего. Потяните вниз или нажмите «Повторить».',
             action: _RetryButton(),
           ),
@@ -101,19 +102,6 @@ class BoardScreen extends ConsumerWidget {
     );
   }
 }
-
-/// Turns an [ApiException] into something a person can act on.
-///
-/// The distinction that matters is the one [NetworkException] exists for: "your
-/// phone cannot reach the server" and "the server answered with an error" have
-/// completely different next steps, and collapsing them into "ошибка" is how
-/// users end up rebooting routers over a 500.
-String describeBoardError(Object error) => switch (error) {
-  NetworkException() => 'Нет связи с сервером.',
-  ApiException(:final statusCode, :final message) =>
-    'Сервер ответил ошибкой $statusCode: $message',
-  _ => error.toString(),
-};
 
 class _BoardList extends ConsumerWidget {
   const _BoardList({required this.view});
@@ -137,8 +125,8 @@ class _BoardList extends ConsumerWidget {
               icon: Icons.inbox_outlined,
               title: 'Проектов пока нет',
               body:
-                  'Активных проектов на доске нет. Создание проекта появится '
-                  'на F3 — пока их заводит старый веб-клиент.',
+                  'Активных проектов на доске нет. Создать проект пока можно '
+                  'только через старый веб-клиент — это F4 вместе с архивом.',
               scrollable: false,
             ),
           )
@@ -160,17 +148,15 @@ class _BoardList extends ConsumerWidget {
     );
   }
 
-  /// F3 replaces this with the project screen. Until then a tap has to *say*
-  /// that, rather than do nothing -- a card that looks tappable and silently
-  /// is not reads as a bug.
+  /// By id, not by handing the loaded [BoardProject] over.
+  ///
+  /// The screen is perfectly able to take the row as an argument and would save
+  /// itself a lookup -- but then it would only ever be openable from a board
+  /// that is already loaded, and F4 has to open it from a notification tap on a
+  /// cold start. Addressing it by id costs one lookup and makes both callers the
+  /// same caller; see `navigation/app_routes.dart`.
   void _openProject(BuildContext context, BoardProject entry) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(
-          content: Text('«${entry.project.name}» — экран проекта будет на F3'),
-        ),
-      );
+    AppRoutes.openProject(context, projectId: entry.project.id);
   }
 }
 
@@ -197,7 +183,7 @@ class _StaleBanner extends ConsumerWidget {
         : theme.colorScheme.onSecondaryContainer;
 
     final lines = <String>[
-      if (failed) describeBoardError(view.refreshError!),
+      if (failed) describeApiError(view.refreshError!),
       if (view.isStale)
         'Показан локальный снимок от ${formatUpdatedAt(view.updatedAt)}.'
       else

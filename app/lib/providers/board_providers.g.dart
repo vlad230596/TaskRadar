@@ -166,7 +166,7 @@ final class BoardProvider extends $AsyncNotifierProvider<Board, FreshBoard> {
   Board create() => Board();
 }
 
-String _$boardHash() => r'7aab37a02fddc0cec0f0468e53e76ca9d0f6d0fd';
+String _$boardHash() => r'5df6762f76db721acb2f67001d6db2f7f8b89dfc';
 
 /// `GET /board?archived=false`, plus the snapshot write that follows it.
 
@@ -348,4 +348,4 @@ final class BoardReminderBridgeProvider
 }
 
 String _$boardReminderBridgeHash() =>
-    r'a43587b37789b531f179f1dc87c756bdc1c7e5ab';
+    r'9acddb8a586422d4d24a7683df33f6760eb61469';

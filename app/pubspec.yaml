@@ -77,6 +77,24 @@ dependencies:
   # without a device.
   timezone: ^0.11.1
 
+  # Markdown rendering for project notes (F3). `flutter_markdown` is the SDK's
+  # own package and is **discontinued**; `flutter_markdown_plus` is the
+  # maintained fork of it, which is why the plan names it by name.
+  #
+  # 1.0.x is what this SDK can take, and it is worth knowing why the answer was
+  # not "the newest of the three candidates": the fork's constraints are
+  # deliberately loose (`sdk: ^3.4.0`, `meta: ^1.16.0`, `markdown: ^7.3.1`), so
+  # it composes with the analyzer/meta ceiling that the two code generators
+  # already impose on this project (see the riverpod block above). The other two
+  # renderers considered -- `markdown_widget` and `gpt_markdown` -- resolve as
+  # well, but each drags in dependencies a note viewer has no use for
+  # (`url_launcher` + `visibility_detector` + syntax highlighting, and
+  # `flutter_math_fork` respectively).
+  #
+  # Caret rather than an exact pin: nothing here is in a generator lockstep, so
+  # a patch release cannot break the resolve the way a riverpod bump can.
+  flutter_markdown_plus: ^1.0.12
+
   # `timezone` ships the tz database but has no idea which zone the device is
   # in -- without this, `tz.local` stays UTC and every reminder fires at
   # 09:00 UTC, i.e. at the wrong hour everywhere except the UK in winter. That

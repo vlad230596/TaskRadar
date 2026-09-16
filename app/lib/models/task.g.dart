@@ -12,7 +12,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
   title: json['title'] as String,
   description: json['description'] as String?,
   status: $enumDecode(_$TaskStatusEnumMap, json['status']),
-  position: (json['position'] as num).toInt(),
+  position: (json['position'] as num).toDouble(),
   remindAt: json['remindAt'] as String?,
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,

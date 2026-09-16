@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../domain/board_reminders.dart';
 import '../models/board_project.dart';
+import '../models/task.dart';
 import '../storage/board_snapshot_store.dart';
 import 'dependencies.dart';
 import 'reminder_providers.dart';
@@ -116,6 +119,91 @@ class Board extends _$Board {
     } catch (error) {
       debugPrint('Board refresh failed: $error');
     }
+  }
+
+  /// Writes an authoritative task list for one project into the board that is
+  /// already loaded, without asking `GET /board` again.
+  ///
+  /// ## Why the project screen pushes instead of the board pulling
+  ///
+  /// Editing inside a project changes four things the board shows -- the current
+  /// task, the done/total counter, the blocker badges, and (through
+  /// [boardReminderBridge]) **the set of armed alarms**. The obvious way to keep
+  /// them honest is `ref.invalidate(boardProvider)` after every write, and that
+  /// is one extra full board round trip per keystroke-sized edit, on a phone,
+  /// for data the client is already holding.
+  ///
+  /// It is also unnecessary, because of an exact correspondence in the backend:
+  /// a `GET /board` row is "`GET /projects/:id` plus its tasks"
+  /// (`backend/src/routes/board.ts`), and `GET /projects/:id/tasks` returns
+  /// precisely that `tasks` array -- same order, same `isCurrent` annotation
+  /// from the same `annotateIsCurrent`. So the list the project screen has just
+  /// re-read *is* the board row's tasks, and splicing it in is not an
+  /// approximation of a refresh, it is the refresh, minus the request.
+  ///
+  /// The project's own fields (`name`, `archivedAt`) cannot change from inside
+  /// the project screen in F3, so they are left alone. F4's archive action
+  /// changes which *rows* exist and must invalidate the board properly rather
+  /// than reach for this method.
+  ///
+  /// ## What must not break
+  ///
+  /// [boardReminderBridge] compares by **identity** to decide whether to re-arm
+  /// the queue, so this builds a new list rather than mutating in place, and the
+  /// bridge picks the change up on its own. No scheduler call appears here --
+  /// that property (there is exactly one place that turns board data into
+  /// alarms) is the whole point of the F1 design, and a mutation path that armed
+  /// alarms itself would be the second place.
+  void applyProjectTasks(String projectId, List<Task> tasks) {
+    final current = state.value;
+
+    // Nothing from the wire yet: the board is either still loading or showing
+    // the snapshot, and there is no in-memory row to splice into. Marking it
+    // stale is the honest move -- the next read refetches once, rather than the
+    // board keeping rows this write has just invalidated.
+    if (current == null) {
+      ref.invalidateSelf();
+      return;
+    }
+
+    var found = false;
+    final projects = <BoardProject>[
+      for (final row in current.projects)
+        if (row.project.id == projectId)
+          () {
+            found = true;
+            return row.copyWith(tasks: List<Task>.unmodifiable(tasks));
+          }()
+        else
+          row,
+    ];
+
+    // The project is not on this board at all (archived, or the board is the
+    // archive view). Leaving the state untouched also leaves `published`
+    // identity untouched in the bridge, so nothing is re-armed for nothing.
+    if (!found) return;
+
+    state = AsyncData(
+      FreshBoard(
+        projects: List<BoardProject>.unmodifiable(projects),
+        // Deliberately the *original* fetch time. The board's "данные от ..."
+        // label answers "how old is what I am looking at", and a mutation to one
+        // project does not make the other fifteen rows any fresher. Claiming
+        // otherwise would turn a truthful staleness indicator into a lie that is
+        // impossible to notice.
+        fetchedAt: current.fetchedAt,
+      ),
+    );
+
+    // Keep the read cache in step, so a restart with no network shows what was
+    // just written rather than the state before it -- including for the alarm
+    // set, which is half the reason the snapshot exists. Same `savedAt` for the
+    // same reason as above; `write` never throws (see BoardSnapshotStore).
+    unawaited(
+      ref
+          .read(boardSnapshotStoreProvider)
+          .write(projects, savedAt: current.fetchedAt),
+    );
   }
 }
 

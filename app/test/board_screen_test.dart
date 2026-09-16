@@ -7,8 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/models/board_project.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
+import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/screens/board_screen.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
+import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
 
 import 'support/fake_backend.dart';
@@ -53,7 +55,13 @@ void main() {
           // that.
           notificationGatewayProvider.overrideWithValue(gateway),
         ],
-        child: const MaterialApp(home: BoardScreen()),
+        // `onGenerateRoute` as well as `home`, matching `app.dart`: from F3 a
+        // board card pushes a named route, and without the generator a tap
+        // would throw instead of navigating.
+        child: MaterialApp(
+          home: const BoardScreen(),
+          onGenerateRoute: AppRoutes.onGenerateRoute,
+        ),
       ),
     );
     await settle(tester);
@@ -211,7 +219,7 @@ void main() {
       expect(find.text('Не удалось обновить'), findsNothing);
     });
 
-    testWidgets('tapping a project says where the project screen went', (
+    testWidgets('tapping a project opens the project screen, by id', (
       tester,
     ) async {
       await pumpBoard(tester);
@@ -219,7 +227,20 @@ void main() {
       await tester.tap(find.text('Дача'));
       await settle(tester);
 
-      expect(find.textContaining('экран проекта будет на F3'), findsOneWidget);
+      // The screen is on stage and it was addressed by id, not handed the
+      // loaded row -- which is what lets F4 open it from a notification with no
+      // board in memory. See `navigation/app_routes.dart`.
+      final screen = tester.widget<ProjectScreen>(find.byType(ProjectScreen));
+      expect(screen.projectId, 'prj_b');
+      expect(screen.highlightTaskId, isNull);
+
+      // ...and it asked the server for that project's own data rather than
+      // reusing the board array. (The fake answers every path with the board,
+      // so what is on screen after this is not the point; the requests are.)
+      expect(
+        backend.requests.map((request) => request.path),
+        contains('/projects/prj_b/tasks'),
+      );
     });
 
     testWidgets('pull-to-refresh fetches again', (tester) async {

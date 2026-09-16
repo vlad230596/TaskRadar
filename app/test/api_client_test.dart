@@ -236,6 +236,55 @@ void main() {
     });
   });
 
+  group('content-type', () {
+    test('a request with a body says it is JSON', () async {
+      backend.alwaysRespond(<String, dynamic>{'ok': true});
+
+      await backend.client.post<Map<String, dynamic>>(
+        '/projects',
+        body: <String, dynamic>{'name': 'x'},
+      );
+
+      expect(
+        backend.lastRequest.headers[Headers.contentTypeHeader],
+        contains('application/json'),
+      );
+    });
+
+    test('a request with no body does not', () async {
+      // Regression guard for a bug that only a real server can show you.
+      // `BaseOptions.contentType` is JSON, and dio applies it to every request
+      // -- so a DELETE went out as `content-type: application/json` with an
+      // empty body, and Fastify's JSON parser answered
+      // "400 Body cannot be empty when content-type is set to
+      // 'application/json'". Every delete in the app failed; no fake transport
+      // noticed, because a fake does not read the header.
+      backend.alwaysRespond(null, statusCode: 204);
+
+      await backend.client.delete<dynamic>('/tasks/tsk_1');
+
+      expect(
+        backend.lastRequest.headers.containsKey(Headers.contentTypeHeader),
+        isFalse,
+      );
+    });
+
+    test('a bodiless POST does not either', () async {
+      // The same shape, for `POST /projects/:id/archive` (F4) and anything else
+      // that is a command rather than a payload.
+      backend.alwaysRespond(<String, dynamic>{'ok': true});
+
+      await backend.client.post<Map<String, dynamic>>(
+        '/projects/prj_1/archive',
+      );
+
+      expect(
+        backend.lastRequest.headers.containsKey(Headers.contentTypeHeader),
+        isFalse,
+      );
+    });
+  });
+
   test('timeouts are configured, so a dead server cannot hang forever', () {
     final options = backend.client.dio.options;
 

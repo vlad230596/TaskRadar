@@ -102,7 +102,7 @@ void main() {
       // depends on it, so the client must not shuffle them either.
       expect(
         board.first.tasks.map((task) => task.position),
-        <int>[1000, 2000, 3000],
+        <double>[1000, 2000, 3000],
       );
     });
 

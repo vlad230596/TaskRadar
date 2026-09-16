@@ -87,7 +87,11 @@ Map<String, dynamic> taskJson({
   String title = 'Задача',
   String? description,
   String status = 'pending',
-  int position = 1000,
+  // `num`, so a test can pass the fractional position a bisected reorder
+  // produces (1062.5) as well as the whole ones the seed data has. JSON-encoding
+  // an `int` still emits `1000`, exactly as the server does for an
+  // integer-valued Float.
+  num position = 1000,
   String? remindAt,
   bool isCurrent = false,
   String createdAt = '2026-08-01T09:00:00.000Z',
@@ -120,6 +124,54 @@ Map<String, dynamic> boardProjectJson({
   'createdAt': createdAt,
   'updatedAt': updatedAt,
   'tasks': tasks,
+};
+
+/// One note row (`GET /projects/:id/notes`).
+Map<String, dynamic> noteJson({
+  required String id,
+  String projectId = 'prj_1',
+  String title = 'Заметка',
+  String content = '',
+  String createdAt = '2026-08-01T11:00:00.000Z',
+  String updatedAt = '2026-08-01T11:00:00.000Z',
+}) => <String, dynamic>{
+  'id': id,
+  'projectId': projectId,
+  'title': title,
+  'content': content,
+  'createdAt': createdAt,
+  'updatedAt': updatedAt,
+};
+
+/// A task row exactly as a **mutation** endpoint answers it: the raw Prisma
+/// row, with **no `isCurrent` key**.
+///
+/// `POST /projects/:id/tasks`, `PATCH /tasks/:id` and `PATCH /tasks/:id/position`
+/// all reply like this -- see `backend/src/routes/tasks.ts`, where only the
+/// list route runs its rows through `annotateIsCurrent`. Keeping a fixture for
+/// it means the difference is pinned: a client that merged one of these
+/// responses straight into its list would silently lose the current-task
+/// highlight, and this is the shape that proves it.
+Map<String, dynamic> mutatedTaskJson({
+  required String id,
+  String projectId = 'prj_1',
+  String title = 'Задача',
+  String? description,
+  String status = 'pending',
+  num position = 1000,
+  String? remindAt,
+  String createdAt = '2026-08-01T09:00:00.000Z',
+  String updatedAt = '2026-08-01T09:00:00.000Z',
+}) => <String, dynamic>{
+  'id': id,
+  'projectId': projectId,
+  'title': title,
+  'description': description,
+  'status': status,
+  'position': position,
+  'remindAt': remindAt,
+  'createdAt': createdAt,
+  'updatedAt': updatedAt,
 };
 
 /// `POST /auth/login` 200 body.

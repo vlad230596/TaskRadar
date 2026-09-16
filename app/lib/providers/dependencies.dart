@@ -3,6 +3,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/api_client.dart';
 import '../api/auth_api.dart';
 import '../api/board_api.dart';
+import '../api/project_api.dart';
 import '../storage/board_snapshot_store.dart';
 import '../storage/token_storage.dart';
 
@@ -39,3 +40,11 @@ AuthApi authApi(Ref ref) => AuthApi(ref.watch(apiClientProvider));
 
 @Riverpod(keepAlive: true)
 BoardApi boardApi(Ref ref) => BoardApi(ref.watch(apiClientProvider));
+
+/// The read-and-write half of the API (F3): one project, its tasks, its notes.
+///
+/// `keepAlive` like its siblings even though the screens that use it come and
+/// go: it is a stateless wrapper around the shared [ApiClient], and letting it
+/// be rebuilt per screen would cost an allocation to achieve nothing.
+@Riverpod(keepAlive: true)
+ProjectApi projectApi(Ref ref) => ProjectApi(ref.watch(apiClientProvider));

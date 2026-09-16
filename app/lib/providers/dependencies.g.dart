@@ -271,3 +271,61 @@ final class BoardApiProvider
 }
 
 String _$boardApiHash() => r'741164fa76ea375c3580da087f61898da58cc219';
+
+/// The read-and-write half of the API (F3): one project, its tasks, its notes.
+///
+/// `keepAlive` like its siblings even though the screens that use it come and
+/// go: it is a stateless wrapper around the shared [ApiClient], and letting it
+/// be rebuilt per screen would cost an allocation to achieve nothing.
+
+@ProviderFor(projectApi)
+final projectApiProvider = ProjectApiProvider._();
+
+/// The read-and-write half of the API (F3): one project, its tasks, its notes.
+///
+/// `keepAlive` like its siblings even though the screens that use it come and
+/// go: it is a stateless wrapper around the shared [ApiClient], and letting it
+/// be rebuilt per screen would cost an allocation to achieve nothing.
+
+final class ProjectApiProvider
+    extends $FunctionalProvider<ProjectApi, ProjectApi, ProjectApi>
+    with $Provider<ProjectApi> {
+  /// The read-and-write half of the API (F3): one project, its tasks, its notes.
+  ///
+  /// `keepAlive` like its siblings even though the screens that use it come and
+  /// go: it is a stateless wrapper around the shared [ApiClient], and letting it
+  /// be rebuilt per screen would cost an allocation to achieve nothing.
+  ProjectApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'projectApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$projectApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<ProjectApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  ProjectApi create(Ref ref) {
+    return projectApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(ProjectApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<ProjectApi>(value),
+    );
+  }
+}
+
+String _$projectApiHash() => r'f8c88df174ac22584db6055743cf9b67cb664f4d';

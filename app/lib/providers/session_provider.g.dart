@@ -48,7 +48,7 @@ final class SessionProvider
   Session create() => Session();
 }
 
-String _$sessionHash() => r'5291d007d8c940e7c45f691bf1d3f71647ef0d97';
+String _$sessionHash() => r'29d67c056a0a0b4980168ca023dcad65d9bf5e56';
 
 /// Owns the answer to "is there a live session?" and every transition into and
 /// out of one.

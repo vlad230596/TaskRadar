@@ -64,7 +64,9 @@ void main() {
 
       // Task order is part of the contract -- `isCurrent` is computed against
       // it server-side.
-      var previousPosition = -1 << 62;
+      // `double`, not `int`: `position` is a Float server-side and a bisected
+      // one comes back as e.g. 1062.5. See the note on `Task.position`.
+      var previousPosition = double.negativeInfinity;
       for (final task in entry.tasks) {
         expect(task.projectId, entry.project.id);
         expect(task.position, greaterThan(previousPosition));

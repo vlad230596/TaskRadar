@@ -19,7 +19,24 @@ mixin _$Task {
 /// reordering (F3) sends neighbour ids (`beforeTaskId` / `afterTaskId`) and
 /// lets the server pick the new value, so nothing on the client should ever
 /// compute a position itself.
- int get position;/// Calendar date (stored server-side as UTC midnight) to be reminded about a
+///
+/// ## Why `double` and not `int`
+///
+/// `position` is a **Float** in the Prisma schema, and that is load-bearing:
+/// `backend/src/domain/position.ts` picks a new position by bisecting the
+/// gap between the two neighbours, so the fourth or fifth reorder into the
+/// same spot produces 1062.5 and JSON carries it as `1062.5`. Declared as
+/// `int`, `json_serializable` emits `json['position'] as int`, which throws a
+/// `TypeError` on that value -- a crash that cannot happen on seeded data
+/// and appears only after a few drags in one place, which is the worst
+/// possible time to find out.
+///
+/// The client reads this field for diagnostics only. **List order is the
+/// server's order** (`GET /projects/:id/tasks` sorts by `position` for us);
+/// nothing here ever re-sorts by it, which is what makes an optimistic
+/// reorder -- rows in the new order still carrying their old positions --
+/// safe for the one frame before the server's answer lands.
+ double get position;/// Calendar date (stored server-side as UTC midnight) to be reminded about a
 /// `blocked` task. Only ever compare this by its `YYYY-MM-DD` prefix -- see
 /// the note on [Project] and `frontend/src/lib/reminders.ts`.
  String? get remindAt; String get createdAt; String get updatedAt;/// Computed by the server, never stored: the first task in `position` order
@@ -62,7 +79,7 @@ abstract mixin class $TaskCopyWith<$Res>  {
   factory $TaskCopyWith(Task value, $Res Function(Task) _then) = _$TaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, int position, String? remindAt, String createdAt, String updatedAt, bool isCurrent
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String createdAt, String updatedAt, bool isCurrent
 });
 
 
@@ -87,7 +104,7 @@ as String,title: null == title ? _self.title : title // ignore: cast_nullable_to
 as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String?,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as TaskStatus,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as int,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
+as double,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable
@@ -176,7 +193,7 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  int position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
 return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
@@ -197,7 +214,7 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  int position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)  $default,) {final _that = this;
 switch (_that) {
 case _Task():
 return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
@@ -217,7 +234,7 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  int position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
 return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
@@ -244,7 +261,24 @@ class _Task implements Task {
 /// reordering (F3) sends neighbour ids (`beforeTaskId` / `afterTaskId`) and
 /// lets the server pick the new value, so nothing on the client should ever
 /// compute a position itself.
-@override final  int position;
+///
+/// ## Why `double` and not `int`
+///
+/// `position` is a **Float** in the Prisma schema, and that is load-bearing:
+/// `backend/src/domain/position.ts` picks a new position by bisecting the
+/// gap between the two neighbours, so the fourth or fifth reorder into the
+/// same spot produces 1062.5 and JSON carries it as `1062.5`. Declared as
+/// `int`, `json_serializable` emits `json['position'] as int`, which throws a
+/// `TypeError` on that value -- a crash that cannot happen on seeded data
+/// and appears only after a few drags in one place, which is the worst
+/// possible time to find out.
+///
+/// The client reads this field for diagnostics only. **List order is the
+/// server's order** (`GET /projects/:id/tasks` sorts by `position` for us);
+/// nothing here ever re-sorts by it, which is what makes an optimistic
+/// reorder -- rows in the new order still carrying their old positions --
+/// safe for the one frame before the server's answer lands.
+@override final  double position;
 /// Calendar date (stored server-side as UTC midnight) to be reminded about a
 /// `blocked` task. Only ever compare this by its `YYYY-MM-DD` prefix -- see
 /// the note on [Project] and `frontend/src/lib/reminders.ts`.
@@ -293,7 +327,7 @@ abstract mixin class _$TaskCopyWith<$Res> implements $TaskCopyWith<$Res> {
   factory _$TaskCopyWith(_Task value, $Res Function(_Task) _then) = __$TaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, int position, String? remindAt, String createdAt, String updatedAt, bool isCurrent
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String createdAt, String updatedAt, bool isCurrent
 });
 
 
@@ -318,7 +352,7 @@ as String,title: null == title ? _self.title : title // ignore: cast_nullable_to
 as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String?,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as TaskStatus,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
-as int,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
+as double,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable

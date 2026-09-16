@@ -109,6 +109,26 @@ class ApiClient {
       options.headers.remove('Authorization');
     }
 
+    /*
+     * A request with no body must not claim to have a JSON one.
+     *
+     * `BaseOptions.contentType` above is `application/json`, and dio applies it
+     * to every request whether or not there is anything to send. Fastify's JSON
+     * parser then rejects the result outright:
+     *
+     *     400 Body cannot be empty when content-type is set to 'application/json'
+     *
+     * which means **every `DELETE` in this client** -- delete a task, delete a
+     * note -- fails, along with the bodiless `POST /projects/:id/archive` that
+     * F4 will need. It is invisible in tests that fake the transport, because a
+     * fake does not care what the content-type says; it shows up the first time
+     * the app deletes something against a real server. Found exactly that way,
+     * by `test/live_project_contract_test.dart`.
+     */
+    if (options.data == null) {
+      options.headers.remove(Headers.contentTypeHeader);
+    }
+
     handler.next(options);
   }
 
