@@ -81,9 +81,18 @@ trap cleanup EXIT
 printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin >/dev/null
 docker pull "$BACKEND_IMAGE"
 
-# This backend exposes no /version route (its only public route is /health), so
-# the identity of what was deployed is confirmed from the image label instead of
-# over HTTP. The label is set at build time by the release workflow.
+# Identity of the artifact, checked from the image label before anything starts.
+# The label is set at build time by the release workflow.
+#
+# The backend now also serves GET /version, which reports the same value over
+# HTTP; this check is kept rather than replaced because the two prove different
+# things. The label says "the digest I was told to deploy really is release X",
+# and it says so *before* the container runs, so a mismatch aborts the release
+# without touching the running one. /version can only be asked afterwards, and
+# what it adds is confirmation that the container now serving the public origin
+# is the one just deployed. Adding that second check here is a worthwhile
+# follow-up (see DEPLOYMENT.md); it is not done in this pass because nothing in
+# this script has ever been executed.
 readonly IMAGE_VERSION="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$BACKEND_IMAGE")"
 readonly BUILD_DATE="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.created" }}' "$BACKEND_IMAGE")"
 if [[ "$IMAGE_VERSION" != "$VERSION" ]]; then

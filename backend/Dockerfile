@@ -64,7 +64,13 @@ ARG APP_VERSION
 ARG BUILD_DATE
 
 # Read by the deploy script to confirm that the digest it pulled really is the
-# release it was told to deploy (this backend exposes no /version route).
+# release it was told to deploy -- i.e. it describes the *artifact*, before
+# anything runs.
+#
+# The same two values also become ENV below and are what `GET /version` reports,
+# which answers a different question: what is running right now, asked over the
+# network. Both exist on purpose; the label is checkable without starting a
+# container, the route is checkable without access to the Docker socket.
 LABEL org.opencontainers.image.version=$APP_VERSION \
       org.opencontainers.image.created=$BUILD_DATE
 

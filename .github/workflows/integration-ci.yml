@@ -95,6 +95,21 @@ jobs:
           echo "$body"
           test "$body" = '{"status":"ok"}'
 
+      - name: Public readiness and version routes
+        # These exist to catch the @api allowlist trap documented in
+        # deploy/Caddyfile.taskradar.example: a route that works on
+        # 127.0.0.1:3001 but was never added to the matcher answers 404 from
+        # Caddy, which is indistinguishable from a route the backend does not
+        # serve. /ready additionally proves the backend really reached Postgres,
+        # which /health deliberately does not check.
+        run: |
+          ready="$(curl --fail --silent --show-error "$BASE_URL/ready")"
+          echo "$ready"
+          test "$ready" = '{"status":"ready"}'
+          version="$(curl --fail --silent --show-error "$BASE_URL/version")"
+          echo "$version"
+          echo "$version" | grep -q '"version"'
+
       - name: Guarded routes answer 401 without a token
         # Distinguishes the three failure modes that all look alike from a phone:
         # 401 means the app is up and the guard works, 404 means the Caddy

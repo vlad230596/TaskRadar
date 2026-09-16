@@ -15,7 +15,7 @@
 		max_size 1MB
 	}
 
-	@api path /health /auth/* /board /projects /projects/* /tasks/* /notes/*
+	@api path /health /ready /version /auth/* /board /projects /projects/* /tasks/* /notes/*
 	handle @api {
 		reverse_proxy backend:3001
 	}

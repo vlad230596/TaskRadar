@@ -85,6 +85,18 @@ services:
     build:
       context: ./backend
       args:
+        # These are what GET /version reports. They are build args only, and
+        # deliberately NOT repeated under `environment:` below: the Dockerfile
+        # turns them into `ENV APP_VERSION` / `ENV BUILD_DATE`, so the value is
+        # baked into the image and travels with the digest. Setting them again at
+        # run time would let `${APP_VERSION:-dev}` overwrite a real release
+        # version with "dev" on any invocation that forgot --env-file
+        # .release.env -- i.e. /version would confidently report the wrong
+        # version, which is worse than not having the route.
+        #
+        # The production host never builds (deploy runs `up --no-build`); this
+        # block is for local stack builds, and the release workflow passes the
+        # same two args to `docker build`.
         APP_VERSION: ${APP_VERSION:-dev}
         BUILD_DATE: ${BUILD_DATE:-unknown}
     restart: unless-stopped
@@ -111,15 +123,41 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      # GET /health is the only route the auth guard lets through unauthenticated
-      # (PUBLIC_ROUTES in src/lib/authGuard.ts), which is what makes it usable as
-      # a probe. Written with node's global fetch because this image is
-      # bookworm-slim: it has neither curl nor wget.
+      # /ready, not /health -- the two answer different questions and only one of
+      # them belongs here.
+      #
+      # /health is liveness: "the process is up and serving HTTP". It never
+      # touches PostgreSQL, on purpose, so it keeps answering 200 during a
+      # database outage. That is exactly what makes it the wrong probe for this
+      # slot: `up --wait` in the deploy script would call the release finished,
+      # and the container would be reported healthy, while every data route was
+      # returning 500 because the database was unreachable.
+      #
+      # /ready is readiness: it runs `SELECT 1` and answers 503 when that fails,
+      # so "healthy" here means the backend can actually serve a request. Compose
+      # has one healthcheck per service and no separate liveness/readiness notion
+      # the way Kubernetes does, so the single slot has to be the stricter probe.
+      #
+      # This is safe with `restart: unless-stopped`: Docker Engine does not
+      # restart a container for failing its healthcheck (only Swarm does), so a
+      # database blip marks the backend unhealthy and leaves it running to
+      # recover, rather than putting it into a restart loop it could not fix.
+      #
+      # /health still has its places, all of them outside this file: the
+      # post-deploy probe through the public origin in
+      # scripts/deploy-production.sh, and any external uptime monitor, where the
+      # question really is "is the process alive" and a database outage must not
+      # be reported as a dead app.
+      #
+      # Both routes are in PUBLIC_ROUTES (src/lib/authGuard.ts); a probe has no
+      # token. Written with node's global fetch because this image is
+      # bookworm-slim: it has neither curl nor wget. `r.ok` is false for the 503,
+      # so a database failure fails the check rather than passing silently.
       test:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:3001/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+        - "fetch('http://127.0.0.1:3001/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
       interval: 10s
       timeout: 3s
       retries: 6

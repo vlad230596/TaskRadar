@@ -52,7 +52,7 @@
 	# Caddy is indistinguishable from 404 from Fastify -- so the same prefixes are
 	# exercised through Caddy by the integration check in
 	# .github/workflows/integration-ci.yml, using deploy/Caddyfile.ci.
-	@api path /health /auth/* /board /projects /projects/* /tasks/* /notes/*
+	@api path /health /ready /version /auth/* /board /projects /projects/* /tasks/* /notes/*
 	handle @api {
 		# Matches the alias and port from compose.prod.yaml. Resolution works only
 		# because the Caddy container is attached to the `taskradar-ingress`

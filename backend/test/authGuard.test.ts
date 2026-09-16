@@ -11,14 +11,33 @@ const config: AuthConfig = {
 };
 
 describe("PUBLIC_ROUTES", () => {
-  it("contains exactly the three intended public routes", () => {
-    expect([...PUBLIC_ROUTES].sort()).toEqual(["GET /health", "POST /auth/login", "POST /auth/logout"]);
+  it("contains exactly the five intended public routes", () => {
+    // Pinned as a whole list rather than "contains X": the failure this guards
+    // against is a route becoming public by accident, and only an exact
+    // comparison catches an addition nobody meant to make.
+    expect([...PUBLIC_ROUTES].sort()).toEqual([
+      "GET /health",
+      "GET /ready",
+      "GET /version",
+      "POST /auth/login",
+      "POST /auth/logout",
+    ]);
+  });
+
+  it("keeps every route that reads or writes data out of the list", () => {
+    // The operational routes are public because infrastructure has no token.
+    // Nothing that touches a project, task or note may join them on that excuse.
+    for (const entry of PUBLIC_ROUTES) {
+      expect(entry).not.toMatch(/\/(projects|tasks|notes|board)/);
+    }
   });
 });
 
 describe("isPublicRoute", () => {
   it("recognises the public routes", () => {
     expect(isPublicRoute("GET", "/health")).toBe(true);
+    expect(isPublicRoute("GET", "/ready")).toBe(true);
+    expect(isPublicRoute("GET", "/version")).toBe(true);
     expect(isPublicRoute("POST", "/auth/login")).toBe(true);
     expect(isPublicRoute("POST", "/auth/logout")).toBe(true);
   });
@@ -31,8 +50,16 @@ describe("isPublicRoute", () => {
     expect(isPublicRoute("DELETE", "/notes/:id")).toBe(false);
   });
 
+  it("treats project mutation as protected, rename included", () => {
+    expect(isPublicRoute("PATCH", "/projects/:id")).toBe(false);
+    expect(isPublicRoute("DELETE", "/projects/:id")).toBe(false);
+    expect(isPublicRoute("POST", "/projects/:id/archive")).toBe(false);
+  });
+
   it("is method-sensitive: the right path with the wrong method is not public", () => {
     expect(isPublicRoute("POST", "/health")).toBe(false);
+    expect(isPublicRoute("POST", "/ready")).toBe(false);
+    expect(isPublicRoute("POST", "/version")).toBe(false);
     expect(isPublicRoute("GET", "/auth/login")).toBe(false);
     expect(isPublicRoute("DELETE", "/auth/logout")).toBe(false);
   });
@@ -45,6 +72,11 @@ describe("isPublicRoute", () => {
   it("does not match near-miss paths", () => {
     expect(isPublicRoute("GET", "/health/")).toBe(false);
     expect(isPublicRoute("GET", "/healthz")).toBe(false);
+    expect(isPublicRoute("GET", "/ready/")).toBe(false);
+    expect(isPublicRoute("GET", "/readyz")).toBe(false);
+    expect(isPublicRoute("GET", "/readiness")).toBe(false);
+    expect(isPublicRoute("GET", "/version/")).toBe(false);
+    expect(isPublicRoute("GET", "/versions")).toBe(false);
     expect(isPublicRoute("POST", "/auth/login/extra")).toBe(false);
     expect(isPublicRoute("GET", "/")).toBe(false);
   });

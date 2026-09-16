@@ -8,9 +8,22 @@ import { AuthConfig, SESSION_TTL_SECONDS } from "./authConfig";
  * Everything not listed here requires a valid JWT. The allowlist is deliberately
  * exhaustive-by-default: adding a new route protects it automatically, and
  * forgetting to list a genuinely public one fails closed (401) rather than open.
+ *
+ * The three operational routes are here because the things that call them have
+ * no credentials and cannot be given any: the Docker healthcheck runs inside the
+ * container, and the deploy script probes through the public origin before
+ * anyone has logged in. What each one is allowed to reveal is decided in
+ * routes/health.ts, not here -- this list only decides who may ask.
+ *
+ * Adding entries does not weaken the enumeration defence below. Membership is an
+ * exact `"<METHOD> <pattern>"` string match against a route Fastify already
+ * resolved, so each line opens exactly one method on exactly one registered
+ * path and nothing adjacent to it.
  */
 export const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
   "GET /health",
+  "GET /ready",
+  "GET /version",
   "POST /auth/login",
   "POST /auth/logout",
 ]);

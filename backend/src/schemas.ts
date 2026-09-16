@@ -36,6 +36,23 @@ export const createProjectSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
 });
 
+/**
+ * Body of `PATCH /projects/:id`.
+ *
+ * Intentionally the very same schema object as `createProjectSchema`, not a
+ * copy: a name that is acceptable when a project is created must stay acceptable
+ * when it is corrected, and aliasing makes the two impossible to drift apart
+ * (same trim, same "name is required", same 400 body).
+ *
+ * `name` is required rather than optional-with-a-refine, unlike
+ * `updateNoteSchema` and `updateTaskSchema`. Those carry several editable fields
+ * and need "at least one of them"; a project has exactly one, so making it
+ * optional would only buy the ability to send `{}` and have nothing happen. If a
+ * second editable field is ever added, this stops being an alias and grows the
+ * same optional/refine shape as the others.
+ */
+export const updateProjectSchema = createProjectSchema;
+
 export const listProjectsQuerySchema = z.object({
   archived: z.enum(["true", "false"]).optional(),
 });
