@@ -169,6 +169,28 @@ export const updateTaskPositionSchema = z
     message: "At least one of beforeTaskId/afterTaskId must be provided (use null for 'no neighbour on that side')",
   });
 
+// ---- Inbox (F8) ----
+
+/**
+ * A captured line of text, before it is anything else.
+ *
+ * One field, and the same trim/non-empty rule as a task title -- because that
+ * is what it becomes when it is filed. Deliberately *not* `createTaskSchema`
+ * aliased: an inbox item has no status, no description and no reminder date,
+ * and accepting them here would be accepting a second, parallel way to create
+ * work that never reaches a project.
+ */
+export const createInboxItemSchema = z.object({
+  text: z.string().trim().min(1, "text is required"),
+});
+
+export const updateInboxItemSchema = createInboxItemSchema;
+
+/** Body of `POST /inbox/:id/file`: which project the item becomes a task in. */
+export const fileInboxItemSchema = z.object({
+  projectId: z.string().min(1, "projectId is required"),
+});
+
 // ---- Notes ----
 
 export const createNoteSchema = z.object({

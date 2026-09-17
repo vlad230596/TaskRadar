@@ -91,6 +91,35 @@ model Task {
   @@map("tasks")
 }
 
+/// The sandbox (F8): a line of text written down before deciding where it
+/// belongs.
+///
+/// A table of its own rather than a Task with a nullable projectId, or a
+/// reserved "Inbox" project. Both of those were the obvious candidates and both
+/// cost more than this one:
+///
+/// - a reserved project makes the inbox a Project everywhere -- it would need a
+///   guard in the board query, the archive, the delete guard, rename, notes and
+///   `isCurrent` (a pile has no "current task"), and with scopes it would have
+///   to live in one, which contradicts the whole point of capturing something
+///   before deciding which part of life it belongs to;
+/// - a nullable `Task.projectId` touches every task route, `isCurrent`,
+///   `position`, the board and the client's cache.
+///
+/// This touches nothing that already exists. It is also the honest shape: an
+/// item here has no status, no order and no reminder date, because it is not
+/// yet work -- it is a note to self that becomes a Task the moment it is filed
+/// into a project.
+model InboxItem {
+  id        String   @id @default(cuid())
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([createdAt])
+  @@map("inbox_items")
+}
+
 model Note {
   id        String   @id @default(cuid())
   projectId String
