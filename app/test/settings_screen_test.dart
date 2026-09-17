@@ -6,21 +6,25 @@ import 'package:taskradar/domain/reminder_schedule.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
+import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
 
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_settings_store.dart';
+import 'support/fake_voice.dart';
 
 /// The settings screen (F4): the one real setting, and the diagnostic that
 /// explains why reminders might not be arriving.
 void main() {
   late FakeNotificationGateway gateway;
   late FakeSettingsStore settings;
+  late FakeVoiceModelStore voiceModels;
 
   setUp(() {
     gateway = FakeNotificationGateway();
     settings = FakeSettingsStore();
+    voiceModels = FakeVoiceModelStore();
 
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -48,6 +52,7 @@ void main() {
         overrides: [
           notificationGatewayProvider.overrideWithValue(gateway),
           settingsStoreProvider.overrideWithValue(settings),
+          voiceModelStoreProvider.overrideWithValue(voiceModels),
         ],
         child: const MaterialApp(home: SettingsScreen()),
       ),
@@ -175,5 +180,65 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NotificationBenchScreen), findsOneWidget);
+  });
+
+  /// The speech model (F9). A quarter of a gigabyte is a decision, so it is
+  /// presented as one.
+  group('the speech model', () {
+    testWidgets('offers the download with the size in it', (tester) async {
+      await pumpSettings(tester);
+
+      // The number before the decision, not after it: downloading 163 MB on
+      // whatever connection somebody happens to be on is how an app gets
+      // uninstalled.
+      expect(find.textContaining('163 МБ'), findsOneWidget);
+      expect(find.text('Скачать'), findsOneWidget);
+    });
+
+    testWidgets('downloading it ends in "готов"', (tester) async {
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Скачать'));
+      await tester.pumpAndSettle();
+
+      expect(voiceModels.installCount, 1);
+      expect(find.text('Голосовой ввод готов'), findsOneWidget);
+      expect(find.text('Удалить'), findsOneWidget);
+    });
+
+    testWidgets('a failed download says why, and offers another go', (
+      tester,
+    ) async {
+      voiceModels.installFailure = Exception('диск полон');
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Скачать'));
+      await tester.pumpAndSettle();
+
+      // "Не удалось" with no reason is useless for something that can fail on
+      // the network, on disk space, or on a file the archive did not contain.
+      expect(find.textContaining('диск полон'), findsOneWidget);
+      expect(find.text('Ещё раз'), findsOneWidget);
+    });
+
+    testWidgets('an installed model says what it costs and can be deleted', (
+      tester,
+    ) async {
+      voiceModels.present = true;
+      await pumpSettings(tester);
+
+      expect(find.text('Голосовой ввод готов'), findsOneWidget);
+      expect(find.textContaining('236 МБ'), findsOneWidget);
+      // The privacy claim is on screen, not just in a design document.
+      expect(find.textContaining('никуда не отправляется'), findsOneWidget);
+
+      await tester.tap(find.text('Удалить'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Удалить'));
+      await tester.pumpAndSettle();
+
+      expect(voiceModels.removeCount, 1);
+      expect(find.text('Голосовой ввод'), findsOneWidget);
+    });
   });
 }

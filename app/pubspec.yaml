@@ -118,6 +118,36 @@ dependencies:
   # came at noon". See `NotificationTimeZone` for the fallback when this fails.
   flutter_timezone: ^5.1.0
 
+  # ---- Voice input (F9) ----
+  #
+  # Dictation into the sandbox, recognised **on the device**. The whole point is
+  # that nothing leaves the phone: the system `SpeechRecognizer` (the
+  # `speech_to_text` package) needs the network on most Android builds and sends
+  # the audio to a server, which is the wrong trade for a tool whose reason to
+  # exist is that "надо не забыть" arrives where there is no signal.
+  #
+  # `sherpa_onnx` is k2-fsa's Flutter binding over onnxruntime. It brings one
+  # native package per platform (`sherpa_onnx_android_arm64`,
+  # `sherpa_onnx_windows`, ...) automatically, which is the reason it is one line
+  # here and 27 MB of native library per ABI in the APK (measured on arm64 in a
+  # debug build; armeabi-v7a is 19 MB). The *model* is not in the APK at all --
+  # it is downloaded on first use; see `lib/voice/voice_model.dart` for that
+  # decision and its numbers.
+  sherpa_onnx: ^1.13.8
+
+  # Microphone capture. Used in exactly one mode -- 16 kHz mono WAV into a temp
+  # file -- because that is what the recogniser wants and what `readWave` in
+  # `sherpa_onnx` reads back. Nothing here streams: a held-button phrase is a few
+  # hundred kilobytes, and a file is one less moving part than a byte stream that
+  # has to survive a platform channel.
+  record: ^6.2.1
+
+  # Unpacking the model archive (`.tar.bz2` from the sherpa-onnx releases).
+  # `extractFileToDisk` streams through the file rather than holding the whole
+  # 225 MB in memory, which is the difference between working and being killed by
+  # the OS on a phone.
+  archive: ^4.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

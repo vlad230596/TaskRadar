@@ -85,7 +85,10 @@ lib/
   api/           dio client, error types, one class per endpoint group
   domain/        pure logic with no plugins and no clock of its own
   notifications/ the side-effecting half: plugin, timezone, scheduler
-  storage/       secure token storage, board snapshot file
+  storage/       secure token storage, board snapshot file, offline capture
+                 queue (F8.1)
+  voice/         on-device dictation (F9): the model and where it lives, the
+                 microphone and the recogniser, both behind interfaces
   providers/     riverpod: singletons, session state, board, project, forms
   navigation/    the one router, and the seam F4's deep link plugs into
   screens/       splash / login / board / project / note editor / archive /
@@ -94,6 +97,7 @@ lib/
 test/
   support/       fake HTTP transport (routed + stateful), fake token storage,
                  fake notification gateway, fake snapshot store, fake settings
+                 store, fake capture queue, fake microphone/recogniser/model
                  store, JSON fixtures
 ```
 
@@ -556,23 +560,37 @@ Write a line down now, decide where it goes later. `screens/inbox_screen.dart`
 is both halves: a capture field at the top that owns the keyboard, and the pile
 under it, oldest first.
 
-### Capture is the one write that is not optimistic
+### Capture works with no network (F8.1)
 
-Everything else in this app shows its result immediately and rolls back on
-failure -- that is what makes editing a project feel like one gesture. Capture
-is the case where the trade goes the other way, and the reason is what the
-sandbox promises: **it is written down now**. A line that appears and then
-evaporates on a train breaks exactly that promise, and there is no offline queue
-to make the optimistic version true. So the text stays in the field until the
-server has it, and a failure leaves it there to be sent again.
+F8 made capture the one write in this app that was *not* optimistic: the text
+stayed in the field until the server had it, because a line that appears and
+then evaporates on a train breaks the sandbox's only promise -- **it is written
+down now** -- and there was no queue to make the optimistic version true.
 
-**The honest limit of the feature, worth knowing before relying on it: capture
-needs the network.** The scenario it exists for -- writing something down while
-walking -- is exactly the one where a phone may have no signal. If that turns
-out to bite, the sandbox is the natural first exception to the no-offline-writes
-rule that `../flutter-migration-plan.md` holds everywhere else, precisely
-because an inbox item has no ordering and no conflicts: two devices can only
-ever add lines.
+F8.1 built the queue, and with it that decision flipped. `CaptureQueue` in
+`providers/capture_queue_providers.dart` writes the line to a file
+(`storage/capture_queue_store.dart`) and *then* to the screen, so the promise
+holds in a lift, on a train, in a plane. Sending happens afterwards: on capture,
+on app start, on resume (`widgets/capture_flush_scope.dart`) and on
+pull-to-refresh.
+
+Three things about it are load-bearing:
+
+- **the mark.** An unsent line says "не отправлено". Without it, "written down"
+  and "written down in my pocket" look identical, and that difference is what
+  someone needs in order to decide whether it is safe to forget the thought;
+- **the key.** Every queued line carries a client-generated `captureKey` and
+  `POST /inbox` upserts on it. A phone cannot tell "the request never arrived"
+  from "it arrived and the answer was lost", so it retries -- and without the
+  key the second case would leave a twin in the pile;
+- **the disk error is still reported.** A failed queue write means the line
+  exists nowhere, so that one keeps the text in the field.
+
+This is the **only** exception to "writes need the network", and it does not
+generalise: an inbox line has no order to be inserted into the wrong place in,
+no state another device can change, and a lifetime of hours, so merging two
+devices is set union. Filing has all three, which is why it still requires a
+connection -- tapping an unsent line says so.
 
 ### Filing is one request, and it invalidates the board
 
@@ -602,6 +620,41 @@ inbox is a promise that what was written there will be dealt with, and the only
 thing that keeps that promise is seeing every morning that three lines are still
 waiting. The count is nullable and the badge is absent while the pile is
 loading: "0" that turns into "3" is a small lie told on every cold start.
+
+## Dictation (F9)
+
+Hold the microphone in the sandbox composer, speak, release; the text lands in
+the field, to be corrected before it is captured. Recognition happens **on the
+device** -- nothing is uploaded, which is the whole reason the system
+recogniser was not used.
+
+- `voice/voice_model.dart` -- which model and why (GigaAM v3 NeMo CTC, the
+  punctuated export, MIT), plus the numbers: 163 MB to download, 236 MB on disk;
+- `voice/voice_model_store.dart` -- fetching, unpacking (in another isolate) and
+  deleting it. It decides whether a model is present by *looking at the files*,
+  because a half-finished unpack would make a flag in preferences lie;
+- `voice/speech_recognizer.dart` / `voice/voice_recorder.dart` -- the two
+  platform seams, both behind interfaces so everything above them is testable;
+- `providers/voice_providers.dart` -- the install state and the dictation state
+  machine;
+- `widgets/dictate_button.dart` -- the gesture.
+
+The model is not in the APK and is not fetched silently: a quarter of a
+gigabyte is presented in Settings as something to agree to, with the size before
+the decision and a delete button after it. The microphone only appears once it
+is there -- a button that answers "сначала скачайте 163 МБ" lies about what it
+does.
+
+Two implementation notes that cost time to find: the recogniser is held by
+`ref.watch` rather than `ref.read` (otherwise Riverpod disposes it between two
+phrases and the next press pays the multi-second load again), and the minimum
+hold is measured with a `Timer` rather than two `DateTime.now()` readings (a
+timer runs on the clock `pump` advances, so a widget test can hold the button
+for two seconds).
+
+**Not verified on a device.** Nobody has said a word into a real microphone yet:
+latency, recognition quality and memory behaviour with the model loaded are all
+unmeasured, and everything below the platform seam is a fake in the tests.
 
 ## Local reminders (F1)
 

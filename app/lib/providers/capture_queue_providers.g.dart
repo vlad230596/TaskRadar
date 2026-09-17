@@ -105,7 +105,7 @@ final class CaptureQueueProvider
   CaptureQueue create() => CaptureQueue();
 }
 
-String _$captureQueueHash() => r'09d385978b5a166fa102beb7ac88889b6bec128d';
+String _$captureQueueHash() => r'fc4078bc5b22adee398d0286bf1e0383a9ffbce2';
 
 /// Offline capture (F8.1): the lines this device has written down and not sent
 /// yet.

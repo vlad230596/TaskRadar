@@ -10,7 +10,9 @@ import '../providers/board_providers.dart';
 import '../providers/capture_queue_providers.dart';
 import '../providers/inbox_providers.dart';
 import '../providers/scope_providers.dart';
+import '../providers/voice_providers.dart';
 import '../storage/capture_queue_store.dart';
+import '../widgets/dictate_button.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_name_dialog.dart';
 
@@ -255,8 +257,29 @@ class _ComposerState extends ConsumerState<_Composer> {
     _focus.requestFocus();
   }
 
+  /// Puts dictated text into the field rather than capturing it outright (F9).
+  ///
+  /// The plan asked for exactly this -- "результат подставляется в поле с
+  /// возможностью поправить руками перед сохранением" -- and it is the right
+  /// call for a recogniser without a confidence score: a misheard word is
+  /// obvious on screen and invisible in a pile you will read tomorrow. The text
+  /// is appended, so dictating twice adds a second sentence instead of eating
+  /// the first, and the caret ends up after it ready to be corrected.
+  void _insertDictated(String text) {
+    final existing = _controller.text.trim();
+    final combined = existing.isEmpty ? text : '$existing $text';
+
+    _controller.value = TextEditingValue(
+      text: combined,
+      selection: TextSelection.collapsed(offset: combined.length),
+    );
+    _focus.requestFocus();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final canDictate = ref.watch(canDictateProvider);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       child: Row(
@@ -279,6 +302,10 @@ class _ComposerState extends ConsumerState<_Composer> {
               onSubmitted: (_) => _submit(),
             ),
           ),
+          // The microphone is only here when there is a model to dictate with;
+          // see `DictateButton` for why an always-present button that answers
+          // "download 163 MB first" would be the wrong thing.
+          if (canDictate) DictateButton(onText: _insertDictated),
           const SizedBox(width: 8),
           IconButton.filled(
             tooltip: 'Записать',

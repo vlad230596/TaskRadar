@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
+import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/board_screen.dart';
 import 'package:taskradar/screens/inbox_screen.dart';
 
@@ -14,6 +15,7 @@ import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_capture_queue_store.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_project_backend.dart';
+import 'support/fake_voice.dart';
 import 'support/fake_settings_store.dart';
 
 /// The sandbox screen (F8), as F8.1 left it: capture at the top, sorting
@@ -32,8 +34,14 @@ void main() {
   late FakeBoardSnapshotStore snapshots;
   late FakeCaptureQueueStore queue;
   late FakeNotificationGateway gateway;
+  late FakeVoiceRecorder microphone;
+  late FakeSpeechRecognizer recogniser;
+  late FakeVoiceModelStore voiceModels;
 
   setUp(() {
+    microphone = FakeVoiceRecorder();
+    recogniser = FakeSpeechRecognizer();
+    voiceModels = FakeVoiceModelStore();
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
     snapshots = FakeBoardSnapshotStore();
@@ -47,7 +55,11 @@ void main() {
     }
   }
 
-  Future<void> pump(WidgetTester tester, {Widget? home}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    Widget? home,
+    bool withVoiceModel = false,
+  }) async {
     tester.view.physicalSize = const Size(1000, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -59,6 +71,11 @@ void main() {
           boardSnapshotStoreProvider.overrideWithValue(snapshots),
           captureQueueStoreProvider.overrideWithValue(queue),
           notificationGatewayProvider.overrideWithValue(gateway),
+          voiceRecorderProvider.overrideWithValue(microphone),
+          speechRecognizerProvider.overrideWithValue(recogniser),
+          voiceModelStoreProvider.overrideWithValue(
+            voiceModels..present = withVoiceModel,
+          ),
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
         ],
         child: MaterialApp(
@@ -313,6 +330,83 @@ void main() {
 
       expect(find.byType(Badge), findsNothing);
       expect(find.byTooltip(InboxScreen.title), findsOneWidget);
+    });
+  });
+
+  /// Dictation (F9). The sandbox is where it writes, which is the whole reason
+  /// the sandbox was built before it.
+  group('dictation', () {
+    testWidgets('no microphone until there is a model to dictate with', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      // A button that answers "сначала скачайте 163 МБ" is a button that lies
+      // about what it does; Settings offers the download instead.
+      expect(find.byIcon(Icons.mic_none), findsNothing);
+    });
+
+    testWidgets('with a model, holding the microphone fills the field', (
+      tester,
+    ) async {
+      await pump(tester, withVoiceModel: true);
+      expect(find.byIcon(Icons.mic_none), findsOneWidget);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await gesture.up();
+      await settle(tester);
+
+      // Into the field, not straight into the pile: a misheard word is obvious
+      // on screen and invisible in a list you will read tomorrow.
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Купить кабель',
+      );
+      expect(server.inbox, isEmpty);
+    });
+
+    testWidgets('dictating twice adds a sentence instead of eating the first', (
+      tester,
+    ) async {
+      await pump(tester, withVoiceModel: true);
+      await tester.enterText(find.byType(TextField).first, 'Купить');
+      await tester.pump();
+      recogniser.text = 'кабель для монитора';
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await gesture.up();
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Купить кабель для монитора',
+      );
+    });
+
+    testWidgets('and the dictated line is captured like any other', (
+      tester,
+    ) async {
+      await pump(tester, withVoiceModel: true);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.byIcon(Icons.mic_none)),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      await gesture.up();
+      await settle(tester);
+      await tester.tap(find.byTooltip('Записать'));
+      await settle(tester);
+
+      // Through the queue and out the other side: with a network it drains
+      // immediately, so what is left behind is a server row and an empty queue.
+      expect(server.inbox.single['text'], 'Купить кабель');
+      expect(queue.queue, isEmpty);
     });
   });
 }

@@ -70,6 +70,22 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
 
+    <!--
+      ===== Voice input (F9) =====
+
+      Dictation into the sandbox. The recognition itself happens on the device —
+      the model is an ONNX file in the app's own storage and no audio leaves the
+      phone — but recording still needs the runtime permission, asked for by
+      `record` the first time the microphone button is held.
+
+      Nothing else is declared here on purpose. In particular there is no
+      foreground-service or background-recording setup: the microphone is open
+      only while a finger is on the button and while the app is in front, which
+      is both the product decision (see `widgets/dictate_button.dart`) and the
+      reason this permission cannot quietly become a listening device.
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <application
         android:label="TaskRadar"
         android:name="${applicationName}"

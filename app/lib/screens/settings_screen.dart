@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/reminder_schedule.dart';
 import '../providers/reminder_providers.dart';
+import '../providers/voice_providers.dart';
+import '../voice/voice_model.dart';
 import '../widgets/mutation_feedback.dart';
 import 'notification_bench_screen.dart';
 
@@ -30,12 +32,126 @@ class SettingsScreen extends ConsumerWidget {
         children: const [
           _ReminderTimeTile(),
           Divider(height: 24),
+          _VoiceModelTile(),
+          Divider(height: 24),
           _PermissionsTile(),
           Divider(height: 24),
           _BenchTile(),
         ],
       ),
     );
+  }
+}
+
+/// The speech model (F9): downloading it, seeing what it costs, deleting it.
+///
+/// ## Why a quarter of a gigabyte is a settings screen and not a silent fetch
+///
+/// The model is 163 MB to download and 236 MB on disk -- more than the rest of
+/// the app by an order of magnitude. Downloading that the first time somebody
+/// touches a microphone button, on whatever connection they happen to be on,
+/// is the kind of surprise that gets an app uninstalled. So it is presented as
+/// something to agree to, with the number visible before the decision and a way
+/// to take it back afterwards.
+///
+/// The microphone button in the sandbox appears only once this says "готово".
+class _VoiceModelTile extends ConsumerWidget {
+  const _VoiceModelTile();
+
+  static String _megabytes(int bytes) => '${(bytes / 1000000).round()} МБ';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final state = ref.watch(voiceModelInstallationProvider);
+    final notifier = ref.read(voiceModelInstallationProvider.notifier);
+    final model = notifier.model;
+
+    return switch (state) {
+      VoiceModelUnknown() => const ListTile(
+        leading: Icon(Icons.mic_none),
+        title: Text('Голосовой ввод'),
+        subtitle: Text('Проверяем, скачана ли модель…'),
+      ),
+
+      VoiceModelMissing(:final lastError) => ListTile(
+        leading: const Icon(Icons.mic_none),
+        title: const Text('Голосовой ввод'),
+        subtitle: Text(
+          lastError == null
+              ? 'Распознавание работает на устройстве и без сети. '
+                    'Модель нужно скачать один раз: '
+                    '${_megabytes(model.downloadBytes)} загрузки, '
+                    '${_megabytes(model.installedBytes)} на диске.'
+              : 'Не удалось скачать модель: $lastError',
+          style: lastError == null
+              ? null
+              : theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.error,
+                ),
+        ),
+        isThreeLine: true,
+        trailing: FilledButton.tonal(
+          onPressed: () => notifier.install(),
+          child: Text(lastError == null ? 'Скачать' : 'Ещё раз'),
+        ),
+      ),
+
+      VoiceModelInstalling(:final fraction, :final unpacking) => ListTile(
+        leading: const Icon(Icons.mic_none),
+        title: const Text('Голосовой ввод'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              unpacking
+                  // Its own phase on purpose: unpacking takes tens of seconds
+                  // and reports no progress, and a bar sitting at 100% in
+                  // silence looks exactly like a hang.
+                  ? 'Распаковываем модель…'
+                  : 'Скачиваем модель…',
+            ),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: unpacking ? null : fraction),
+          ],
+        ),
+        isThreeLine: true,
+        trailing: TextButton(
+          // Cancelling an unpack is not offered: it is a few tens of seconds
+          // and stopping it halfway leaves the directory to be cleaned up
+          // anyway.
+          onPressed: unpacking ? null : notifier.cancelInstall,
+          child: const Text('Отмена'),
+        ),
+      ),
+
+      VoiceModelReady(:final installed) => ListTile(
+        leading: Icon(Icons.mic, color: theme.colorScheme.primary),
+        title: const Text('Голосовой ввод готов'),
+        subtitle: Text(
+          '${model.name}. Занимает ${_megabytes(installed.bytesOnDisk)}. '
+          'Распознавание идёт на устройстве — запись никуда не отправляется.',
+        ),
+        isThreeLine: true,
+        trailing: TextButton(
+          onPressed: () => _confirmRemoval(context, ref),
+          child: const Text('Удалить'),
+        ),
+      ),
+    };
+  }
+
+  Future<void> _confirmRemoval(BuildContext context, WidgetRef ref) async {
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Удалить модель?',
+      message:
+          'Голосовой ввод перестанет работать, пока модель не скачать заново.',
+      confirmLabel: 'Удалить',
+    );
+    if (!confirmed) return;
+
+    await ref.read(voiceModelInstallationProvider.notifier).remove();
   }
 }
 
