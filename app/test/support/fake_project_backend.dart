@@ -58,6 +58,9 @@ class FakeProjectBackend {
   final List<Map<String, dynamic>> tasks = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> notes = <Map<String, dynamic>>[];
 
+  /// The sandbox (F8), in capture order -- the server sends it oldest first.
+  final List<Map<String, dynamic>> inbox = <Map<String, dynamic>>[];
+
   /// Every PATCH body the client sent, keyed by route, newest last. The
   /// undefined-vs-null assertions read this.
   final List<({String path, Map<String, dynamic> body})> patches =
@@ -109,6 +112,18 @@ class FakeProjectBackend {
       'updatedAt': createdAt,
     };
     return projectId;
+  }
+
+  String addInboxItem({required String text, String? id}) {
+    final itemId = id ?? _id('inb');
+    inbox.add(<String, dynamic>{
+      'id': itemId,
+      'text': text,
+      // Ordered by insertion, which is what capture order means here.
+      'createdAt': '2026-08-01T12:00:00.000Z',
+      'updatedAt': '2026-08-01T12:00:00.000Z',
+    });
+    return itemId;
   }
 
   String addTask({
@@ -267,6 +282,59 @@ class FakeProjectBackend {
       }
 
       scopes.removeWhere((s) => s['id'] == id);
+      return jsonResponse(null, statusCode: 204);
+    });
+
+    // --- the sandbox (F8) ---------------------------------------------------
+
+    backend.on('GET', '/inbox', (match) => jsonResponse(inbox));
+
+    backend.on('POST', '/inbox', (match) {
+      final text = (match.body['text'] as String?)?.trim() ?? '';
+      if (text.isEmpty) return _error(400, 'text is required');
+      final id = addInboxItem(text: text);
+      return jsonResponse(_inboxItem(id), statusCode: 201);
+    });
+
+    // Before '/inbox/:id' so the longer path wins.
+    backend.on('POST', '/inbox/:id/file', (match) {
+      final item = _inboxItem(match.params['id']!);
+      if (item == null) return _notFound('Inbox item');
+
+      final projectId = match.body['projectId'] as String?;
+      if (projectId == null || projectId.isEmpty) {
+        return _error(400, 'projectId is required');
+      }
+      if (_project(projectId) == null) return _notFound('Project');
+
+      // Both halves, like the server's transaction: the task appears at the end
+      // of the project and the item stops existing.
+      final taskId = addTask(projectId: projectId, title: item['text'] as String);
+      inbox.removeWhere((row) => row['id'] == item['id']);
+
+      // The raw row, with no `isCurrent` -- exactly what the real route answers.
+      final task = <String, dynamic>{..._task(taskId)!}..remove('isCurrent');
+      return jsonResponse(task, statusCode: 201);
+    });
+
+    backend.on('PATCH', '/inbox/:id', (match) {
+      final item = _inboxItem(match.params['id']!);
+      if (item == null) return _notFound('Inbox item');
+
+      patches.add((path: match.options.path, body: match.body));
+
+      final raw = match.body['text'];
+      if (raw is! String || raw.trim().isEmpty) {
+        return _error(400, 'text is required');
+      }
+      item['text'] = raw.trim();
+      return jsonResponse(item);
+    });
+
+    backend.on('DELETE', '/inbox/:id', (match) {
+      final item = _inboxItem(match.params['id']!);
+      if (item == null) return _notFound('Inbox item');
+      inbox.removeWhere((row) => row['id'] == item['id']);
       return jsonResponse(null, statusCode: 204);
     });
 
@@ -643,6 +711,13 @@ class FakeProjectBackend {
       if (position > last) last = position;
     }
     return last;
+  }
+
+  Map<String, dynamic>? _inboxItem(String id) {
+    for (final item in inbox) {
+      if (item['id'] == id) return item;
+    }
+    return null;
   }
 
   Map<String, dynamic>? _scope(String id) {

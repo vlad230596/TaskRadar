@@ -4,6 +4,7 @@ import '../api/api_client.dart';
 import '../api/auth_api.dart';
 import '../api/board_api.dart';
 import '../api/project_api.dart';
+import '../api/inbox_api.dart';
 import '../api/scope_api.dart';
 import '../storage/board_snapshot_store.dart';
 import '../storage/settings_store.dart';
@@ -64,3 +65,7 @@ ProjectApi projectApi(Ref ref) => ProjectApi(ref.watch(apiClientProvider));
 /// stateless wrapper around the shared [ApiClient].
 @Riverpod(keepAlive: true)
 ScopeApi scopeApi(Ref ref) => ScopeApi(ref.watch(apiClientProvider));
+
+/// The sandbox endpoints (F8). Same shape and reasoning as [projectApi].
+@Riverpod(keepAlive: true)
+InboxApi inboxApi(Ref ref) => InboxApi(ref.watch(apiClientProvider));

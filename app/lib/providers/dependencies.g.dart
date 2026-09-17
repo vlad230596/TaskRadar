@@ -439,3 +439,49 @@ final class ScopeApiProvider
 }
 
 String _$scopeApiHash() => r'0fdefd2cdd41b1cbbcf2d58faceee6f7efcbe2d5';
+
+/// The sandbox endpoints (F8). Same shape and reasoning as [projectApi].
+
+@ProviderFor(inboxApi)
+final inboxApiProvider = InboxApiProvider._();
+
+/// The sandbox endpoints (F8). Same shape and reasoning as [projectApi].
+
+final class InboxApiProvider
+    extends $FunctionalProvider<InboxApi, InboxApi, InboxApi>
+    with $Provider<InboxApi> {
+  /// The sandbox endpoints (F8). Same shape and reasoning as [projectApi].
+  InboxApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'inboxApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$inboxApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<InboxApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  InboxApi create(Ref ref) {
+    return inboxApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(InboxApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<InboxApi>(value),
+    );
+  }
+}
+
+String _$inboxApiHash() => r'5186d371cd119c20528bb433b056e668465cb4e1';

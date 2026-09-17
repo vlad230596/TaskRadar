@@ -6,10 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error_message.dart';
 import '../models/board_project.dart';
 import '../navigation/app_routes.dart';
+import 'inbox_screen.dart';
 import 'scopes_screen.dart';
 import '../providers/archive_providers.dart';
 import '../providers/board_providers.dart';
 import '../models/scope.dart';
+import '../providers/inbox_providers.dart';
 import '../providers/scope_providers.dart';
 import '../providers/session_provider.dart';
 import '../widgets/adaptive_layout.dart';
@@ -81,6 +83,13 @@ class BoardScreen extends ConsumerWidget {
               )
             : null,
         actions: [
+          // The sandbox, with however many lines are waiting in it (F8).
+          //
+          // On the board rather than behind the overflow menu, and with the
+          // count visible, for one reason: a pile nobody is reminded of is a
+          // pile that rots, and an inbox that rots is worse than no inbox --
+          // things were written down there *instead of* being remembered.
+          const _InboxButton(),
           // A mouse cannot pull to refresh. The gesture below still exists and
           // is still the right one on a touch screen, but on the desktop it is
           // unreachable -- a wheel scroll does not overscroll -- so the wide
@@ -182,6 +191,32 @@ class BoardScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+}
+
+/// The sandbox button, with the size of the pile on it.
+///
+/// The badge is the whole point. An inbox is a promise that a thought written
+/// down there will be dealt with later, and the only thing that keeps that
+/// promise is seeing, every morning, that three lines are still waiting. A
+/// count that is missing while the request is in flight is right; a count that
+/// says "0" and then changes to "3" is a small lie told on every cold start --
+/// hence `inboxCount` being nullable.
+class _InboxButton extends ConsumerWidget {
+  const _InboxButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(inboxCountProvider);
+
+    final button = IconButton(
+      tooltip: InboxScreen.title,
+      onPressed: () => AppRoutes.openInbox(context),
+      icon: const Icon(Icons.inbox_outlined),
+    );
+
+    if (count == null || count == 0) return button;
+    return Badge.count(count: count, offset: const Offset(-4, 4), child: button);
   }
 }
 

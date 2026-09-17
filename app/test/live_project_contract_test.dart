@@ -4,6 +4,7 @@ import 'package:taskradar/api/api_exception.dart';
 import 'package:taskradar/api/auth_api.dart';
 import 'package:taskradar/api/board_api.dart';
 import 'package:taskradar/api/patch_field.dart';
+import 'package:taskradar/api/inbox_api.dart';
 import 'package:taskradar/api/project_api.dart';
 import 'package:taskradar/api/scope_api.dart';
 import 'package:taskradar/domain/reminders.dart';
@@ -611,5 +612,81 @@ void main() {
 
     // ignore: avoid_print
     print('live scopes: created, moved a project in and out, 409 and 404 seen');
+  }, skip: skip);
+
+  test('the live sandbox contract: capture, edit, file, discard', () async {
+    // F8. What no fake can settle here is the *filing*: one request that writes
+    // two tables, answering with a raw task row that has no `isCurrent` key at
+    // all -- and leaving the item gone.
+    await openScratchProject();
+    final inbox = InboxApi(client);
+
+    final before = await inbox.fetchInbox();
+
+    final captured = await inbox.capture(
+      text: 'Проверка песочницы ${DateTime.now().toIso8601String()}',
+    );
+    var cleanedUp = false;
+    addTearDown(() async {
+      if (cleanedUp) return;
+      try {
+        await inbox.deleteItem(captured.id);
+      } catch (error) {
+        // ignore: avoid_print
+        print('live: FAILED to remove scratch inbox item ${captured.id}: $error');
+      }
+    });
+
+    expect(captured.text, contains('Проверка песочницы'));
+
+    // It is in the list, and the list is oldest first -- so a line captured now
+    // is last.
+    final withItem = await inbox.fetchInbox();
+    expect(withItem.map((i) => i.id), contains(captured.id));
+    expect(withItem.last.id, captured.id);
+    expect(withItem.length, before.length + 1);
+
+    final edited = await inbox.editItem(captured.id, text: 'Спросить про кабель у Пети');
+    expect(edited.text, 'Спросить про кабель у Пети');
+
+    // Filing: the task lands at the end of the project, and the item is gone.
+    final tasksBefore = await api.fetchTasks(projectId);
+    final task = await inbox.fileItem(captured.id, projectId: projectId);
+    cleanedUp = true;
+
+    expect(task.title, 'Спросить про кабель у Пети');
+    expect(task.projectId, projectId);
+
+    final tasksAfter = await api.fetchTasks(projectId);
+    expect(tasksAfter.length, tasksBefore.length + 1);
+    expect(tasksAfter.last.title, 'Спросить про кабель у Пети');
+    expect(
+      tasksAfter.last.position,
+      greaterThan(tasksBefore.isEmpty ? 0 : tasksBefore.last.position),
+    );
+
+    final afterFiling = await inbox.fetchInbox();
+    expect(afterFiling.map((i) => i.id), isNot(contains(captured.id)));
+    expect(afterFiling.length, before.length);
+
+    // Filing into a project that does not exist is a 404 about the project, and
+    // the item survives it -- the one outcome this feature cannot afford is a
+    // line that is neither filed nor in the pile.
+    final second = await inbox.capture(text: 'Проверка отказа');
+    await expectLater(
+      inbox.fileItem(second.id, projectId: 'project_does_not_exist'),
+      throwsA(
+        isA<ApiException>().having((e) => e.statusCode, 'statusCode', 404),
+      ),
+    );
+    expect(
+      (await inbox.fetchInbox()).map((i) => i.id),
+      contains(second.id),
+      reason: 'a refused filing must not eat the line',
+    );
+    await inbox.deleteItem(second.id);
+
+    // ignore: avoid_print
+    print('live sandbox: captured, edited, filed as a task, refusal survived');
   }, skip: skip);
 }

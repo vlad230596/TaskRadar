@@ -45,11 +45,22 @@ class FakeBackend {
   /// installation looks like right after the migration (and keeps the switcher
   /// hidden, since it only appears with two or more).
   ///
-  /// Pass [scopes] to serve a different list.
-  void alwaysRespond(Object? body, {int statusCode = 200, List<dynamic>? scopes}) {
+  /// The sandbox (F8) is carved out for the same reason and is empty by
+  /// default: the board screen reads `GET /inbox` for its badge, and a test
+  /// about the board should not have to say so.
+  ///
+  /// Pass [scopes] or [inbox] to serve a different list.
+  void alwaysRespond(
+    Object? body, {
+    int statusCode = 200,
+    List<dynamic>? scopes,
+    List<dynamic>? inbox,
+  }) {
     final scopeBody = scopes ?? defaultScopesJson();
+    final inboxBody = inbox ?? const <dynamic>[];
     responder = (options) {
       if (options.path.startsWith('/scopes')) return jsonResponse(scopeBody);
+      if (options.path.startsWith('/inbox')) return jsonResponse(inboxBody);
       return jsonResponse(body, statusCode: statusCode);
     };
   }

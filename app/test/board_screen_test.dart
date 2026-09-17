@@ -65,6 +65,9 @@ void main() {
       if (options.path.startsWith('/scopes')) {
         return jsonResponse(defaultScopesJson());
       }
+      if (options.path.startsWith('/inbox')) {
+        return jsonResponse(const <dynamic>[]);
+      }
       return inFlight.future;
     };
   }

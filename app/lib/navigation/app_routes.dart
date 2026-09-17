@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../screens/archive_screen.dart';
+import '../screens/inbox_screen.dart';
 import '../screens/project_screen.dart';
 import '../screens/scopes_screen.dart';
 import '../screens/settings_screen.dart';
@@ -67,6 +68,9 @@ abstract final class AppRoutes {
   /// the board; this is where scopes are created, renamed, reordered, deleted.
   static const String scopes = '/scopes';
 
+  /// The sandbox (F8): capture a line without choosing a project, sort later.
+  static const String inbox = '/inbox';
+
   /// Hooked up as `MaterialApp.onGenerateRoute`.
   ///
   /// Returns null for anything it does not recognise, which lets
@@ -84,6 +88,13 @@ abstract final class AppRoutes {
       return MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => const SettingsScreen(),
+      );
+    }
+
+    if (settings.name == inbox) {
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => const InboxScreen(),
       );
     }
 
@@ -143,6 +154,10 @@ abstract final class AppRoutes {
   /// Opens the scope manager (F7).
   static Future<void> openScopes(BuildContext context) =>
       Navigator.of(context).pushNamed<void>(scopes);
+
+  /// Opens the sandbox (F8).
+  static Future<void> openInbox(BuildContext context) =>
+      Navigator.of(context).pushNamed<void>(inbox);
 
   /// Opens a project from outside the widget tree -- a notification tap, or
   /// anything else that starts at a platform channel.

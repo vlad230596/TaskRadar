@@ -20,6 +20,39 @@ import '../api/api_error_message.dart';
 /// The notifier does the rolling back (it owns the "before" state); this only
 /// reports. Returns whether the write succeeded, for callers that want to close
 /// an editor only on success.
+/// [runMutation] for a write whose **result** the caller needs.
+///
+/// Same reporting, same rules; returns the value on success and null on
+/// failure. It exists because "create a project, then file the line into it"
+/// (F8) needs the created project's id, and the alternative -- a nullable local
+/// assigned from inside a closure -- is the shape that quietly proceeds with a
+/// null after a failed first step.
+Future<T?> runMutationFor<T extends Object>(
+  BuildContext context,
+  Future<T> Function() action, {
+  required String failure,
+  String? success,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+
+  try {
+    final result = await action();
+    if (success != null) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(SnackBar(content: Text(success)));
+    }
+    return result;
+  } catch (error) {
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(content: Text('$failure ${describeApiError(error)}')),
+      );
+    return null;
+  }
+}
+
 Future<bool> runMutation(
   BuildContext context,
   Future<void> Function() action, {

@@ -89,7 +89,7 @@ lib/
   providers/     riverpod: singletons, session state, board, project, forms
   navigation/    the one router, and the seam F4's deep link plugs into
   screens/       splash / login / board / project / note editor / archive /
-                 scopes / settings / notification bench (F1, a diagnostic)
+                 scopes / inbox / settings / notification bench (a diagnostic)
   widgets/       reusable pieces of the screens
 test/
   support/       fake HTTP transport (routed + stateful), fake token storage,
@@ -549,6 +549,59 @@ in the payload -- so the row is spliced into whatever lists are on screen, the
 same way a rename is. It is also the one write in this app that shows a success
 message, because it makes the project disappear from the board it was performed
 on.
+
+## The sandbox (F8)
+
+Write a line down now, decide where it goes later. `screens/inbox_screen.dart`
+is both halves: a capture field at the top that owns the keyboard, and the pile
+under it, oldest first.
+
+### Capture is the one write that is not optimistic
+
+Everything else in this app shows its result immediately and rolls back on
+failure -- that is what makes editing a project feel like one gesture. Capture
+is the case where the trade goes the other way, and the reason is what the
+sandbox promises: **it is written down now**. A line that appears and then
+evaporates on a train breaks exactly that promise, and there is no offline queue
+to make the optimistic version true. So the text stays in the field until the
+server has it, and a failure leaves it there to be sent again.
+
+**The honest limit of the feature, worth knowing before relying on it: capture
+needs the network.** The scenario it exists for -- writing something down while
+walking -- is exactly the one where a phone may have no signal. If that turns
+out to bite, the sandbox is the natural first exception to the no-offline-writes
+rule that `../flutter-migration-plan.md` holds everywhere else, precisely
+because an inbox item has no ordering and no conflicts: two devices can only
+ever add lines.
+
+### Filing is one request, and it invalidates the board
+
+`POST /inbox/:id/file` creates the task at the end of the project and deletes
+the item in one transaction. Two requests from a client would have two ways to
+be half-done -- the same thing filed twice, or the thought gone -- and neither
+is visible to the person who typed it.
+
+The response is a raw task row with **no `isCurrent`**, like every other
+mutation endpoint, so `Inbox.file` does not splice it anywhere: it invalidates
+the board and lets `GET /board` answer with the project's settled list. That is
+one request for something done a handful of times a day, and it re-arms the
+reminder queue for free.
+
+### What an inbox item deliberately cannot do
+
+No status, no reminder date, no order, no project. An item you can work on
+directly is an item you never file, and a pile that has quietly become a second
+task list is the failure this feature has to avoid. The only things a line can
+become are: a task in a project, a project of its own, corrected text, or
+nothing.
+
+### Why the badge is on the board
+
+`_InboxButton` in `screens/board_screen.dart` draws the count in the app bar. An
+inbox is a promise that what was written there will be dealt with, and the only
+thing that keeps that promise is seeing every morning that three lines are still
+waiting. The count is nullable and the badge is absent while the pile is
+loading: "0" that turns into "3" is a small lie told on every cold start.
 
 ## Local reminders (F1)
 
