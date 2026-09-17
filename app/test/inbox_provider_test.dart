@@ -9,23 +9,29 @@ import 'package:taskradar/providers/inbox_providers.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
+import 'support/fake_capture_queue_store.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_project_backend.dart';
 
-/// The sandbox on the client (F8): the pile, and the four things that can
+/// The sandbox on the client (F8): the pile the server holds, and what can
 /// happen to a line in it.
+///
+/// Capture moved out of this provider at F8.1 -- it goes through the on-device
+/// queue now, and its tests live in `capture_queue_provider_test.dart`.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late FakeBackend backend;
   late FakeProjectBackend server;
   late FakeBoardSnapshotStore snapshots;
+  late FakeCaptureQueueStore queue;
   late FakeNotificationGateway gateway;
 
   setUp(() {
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
     snapshots = FakeBoardSnapshotStore();
+    queue = FakeCaptureQueueStore();
     gateway = FakeNotificationGateway();
   });
 
@@ -34,6 +40,7 @@ void main() {
       overrides: [
         apiClientProvider.overrideWithValue(backend.client),
         boardSnapshotStoreProvider.overrideWithValue(snapshots),
+        captureQueueStoreProvider.overrideWithValue(queue),
         notificationGatewayProvider.overrideWithValue(gateway),
       ],
     );
@@ -70,47 +77,62 @@ void main() {
     });
   });
 
-  group('capture', () {
-    test('adds the line at the end, trimmed', () async {
+  group('taking in what the queue sent', () {
+    test('adds the rows without a second request', () async {
       final container = makeContainer();
       await container.read(inboxProvider.future);
+      final before = backend.requests.length;
 
-      await container.read(inboxProvider.notifier).capture('  Купить кабель  ');
+      container.read(inboxProvider.notifier).adoptAll(<InboxItem>[
+        const InboxItem(
+          id: 'inb-sent',
+          text: 'Купить кабель',
+          createdAt: '2026-08-01T12:00:00.000Z',
+          updatedAt: '2026-08-01T12:00:00.000Z',
+        ),
+      ]);
 
       expect(
         container.read(inboxProvider).requireValue.map((i) => i.text),
         <String>['Купить кабель'],
       );
-      expect(server.inbox.single['text'], 'Купить кабель');
-    });
-
-    test('shows nothing until the server has taken it', () async {
-      // The opposite of every other write in this app, on purpose: the promise
-      // of the sandbox is "it is written down now", and a row that appears and
-      // then evaporates breaks exactly that promise. There is no offline queue
-      // to make the optimistic version true.
-      final container = makeContainer();
-      await container.read(inboxProvider.future);
-      backend.failingPaths.add('/inbox');
-
-      await expectLater(
-        container.read(inboxProvider.notifier).capture('Купить кабель'),
-        throwsA(isA<NetworkException>()),
-      );
-
-      expect(container.read(inboxProvider).requireValue, isEmpty);
-    });
-
-    test('an empty line never reaches the server', () async {
-      final container = makeContainer();
-      await container.read(inboxProvider.future);
-      final before = backend.requests.length;
-
-      expect(
-        () => container.read(inboxProvider.notifier).capture('   '),
-        throwsA(isA<ArgumentError>()),
-      );
+      // The row came from `POST /inbox` in the shape `GET /inbox` sends; asking
+      // the server to repeat what this client is holding would be a request
+      // spent on nothing.
       expect(backend.requests, hasLength(before));
+    });
+
+    test('ignores a row the pile already has', () async {
+      // A flush can re-send a line whose first attempt did reach the server --
+      // that is what the idempotency key is for -- and get back a row this list
+      // is already showing.
+      server.addInboxItem(text: 'Купить кабель', id: 'inb-1');
+      final container = makeContainer();
+      final items = await container.read(inboxProvider.future);
+
+      container.read(inboxProvider.notifier).adoptAll(items);
+
+      expect(container.read(inboxProvider).requireValue, hasLength(1));
+    });
+
+    test('does nothing while the pile has not loaded', () async {
+      // Splicing into an absent list would turn "not loaded yet" into "this one
+      // line is everything there is", and the board badge would report it as
+      // fact.
+      backend.failingPaths.add('/inbox');
+      final container = makeContainer();
+      await expectLater(container.read(inboxProvider.future), throwsA(anything));
+
+      container.read(inboxProvider.notifier).adoptAll(<InboxItem>[
+        const InboxItem(
+          id: 'inb-sent',
+          text: 'Купить кабель',
+          createdAt: '2026-08-01T12:00:00.000Z',
+          updatedAt: '2026-08-01T12:00:00.000Z',
+        ),
+      ]);
+
+      expect(container.read(inboxProvider).hasValue, isFalse);
     });
   });
 

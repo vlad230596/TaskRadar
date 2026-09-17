@@ -30,11 +30,24 @@ class InboxApi {
     );
   }
 
-  /// `POST /inbox`. The whole payload is one line of text.
-  Future<InboxItem> capture({required String text}) async {
+  /// `POST /inbox`: one line of text, plus -- since F8.1 -- the client's
+  /// idempotency key.
+  ///
+  /// [captureKey] is what makes the offline queue safe to retry. A phone that
+  /// captured with no signal cannot tell "the request never arrived" from "it
+  /// arrived and the answer was lost", so it replays; with the key the replay
+  /// answers with the row the server already has (200) instead of creating a
+  /// twin (201). Nothing here branches on which of the two came back -- the row
+  /// is the row -- which is why the status can stay honest on the server.
+  ///
+  /// Optional because a caller with no queue behind it has nothing to replay.
+  Future<InboxItem> capture({required String text, String? captureKey}) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/inbox',
-      body: <String, dynamic>{'text': text},
+      body: <String, dynamic>{
+        'text': text,
+        'captureKey': ?captureKey,
+      },
     );
     return InboxItem.fromJson(json);
   }

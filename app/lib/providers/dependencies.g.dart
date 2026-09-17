@@ -149,6 +149,79 @@ final class BoardSnapshotStoreProvider
 String _$boardSnapshotStoreHash() =>
     r'16db2ea1889e40d5ab88ca0b364e8184c0f3bcba';
 
+/// The offline capture queue (F8.1): lines written down on this device that
+/// the server has not acknowledged yet.
+///
+/// Here for the same reason as [boardSnapshotStore] -- it owns a path on disk
+/// and a `path_provider` platform channel -- and for one more that is specific
+/// to it: this file is the only copy of a line captured with no network, so a
+/// second instance writing the same path from another provider scope would be a
+/// way to lose one.
+
+@ProviderFor(captureQueueStore)
+final captureQueueStoreProvider = CaptureQueueStoreProvider._();
+
+/// The offline capture queue (F8.1): lines written down on this device that
+/// the server has not acknowledged yet.
+///
+/// Here for the same reason as [boardSnapshotStore] -- it owns a path on disk
+/// and a `path_provider` platform channel -- and for one more that is specific
+/// to it: this file is the only copy of a line captured with no network, so a
+/// second instance writing the same path from another provider scope would be a
+/// way to lose one.
+
+final class CaptureQueueStoreProvider
+    extends
+        $FunctionalProvider<
+          CaptureQueueStore,
+          CaptureQueueStore,
+          CaptureQueueStore
+        >
+    with $Provider<CaptureQueueStore> {
+  /// The offline capture queue (F8.1): lines written down on this device that
+  /// the server has not acknowledged yet.
+  ///
+  /// Here for the same reason as [boardSnapshotStore] -- it owns a path on disk
+  /// and a `path_provider` platform channel -- and for one more that is specific
+  /// to it: this file is the only copy of a line captured with no network, so a
+  /// second instance writing the same path from another provider scope would be a
+  /// way to lose one.
+  CaptureQueueStoreProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'captureQueueStoreProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$captureQueueStoreHash();
+
+  @$internal
+  @override
+  $ProviderElement<CaptureQueueStore> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  CaptureQueueStore create(Ref ref) {
+    return captureQueueStore(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(CaptureQueueStore value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<CaptureQueueStore>(value),
+    );
+  }
+}
+
+String _$captureQueueStoreHash() => r'db636038bbc49fbc07bd37d7a684fbe011c6ad93';
+
 /// Persisted user preferences (F4): currently the reminder hour.
 ///
 /// Here rather than in `reminder_providers.dart` for the same reason as

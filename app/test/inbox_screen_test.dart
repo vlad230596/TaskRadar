@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,26 +11,33 @@ import 'package:taskradar/screens/inbox_screen.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
+import 'support/fake_capture_queue_store.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_project_backend.dart';
 import 'support/fake_settings_store.dart';
 
-/// The sandbox screen (F8): capture at the top, sorting underneath.
+/// The sandbox screen (F8), as F8.1 left it: capture at the top, sorting
+/// underneath, and both working with no network.
 ///
-/// The assertion worth naming: **a line that could not be captured stays in the
-/// field.** Everything else in this app writes optimistically, and here that
-/// would be the wrong trade -- the promise of the sandbox is "it is written
-/// down now", and there is no offline queue behind it.
+/// The assertions worth naming: **a line captured with no signal appears
+/// immediately, marked as unsent**, and **a sandbox that could not be loaded
+/// still shows what this device has written down**. F8's rule -- the text stays
+/// in the field until the server has it -- was the right one when there was
+/// nowhere else to put the line, and the queue replaced it: the field now
+/// clears as soon as the line is on disk, and only a failed *disk* write keeps
+/// it.
 void main() {
   late FakeBackend backend;
   late FakeProjectBackend server;
   late FakeBoardSnapshotStore snapshots;
+  late FakeCaptureQueueStore queue;
   late FakeNotificationGateway gateway;
 
   setUp(() {
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
     snapshots = FakeBoardSnapshotStore();
+    queue = FakeCaptureQueueStore();
     gateway = FakeNotificationGateway();
   });
 
@@ -48,6 +57,7 @@ void main() {
         overrides: [
           apiClientProvider.overrideWithValue(backend.client),
           boardSnapshotStoreProvider.overrideWithValue(snapshots),
+          captureQueueStoreProvider.overrideWithValue(queue),
           notificationGatewayProvider.overrideWithValue(gateway),
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
         ],
@@ -93,7 +103,7 @@ void main() {
       expect(tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus, isTrue);
     });
 
-    testWidgets('a line that could not be sent stays in the field', (
+    testWidgets('a line captured with no network appears, marked as unsent', (
       tester,
     ) async {
       await pump(tester);
@@ -101,14 +111,81 @@ void main() {
 
       await capture(tester, 'Спросить про кабель');
 
-      // Not lost, not shown as if it had been saved: still there, to be sent
-      // again when there is signal.
+      // The promise of the sandbox is "it is written down now", and with the
+      // queue that promise is true offline: the line is on this device's disk
+      // before it is on the screen.
+      expect(find.text('Спросить про кабель'), findsOneWidget);
+      expect(find.textContaining('Не отправлено'), findsOneWidget);
+      expect(queue.queue.single.text, 'Спросить про кабель');
+      // The field is empty and focused all the same -- the gesture is "empty my
+      // head", and a signal is not part of it.
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        '',
+      );
+      expect(server.inbox, isEmpty);
+    });
+
+    testWidgets('a line that could not reach the disk stays in the field', (
+      tester,
+    ) async {
+      // The one failure that still has to be reported: if the queue file could
+      // not be written, the line exists nowhere at all.
+      await pump(tester);
+      queue.writeFailure = const FileSystemException('disk full');
+
+      await capture(tester, 'Спросить про кабель');
+
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller!.text,
         'Спросить про кабель',
       );
-      expect(find.textContaining('Не удалось записать в песочницу.'), findsOneWidget);
-      expect(server.inbox, isEmpty);
+      expect(
+        find.textContaining('Не удалось записать строчку на устройство.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an unsent line can be thrown away', (tester) async {
+      await pump(tester);
+      backend.failingPaths.add('/inbox');
+      await capture(tester, 'Спросить про кабель');
+
+      await tester.tap(find.byTooltip('Выбросить'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Выбросить'));
+      await settle(tester);
+
+      expect(find.text('Спросить про кабель'), findsNothing);
+      expect(queue.queue, isEmpty);
+    });
+
+    testWidgets('a sandbox that cannot be loaded still shows the unsent lines', (
+      tester,
+    ) async {
+      // The screen used to replace the whole list with an error here. It cannot
+      // any more: the lines captured in the lift are exactly what the user came
+      // to see, and hiding them behind "не удалось загрузить" would say the
+      // thought was lost while it sits on this device's disk.
+      backend.failingPaths.add('/inbox');
+      await pump(tester);
+
+      await capture(tester, 'Спросить про кабель');
+
+      expect(find.text('Спросить про кабель'), findsOneWidget);
+      expect(find.text('Не удалось загрузить песочницу'), findsNothing);
+      expect(
+        find.textContaining('записано на этом устройстве'),
+        findsOneWidget,
+        reason: 'the failure is a banner over the lines, not instead of them',
+      );
+    });
+
+    testWidgets('an empty sandbox with nothing queued still says it is empty', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(find.text('Песочница пуста'), findsOneWidget);
     });
   });
 

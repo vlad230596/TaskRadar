@@ -7,6 +7,7 @@ import 'providers/session_provider.dart';
 import 'screens/board_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
+import 'widgets/capture_flush_scope.dart';
 import 'widgets/notification_link_scope.dart';
 
 /// Root widget.
@@ -74,8 +75,15 @@ class TaskRadarApp extends ConsumerWidget {
           // a request that 401s and bounces them around. The tap is not lost by
           // waiting: it is held in the gateway's buffer or in the launch intent
           // until this exists. See the long note in that file.
+          // F8.1: `CaptureFlushScope` wraps the signed-in half, not the whole
+          // app. Lines captured offline live in a file on the device and are
+          // sent from here when the app starts or comes back to the
+          // foreground -- both of which need a session, which is exactly what
+          // this branch means.
           AsyncData(:final value) => value == SessionStatus.signedIn
-              ? const NotificationLinkScope(child: BoardScreen())
+              ? const CaptureFlushScope(
+                  child: NotificationLinkScope(child: BoardScreen()),
+                )
               : const LoginScreen(),
 
           // `Session.build` catches everything it expects, so reaching here

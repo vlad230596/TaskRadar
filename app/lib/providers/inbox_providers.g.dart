@@ -8,78 +8,90 @@ part of 'inbox_providers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// The sandbox (F8): the pile, and the four things that can happen to a line in
-/// it.
+/// The sandbox (F8): the pile of lines the server holds, and what can happen to
+/// one.
 ///
-/// ## Why the writes here are not optimistic
+/// ## Where capture went (F8.1)
 ///
-/// Every other write in this app shows its result immediately and rolls back on
-/// failure (`project_providers.dart` explains why). Capture is the exception,
-/// and for a reason specific to what it is for: **a captured line that quietly
-/// disappears is the failure this feature exists to prevent.** An optimistic
-/// row is a promise the client cannot keep without a queue, and there is no
-/// queue -- `../../../flutter-migration-plan.md` still defers offline editing.
-/// So capture waits for the server and only then shows the line, and a failure
-/// is a message with the text still in the field rather than a row that appears
-/// and then evaporates.
+/// It is not here any more. Writing a line down is `CaptureQueue.capture` in
+/// `capture_queue_providers.dart`: it goes to a file on the device first and
+/// reaches the server afterwards, because the sandbox has to work with no
+/// network -- "надо не забыть" arrives in a lift. This provider holds the lines
+/// the server has acknowledged; the screen shows both, and the queued ones
+/// carry an "unsent" mark.
 ///
-/// That is also the honest limit of F8, worth knowing before relying on it:
-/// **capture needs the network.** The scenario it is built for -- writing
-/// something down while walking -- is exactly the one where the phone may have
-/// no signal. If that turns out to matter in practice, an offline capture queue
-/// is the natural first exception to the no-offline-writes rule, precisely
-/// because an inbox item has no ordering and no conflicts: two devices can only
-/// ever add lines.
+/// That also retired the long note F8 left here about capture being the app's
+/// one non-optimistic write. The reasoning was right for the code as it stood
+/// (a row that appears and evaporates breaks the sandbox's only promise) and
+/// wrong the moment a queue existed: with one, the line is on disk before it is
+/// on screen, so showing it immediately promises nothing that cannot be kept.
+///
+/// ## What still requires the network, and why that is not inconsistent
+///
+/// Editing, discarding and filing all go straight to the server here. The
+/// exception F8.1 carved out is about the *shape of the data*, not about the
+/// sandbox being special: a captured line has no order, no state another device
+/// can change, and a lifetime of hours, so two devices merging is set union.
+/// Filing lands a task at a position in a list somebody else may have reordered
+/// since -- the conflict resolution this product still defers.
 
 @ProviderFor(Inbox)
 final inboxProvider = InboxProvider._();
 
-/// The sandbox (F8): the pile, and the four things that can happen to a line in
-/// it.
+/// The sandbox (F8): the pile of lines the server holds, and what can happen to
+/// one.
 ///
-/// ## Why the writes here are not optimistic
+/// ## Where capture went (F8.1)
 ///
-/// Every other write in this app shows its result immediately and rolls back on
-/// failure (`project_providers.dart` explains why). Capture is the exception,
-/// and for a reason specific to what it is for: **a captured line that quietly
-/// disappears is the failure this feature exists to prevent.** An optimistic
-/// row is a promise the client cannot keep without a queue, and there is no
-/// queue -- `../../../flutter-migration-plan.md` still defers offline editing.
-/// So capture waits for the server and only then shows the line, and a failure
-/// is a message with the text still in the field rather than a row that appears
-/// and then evaporates.
+/// It is not here any more. Writing a line down is `CaptureQueue.capture` in
+/// `capture_queue_providers.dart`: it goes to a file on the device first and
+/// reaches the server afterwards, because the sandbox has to work with no
+/// network -- "надо не забыть" arrives in a lift. This provider holds the lines
+/// the server has acknowledged; the screen shows both, and the queued ones
+/// carry an "unsent" mark.
 ///
-/// That is also the honest limit of F8, worth knowing before relying on it:
-/// **capture needs the network.** The scenario it is built for -- writing
-/// something down while walking -- is exactly the one where the phone may have
-/// no signal. If that turns out to matter in practice, an offline capture queue
-/// is the natural first exception to the no-offline-writes rule, precisely
-/// because an inbox item has no ordering and no conflicts: two devices can only
-/// ever add lines.
+/// That also retired the long note F8 left here about capture being the app's
+/// one non-optimistic write. The reasoning was right for the code as it stood
+/// (a row that appears and evaporates breaks the sandbox's only promise) and
+/// wrong the moment a queue existed: with one, the line is on disk before it is
+/// on screen, so showing it immediately promises nothing that cannot be kept.
+///
+/// ## What still requires the network, and why that is not inconsistent
+///
+/// Editing, discarding and filing all go straight to the server here. The
+/// exception F8.1 carved out is about the *shape of the data*, not about the
+/// sandbox being special: a captured line has no order, no state another device
+/// can change, and a lifetime of hours, so two devices merging is set union.
+/// Filing lands a task at a position in a list somebody else may have reordered
+/// since -- the conflict resolution this product still defers.
 final class InboxProvider
     extends $AsyncNotifierProvider<Inbox, List<InboxItem>> {
-  /// The sandbox (F8): the pile, and the four things that can happen to a line in
-  /// it.
+  /// The sandbox (F8): the pile of lines the server holds, and what can happen to
+  /// one.
   ///
-  /// ## Why the writes here are not optimistic
+  /// ## Where capture went (F8.1)
   ///
-  /// Every other write in this app shows its result immediately and rolls back on
-  /// failure (`project_providers.dart` explains why). Capture is the exception,
-  /// and for a reason specific to what it is for: **a captured line that quietly
-  /// disappears is the failure this feature exists to prevent.** An optimistic
-  /// row is a promise the client cannot keep without a queue, and there is no
-  /// queue -- `../../../flutter-migration-plan.md` still defers offline editing.
-  /// So capture waits for the server and only then shows the line, and a failure
-  /// is a message with the text still in the field rather than a row that appears
-  /// and then evaporates.
+  /// It is not here any more. Writing a line down is `CaptureQueue.capture` in
+  /// `capture_queue_providers.dart`: it goes to a file on the device first and
+  /// reaches the server afterwards, because the sandbox has to work with no
+  /// network -- "надо не забыть" arrives in a lift. This provider holds the lines
+  /// the server has acknowledged; the screen shows both, and the queued ones
+  /// carry an "unsent" mark.
   ///
-  /// That is also the honest limit of F8, worth knowing before relying on it:
-  /// **capture needs the network.** The scenario it is built for -- writing
-  /// something down while walking -- is exactly the one where the phone may have
-  /// no signal. If that turns out to matter in practice, an offline capture queue
-  /// is the natural first exception to the no-offline-writes rule, precisely
-  /// because an inbox item has no ordering and no conflicts: two devices can only
-  /// ever add lines.
+  /// That also retired the long note F8 left here about capture being the app's
+  /// one non-optimistic write. The reasoning was right for the code as it stood
+  /// (a row that appears and evaporates breaks the sandbox's only promise) and
+  /// wrong the moment a queue existed: with one, the line is on disk before it is
+  /// on screen, so showing it immediately promises nothing that cannot be kept.
+  ///
+  /// ## What still requires the network, and why that is not inconsistent
+  ///
+  /// Editing, discarding and filing all go straight to the server here. The
+  /// exception F8.1 carved out is about the *shape of the data*, not about the
+  /// sandbox being special: a captured line has no order, no state another device
+  /// can change, and a lifetime of hours, so two devices merging is set union.
+  /// Filing lands a task at a position in a list somebody else may have reordered
+  /// since -- the conflict resolution this product still defers.
   InboxProvider._()
     : super(
         from: null,
@@ -99,30 +111,34 @@ final class InboxProvider
   Inbox create() => Inbox();
 }
 
-String _$inboxHash() => r'c3855c4f4cdfde5b92b62787ed2fbaf159f9a364';
+String _$inboxHash() => r'f2398e7971ec22607a5c82c418e6860df0d4c6e3';
 
-/// The sandbox (F8): the pile, and the four things that can happen to a line in
-/// it.
+/// The sandbox (F8): the pile of lines the server holds, and what can happen to
+/// one.
 ///
-/// ## Why the writes here are not optimistic
+/// ## Where capture went (F8.1)
 ///
-/// Every other write in this app shows its result immediately and rolls back on
-/// failure (`project_providers.dart` explains why). Capture is the exception,
-/// and for a reason specific to what it is for: **a captured line that quietly
-/// disappears is the failure this feature exists to prevent.** An optimistic
-/// row is a promise the client cannot keep without a queue, and there is no
-/// queue -- `../../../flutter-migration-plan.md` still defers offline editing.
-/// So capture waits for the server and only then shows the line, and a failure
-/// is a message with the text still in the field rather than a row that appears
-/// and then evaporates.
+/// It is not here any more. Writing a line down is `CaptureQueue.capture` in
+/// `capture_queue_providers.dart`: it goes to a file on the device first and
+/// reaches the server afterwards, because the sandbox has to work with no
+/// network -- "надо не забыть" arrives in a lift. This provider holds the lines
+/// the server has acknowledged; the screen shows both, and the queued ones
+/// carry an "unsent" mark.
 ///
-/// That is also the honest limit of F8, worth knowing before relying on it:
-/// **capture needs the network.** The scenario it is built for -- writing
-/// something down while walking -- is exactly the one where the phone may have
-/// no signal. If that turns out to matter in practice, an offline capture queue
-/// is the natural first exception to the no-offline-writes rule, precisely
-/// because an inbox item has no ordering and no conflicts: two devices can only
-/// ever add lines.
+/// That also retired the long note F8 left here about capture being the app's
+/// one non-optimistic write. The reasoning was right for the code as it stood
+/// (a row that appears and evaporates breaks the sandbox's only promise) and
+/// wrong the moment a queue existed: with one, the line is on disk before it is
+/// on screen, so showing it immediately promises nothing that cannot be kept.
+///
+/// ## What still requires the network, and why that is not inconsistent
+///
+/// Editing, discarding and filing all go straight to the server here. The
+/// exception F8.1 carved out is about the *shape of the data*, not about the
+/// sandbox being special: a captured line has no order, no state another device
+/// can change, and a lifetime of hours, so two devices merging is set union.
+/// Filing lands a task at a position in a list somebody else may have reordered
+/// since -- the conflict resolution this product still defers.
 
 abstract class _$Inbox extends $AsyncNotifier<List<InboxItem>> {
   FutureOr<List<InboxItem>> build();
@@ -142,28 +158,49 @@ abstract class _$Inbox extends $AsyncNotifier<List<InboxItem>> {
   }
 }
 
-/// How many lines are waiting, or null while the pile has not loaded.
+/// How many lines are waiting, or null while there is nothing honest to say.
 ///
-/// Null rather than 0 on purpose: the board draws this as a badge, and a badge
-/// that says nothing while the request is in flight is right, whereas one that
-/// says "0" and then changes to "3" is a small lie told every cold start.
+/// Counts both halves of the sandbox: what the server holds and what is still
+/// queued on this device (F8.1). A line captured in the lift is in the pile
+/// from the user's point of view the moment it is typed, and a badge that only
+/// caught up once the phone found a signal would be telling them their sandbox
+/// is emptier than it is.
+///
+/// Null rather than 0 while the server half is unknown *and* nothing is queued:
+/// the board draws this as a badge, and one that says "0" and then changes to
+/// "3" is a small lie told every cold start. With something queued there is a
+/// real number to show, so it shows it.
 
 @ProviderFor(inboxCount)
 final inboxCountProvider = InboxCountProvider._();
 
-/// How many lines are waiting, or null while the pile has not loaded.
+/// How many lines are waiting, or null while there is nothing honest to say.
 ///
-/// Null rather than 0 on purpose: the board draws this as a badge, and a badge
-/// that says nothing while the request is in flight is right, whereas one that
-/// says "0" and then changes to "3" is a small lie told every cold start.
+/// Counts both halves of the sandbox: what the server holds and what is still
+/// queued on this device (F8.1). A line captured in the lift is in the pile
+/// from the user's point of view the moment it is typed, and a badge that only
+/// caught up once the phone found a signal would be telling them their sandbox
+/// is emptier than it is.
+///
+/// Null rather than 0 while the server half is unknown *and* nothing is queued:
+/// the board draws this as a badge, and one that says "0" and then changes to
+/// "3" is a small lie told every cold start. With something queued there is a
+/// real number to show, so it shows it.
 
 final class InboxCountProvider extends $FunctionalProvider<int?, int?, int?>
     with $Provider<int?> {
-  /// How many lines are waiting, or null while the pile has not loaded.
+  /// How many lines are waiting, or null while there is nothing honest to say.
   ///
-  /// Null rather than 0 on purpose: the board draws this as a badge, and a badge
-  /// that says nothing while the request is in flight is right, whereas one that
-  /// says "0" and then changes to "3" is a small lie told every cold start.
+  /// Counts both halves of the sandbox: what the server holds and what is still
+  /// queued on this device (F8.1). A line captured in the lift is in the pile
+  /// from the user's point of view the moment it is typed, and a badge that only
+  /// caught up once the phone found a signal would be telling them their sandbox
+  /// is emptier than it is.
+  ///
+  /// Null rather than 0 while the server half is unknown *and* nothing is queued:
+  /// the board draws this as a badge, and one that says "0" and then changes to
+  /// "3" is a small lie told every cold start. With something queued there is a
+  /// real number to show, so it shows it.
   InboxCountProvider._()
     : super(
         from: null,
@@ -197,4 +234,4 @@ final class InboxCountProvider extends $FunctionalProvider<int?, int?, int?>
   }
 }
 
-String _$inboxCountHash() => r'a2501c7bc6b63712a190cb3c9e7f506f7e6eaedb';
+String _$inboxCountHash() => r'a292277e4112f06ee6f4c144a641ff13eee8d6af';

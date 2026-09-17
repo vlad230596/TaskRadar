@@ -7,6 +7,7 @@ import '../api/project_api.dart';
 import '../api/inbox_api.dart';
 import '../api/scope_api.dart';
 import '../storage/board_snapshot_store.dart';
+import '../storage/capture_queue_store.dart';
 import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
 
@@ -34,6 +35,17 @@ TokenStorage tokenStorage(Ref ref) => TokenStorage();
 /// filesystem.
 @Riverpod(keepAlive: true)
 BoardSnapshotStore boardSnapshotStore(Ref ref) => BoardSnapshotStore();
+
+/// The offline capture queue (F8.1): lines written down on this device that
+/// the server has not acknowledged yet.
+///
+/// Here for the same reason as [boardSnapshotStore] -- it owns a path on disk
+/// and a `path_provider` platform channel -- and for one more that is specific
+/// to it: this file is the only copy of a line captured with no network, so a
+/// second instance writing the same path from another provider scope would be a
+/// way to lose one.
+@Riverpod(keepAlive: true)
+CaptureQueueStore captureQueueStore(Ref ref) => CaptureQueueStore();
 
 /// Persisted user preferences (F4): currently the reminder hour.
 ///

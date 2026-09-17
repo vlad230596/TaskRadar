@@ -114,11 +114,14 @@ class FakeProjectBackend {
     return projectId;
   }
 
-  String addInboxItem({required String text, String? id}) {
+  String addInboxItem({required String text, String? id, String? captureKey}) {
     final itemId = id ?? _id('inb');
     inbox.add(<String, dynamic>{
       'id': itemId,
       'text': text,
+      // The idempotency key the offline queue sends (F8.1), or null for a line
+      // that was captured with no queue behind it.
+      'captureKey': captureKey,
       // Ordered by insertion, which is what capture order means here.
       'createdAt': '2026-08-01T12:00:00.000Z',
       'updatedAt': '2026-08-01T12:00:00.000Z',
@@ -289,10 +292,26 @@ class FakeProjectBackend {
 
     backend.on('GET', '/inbox', (match) => jsonResponse(inbox));
 
+    /*
+     * Capture, including F8.1's idempotency key.
+     *
+     * The key is modelled rather than ignored because the client's retry story
+     * rests on it: a queued line can be sent twice (the first answer was lost),
+     * and what must come back the second time is the row the server already
+     * has, with a 200 -- not a twin with a 201. A fake that always created a
+     * row would let a duplicate-producing client pass its tests.
+     */
     backend.on('POST', '/inbox', (match) {
       final text = (match.body['text'] as String?)?.trim() ?? '';
       if (text.isEmpty) return _error(400, 'text is required');
-      final id = addInboxItem(text: text);
+
+      final captureKey = match.body['captureKey'] as String?;
+      if (captureKey != null) {
+        final known = _inboxItemByCaptureKey(captureKey);
+        if (known != null) return jsonResponse(known, statusCode: 200);
+      }
+
+      final id = addInboxItem(text: text, captureKey: captureKey);
       return jsonResponse(_inboxItem(id), statusCode: 201);
     });
 
@@ -711,6 +730,13 @@ class FakeProjectBackend {
       if (position > last) last = position;
     }
     return last;
+  }
+
+  Map<String, dynamic>? _inboxItemByCaptureKey(String captureKey) {
+    for (final item in inbox) {
+      if (item['captureKey'] == captureKey) return item;
+    }
+    return null;
   }
 
   Map<String, dynamic>? _inboxItem(String id) {
