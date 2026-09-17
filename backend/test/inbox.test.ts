@@ -43,6 +43,7 @@ const baseConfig: AuthConfig = {
 interface InboxRow {
   id: string;
   text: string;
+  captureKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -118,19 +119,43 @@ beforeEach(() => {
   prismaMock.inboxItem.findMany.mockImplementation(() =>
     [...items].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
   );
+  // `where` is either `{ id }` or -- since F8.1 -- `{ captureKey }`, and the
+  // fake has to answer both, because the idempotent capture path is a lookup by
+  // key followed by a create.
   prismaMock.inboxItem.findUnique.mockImplementation(
-    (args: { where: { id: string } }) => items.find((i) => i.id === args.where.id) ?? null,
+    (args: { where: { id?: string; captureKey?: string } }) =>
+      items.find((i) =>
+        args.where.id === undefined
+          ? i.captureKey === args.where.captureKey
+          : i.id === args.where.id,
+      ) ?? null,
   );
-  prismaMock.inboxItem.create.mockImplementation((args: { data: { text: string } }) => {
-    const row: InboxRow = {
-      id: `inb-new-${++nextId}`,
-      text: args.data.text,
-      createdAt: new Date(T0.getTime() + 3_600_000),
-      updatedAt: new Date(T0.getTime() + 3_600_000),
-    };
-    items.push(row);
-    return { ...row };
-  });
+  prismaMock.inboxItem.create.mockImplementation(
+    (args: { data: { text: string; captureKey?: string } }) => {
+      // The unique index on `captureKey`, which is the only thing standing
+      // between a retried capture and a duplicate line. Modelled here because
+      // the route has a branch that exists purely for losing that race.
+      if (
+        args.data.captureKey !== undefined &&
+        items.some((i) => i.captureKey === args.data.captureKey)
+      ) {
+        throw Object.assign(new Error("Unique constraint failed"), {
+          code: "P2002",
+          meta: { target: ["captureKey"] },
+        });
+      }
+
+      const row: InboxRow = {
+        id: `inb-new-${++nextId}`,
+        text: args.data.text,
+        captureKey: args.data.captureKey ?? null,
+        createdAt: new Date(T0.getTime() + 3_600_000),
+        updatedAt: new Date(T0.getTime() + 3_600_000),
+      };
+      items.push(row);
+      return { ...row };
+    },
+  );
   prismaMock.inboxItem.update.mockImplementation(
     (args: { where: { id: string }; data: Partial<InboxRow> }) => {
       const row = items.find((i) => i.id === args.where.id);
@@ -220,6 +245,88 @@ describe("POST /inbox", () => {
       data: Record<string, unknown>;
     };
     expect(Object.keys(args.data)).toEqual(["text"]);
+  });
+});
+
+/*
+ * Offline capture (F8.1): the phone queues lines with no network and replays
+ * them later, so the same capture can arrive twice and must land once.
+ */
+describe("POST /inbox with a capture key", () => {
+  const KEY = "8f14e45f-ceea-467a-a4c1-0f1b2c3d4e5f";
+
+  it("stores the key with the line", async () => {
+    const res = await call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY });
+
+    expect(res.statusCode).toBe(201);
+    expect(items.find((i) => i.text === "Купить кабель")!.captureKey).toBe(KEY);
+  });
+
+  it("answers a replay with the same row, and creates nothing", async () => {
+    const first = await call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY });
+    const replay = await call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY });
+
+    // 200 rather than 201: the line is not new here. Nothing in the client
+    // branches on it, which is exactly why the server can afford to be honest.
+    expect(replay.statusCode).toBe(200);
+    expect((replay.json() as InboxRow).id).toBe((first.json() as InboxRow).id);
+    expect(items.filter((i) => i.text === "Купить кабель")).toHaveLength(1);
+  });
+
+  it("does not let a late replay undo an edit", async () => {
+    // The order that matters: captured, sent, corrected on the phone, and only
+    // then the original request is retried because its answer was lost. The
+    // retry carries the *old* text, and applying it would be a write travelling
+    // backwards in time.
+    await call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY });
+    const stored = items.find((i) => i.captureKey === KEY)!;
+    await call("PATCH", `/inbox/${stored.id}`, { text: "Купить кабель USB-C" });
+
+    const replay = await call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY });
+
+    expect((replay.json() as InboxRow).text).toBe("Купить кабель USB-C");
+    expect(items.find((i) => i.captureKey === KEY)!.text).toBe("Купить кабель USB-C");
+  });
+
+  it("survives two copies of the same retry racing each other", async () => {
+    // Both requests find no row, both try to create, and the unique index
+    // rejects the loser. That must read as a replay, not as a 500.
+    const [a, b] = await Promise.all([
+      call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY }),
+      call("POST", "/inbox", { text: "Купить кабель", captureKey: KEY }),
+    ]);
+
+    expect([a.statusCode, b.statusCode].sort()).toEqual([200, 201]);
+    expect((a.json() as InboxRow).id).toBe((b.json() as InboxRow).id);
+    expect(items.filter((i) => i.captureKey === KEY)).toHaveLength(1);
+  });
+
+  it("keeps different keys apart", async () => {
+    await call("POST", "/inbox", { text: "Одно и то же", captureKey: KEY });
+    await call("POST", "/inbox", { text: "Одно и то же", captureKey: `${KEY}-2` });
+
+    // Same text is not the same capture: writing a thought down twice on
+    // purpose is something a person does, and only the key can tell the two
+    // apart.
+    expect(items.filter((i) => i.text === "Одно и то же")).toHaveLength(2);
+  });
+
+  it("refuses a key too short to be one", async () => {
+    const res = await call("POST", "/inbox", { text: "Купить кабель", captureKey: "abc" });
+
+    expect(res.statusCode).toBe(400);
+    expect(prismaMock.inboxItem.create).not.toHaveBeenCalled();
+  });
+
+  it("still takes a line with no key at all", async () => {
+    // curl, and the browser client that has no queue behind it.
+    const res = await call("POST", "/inbox", { text: "С рабочего стола" });
+
+    expect(res.statusCode).toBe(201);
+    expect(items.find((i) => i.text === "С рабочего стола")!.captureKey).toBeNull();
+    // No lookup: with no key there is nothing to look up, and a findUnique on
+    // `{ captureKey: undefined }` would match an arbitrary row.
+    expect(prismaMock.inboxItem.findUnique).not.toHaveBeenCalled();
   });
 });
 

@@ -22,6 +22,11 @@ import { getProjectOrThrow } from "./projects";
  * does not get written down at all. So an inbox item is one line of text and
  * nothing else -- no status, no order, no reminder date, no project.
  *
+ * Since F8.1 a line can also be captured with no network at all: the client
+ * queues it on the device and replays it later, which is why `POST /inbox`
+ * takes an idempotency key. Filing deliberately did *not* follow -- see the
+ * note on that route.
+ *
  * It becomes a Task the moment it is filed (`POST /inbox/:id/file`), and from
  * then on it is an ordinary task in an ordinary project. Nothing here is a
  * parallel task system: there is no way to complete, block or schedule an inbox
@@ -36,6 +41,22 @@ import { getProjectOrThrow } from "./projects";
  * decision being deferred. The scope gets decided when the item is filed,
  * because a project already has one.
  */
+
+/**
+ * Whether [error] is Prisma's "a unique index already holds this value" (P2002).
+ *
+ * Matched on the code rather than with `instanceof PrismaClientKnownRequestError`
+ * on purpose: the route tests run against an in-memory fake of the client (there
+ * is no database in that environment), and a check that insisted on the real
+ * error class would make the one branch that exists for a race untestable.
+ */
+function isUniqueConstraintViolation(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
 
 async function getInboxItemOrThrow(id: string) {
   const item = await prisma.inboxItem.findUnique({ where: { id } });
@@ -61,10 +82,65 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     reply.send(items);
   });
 
+  /*
+   * Capture. One line of text, and -- since F8.1 -- optionally the client's own
+   * idempotency key.
+   *
+   * WHY THE KEY EXISTS
+   *
+   * The phone captures into a local queue and sends when it can (F8.1: the
+   * sandbox has to work with no network at all, because "надо не забыть"
+   * arrives in a lift). A queue implies retries, and a retry cannot tell the
+   * difference between "the request never arrived" and "it arrived and the
+   * answer was lost on the way back" -- from the device both are a timeout. The
+   * second case, retried blindly, puts two identical lines in the pile, which
+   * is a small betrayal of the one promise this feature makes: you wrote it
+   * down once.
+   *
+   * So the client generates the key, and this route is an upsert on it.
+   *
+   * WHAT A REPLAY DOES *NOT* DO: it does not rewrite the text. A second request
+   * with a known key answers with the row as it stands, because the only way
+   * the stored text can differ from the replayed text is that somebody edited
+   * it (`PATCH /inbox/:id`) in between -- and a late duplicate of the original
+   * capture undoing that edit would be a write travelling backwards in time.
+   *
+   * The status says which happened: 201 for a line that is new here, 200 for
+   * one the server already had. Nothing in the client depends on the
+   * difference, which is why it is safe to be honest about it.
+   */
   app.post("/inbox", async (request, reply) => {
     const body = createInboxItemSchema.parse(request.body);
-    const item = await prisma.inboxItem.create({ data: { text: body.text } });
-    reply.status(201).send(item);
+    const { captureKey } = body;
+
+    if (captureKey === undefined) {
+      const item = await prisma.inboxItem.create({ data: { text: body.text } });
+      reply.status(201).send(item);
+      return;
+    }
+
+    const known = await prisma.inboxItem.findUnique({ where: { captureKey } });
+    if (known) {
+      reply.status(200).send(known);
+      return;
+    }
+
+    try {
+      const item = await prisma.inboxItem.create({
+        data: { text: body.text, captureKey },
+      });
+      reply.status(201).send(item);
+    } catch (error) {
+      // Two copies of the same retry in flight at once: the check above passed
+      // in both, and the unique index caught the loser. That is the index doing
+      // its job, not a failure -- re-read and answer as a replay. Anything else
+      // is a real error and belongs to the error handler.
+      if (!isUniqueConstraintViolation(error)) throw error;
+
+      const raced = await prisma.inboxItem.findUnique({ where: { captureKey } });
+      if (!raced) throw error;
+      reply.status(200).send(raced);
+    }
   });
 
   /*
@@ -111,6 +187,17 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
    * left behind means the same thing gets filed twice, and the item deleted
    * without the task created means the thought is simply gone. A transaction
    * makes the pair atomic, and it costs one route.
+   *
+   * WHY FILING DID NOT GET AN OFFLINE PATH TOO (F8.1)
+   *
+   * Capture is safe to queue because a captured line has no order to be
+   * inserted into the wrong place in, no state anyone else can change, and a
+   * lifetime of hours -- so two devices merging their queues is set union, with
+   * nothing to choose between. Filing has all three: it lands at a position in
+   * a project's list, next to tasks somebody may have reordered, completed or
+   * archived on another device since. That is the conflict resolution the whole
+   * product still defers, and it does not become simpler for being reached from
+   * here.
    *
    * The reply is the created task, in exactly the shape `POST /projects/:id/tasks`
    * answers with -- the raw row, **without `isCurrent`**. Same reason as there:
