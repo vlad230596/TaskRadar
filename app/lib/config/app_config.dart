@@ -11,6 +11,8 @@
 /// is a `static const` and not a getter.
 library;
 
+import 'package:flutter/foundation.dart';
+
 class AppConfig {
   const AppConfig._();
 
@@ -31,8 +33,35 @@ class AppConfig {
   ///
   /// Either way the phone needs an explicit `--dart-define`, so the default only
   /// has to serve the desktop case, where it is right every time.
-  static const String apiBaseUrl = String.fromEnvironment(
+  ///
+  /// ## Why the web build has no address of its own
+  ///
+  /// The web client is served by the same origin as the API (see
+  /// `deploy/Caddyfile.taskradar.example`: the `@api` prefixes go to the
+  /// backend, everything else to this bundle). So the right base URL is
+  /// whatever origin the page was loaded from -- which is also the only
+  /// configuration that needs no CORS on the server, and the reason the same
+  /// bundle would work unchanged behind a different hostname.
+  ///
+  /// The empty default plus [Uri.base] says that explicitly, rather than
+  /// relying on the browser to resolve a relative `/board` the way it happens
+  /// to: the origin is what ends up in dio's `baseUrl`, and it is what the
+  /// login screen prints when a request cannot be made.
+  static const String configuredApiBaseUrl = String.fromEnvironment(
     apiBaseUrlKey,
-    defaultValue: 'http://localhost:3001',
+    defaultValue: kIsWeb ? '' : 'http://localhost:3001',
   );
+
+  /// Base URL of the TaskRadar backend, as the running app should use it.
+  ///
+  /// A getter rather than a `const` because of the web case above; every other
+  /// target returns the compile-time constant unchanged. `Uri.base` is only
+  /// consulted when the constant is empty, which outside a browser can only
+  /// happen if someone passes `--dart-define=TASKRADAR_API_URL=` on purpose --
+  /// and there `Uri.base` is the working directory, whose `origin` throws. So
+  /// that combination keeps the empty value and fails at the first request with
+  /// a message naming the URL, instead of crashing on the first frame.
+  static String get apiBaseUrl => (configuredApiBaseUrl.isEmpty && kIsWeb)
+      ? Uri.base.origin
+      : configuredApiBaseUrl;
 }

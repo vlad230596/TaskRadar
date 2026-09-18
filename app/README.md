@@ -1,6 +1,7 @@
 # TaskRadar — Flutter client
 
-The client for TaskRadar (Android + Windows), and since F6 the only one; see
+The client for TaskRadar (Android + Windows + web since F10), and since F6 the
+only one; see
 `../flutter-migration-plan.md` for the iteration plan and `../README.md` for the
 product.
 
@@ -39,9 +40,59 @@ flutter run -d <device> --dart-define=TASKRADAR_API_URL=http://<lan-ip>:3001
 flutter run -d emulator-5554 --dart-define=TASKRADAR_API_URL=http://10.0.2.2:3001
 ```
 
+### The web target (F10)
+
+In production the bundle is served by the same origin as the API, so its base
+URL is empty and resolves to `Uri.base.origin` at run time -- there is nothing
+to configure and no CORS anywhere. That is also why `flutter run -d chrome`
+against a backend on another port does not work out of the box: the browser
+refuses the cross-origin request, and the backend has no CORS policy to make it
+legal. Either put both behind one origin, or pass an explicit
+`--dart-define=TASKRADAR_API_URL=...` **and** accept that it will be blocked
+until the backend allows it.
+
+A production-shaped build:
+
+```
+flutter build web --release --no-web-resources-cdn --base-href /
+```
+
+`--no-web-resources-cdn` is not optional: without it the engine fetches
+CanvasKit from gstatic at run time and the deployed Content-Security-Policy
+refuses it. Fonts are the same story from the other direction -- Roboto is
+bundled through `pubspec.yaml` because CanvasKit rasterises text itself and
+cannot use the system's fonts; the comment there has the details.
+
+Three things the web build deliberately does not have: local notifications
+(`NotificationSupport.none`), dictation (`VoiceModelUnsupported` -- the
+recogniser needs a 225 MB model on disk), and the file-backed stores. The last
+one is a substitution rather than a subtraction: `providers/dependencies.dart`
+swaps in the `localStorage`-backed twins from `lib/storage/web_stores.dart`,
+which keep the same contracts.
+
 The default is `http://localhost:3001`, which is only correct for the desktop
 target. The login screen prints the URL it is actually using, because "cannot
 connect" on a phone is almost always a wrong base URL.
+
+## Release builds (Windows)
+
+`flutter build windows --release` plus `scripts/package-windows-app.ps1`, which
+is what CI runs:
+
+```
+powershell -ExecutionPolicy Bypass -File ..\scripts\package-windows-app.ps1 -Version dev
+```
+
+That produces `taskradar-<version>-windows-x64.zip` holding the build, the
+installer and a README. `.github/workflows/app-release.yml` attaches the same
+zip (plus a checksum and an attestation) to the GitHub Release for a tag, and
+`app-ci.yml` builds it on every push as an artifact -- the desktop target is not
+compiled by `flutter analyze` or `flutter test`, so a build is the only thing
+that notices when it breaks.
+
+The installer inside the zip matters: without the Start-menu shortcut it
+creates, Windows silently drops every notification an unpackaged app posts. See
+`scripts/install-windows-app.ps1`.
 
 ## Release builds (Android)
 
@@ -86,7 +137,7 @@ lib/
   domain/        pure logic with no plugins and no clock of its own
   notifications/ the side-effecting half: plugin, timezone, scheduler
   storage/       secure token storage, board snapshot file, offline capture
-                 queue (F8.1)
+                 queue (F8.1), and their browser twins (F10)
   voice/         on-device dictation (F9): the model and where it lives, the
                  microphone and the recogniser, both behind interfaces
   providers/     riverpod: singletons, session state, board, project, forms

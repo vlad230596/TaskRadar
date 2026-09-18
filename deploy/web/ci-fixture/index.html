@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>TaskRadar web fixture</title>
+</head>
+<body>
+  <!--
+    Stands in for the `flutter build web` bundle in deploy/compose.ci.yaml.
+
+    The integration workflow uses it to prove three things about the edge that
+    have nothing to do with Flutter: that / reaches the web upstream at all,
+    that the API prefixes still reach the backend instead of this file, and that
+    a path neither side serves is still a 404. Building the real bundle here
+    would drag a Flutter SDK into a workflow about Compose and Caddy -- the
+    bundle is built and checked by .github/workflows/app-ci.yml.
+
+    The marker below is what the workflow greps for; keep the two in step.
+  -->
+  <p>taskradar-web ci fixture</p>
+</body>
+</html>

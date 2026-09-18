@@ -1,19 +1,26 @@
-name: Release TaskRadar Android APK
+name: Release TaskRadar native clients
 
-# Packages the native client and attaches it to the GitHub Release for an
-# existing tag.
+# Packages the native clients -- the Android APK and the Windows zip -- and
+# attaches them to the GitHub Release for an existing tag.
 #
-# Why the APK lives in a GitHub Release rather than on the VDS: the client is
-# sideloaded onto one personal phone (TaskRadar will never be published to Play,
-# see flutter-migration-plan.md). A Release gives a private, authenticated,
-# versioned download with a checksum and a build attestation, and it keeps the
-# TaskRadar ingress serving nothing but the API -- adding a download path to
-# Caddy would mean hosting a signed binary on the same origin that holds the
-# data, for no benefit.
+# The web client is not here: it is served by the production origin, so it is
+# built and deployed by release.yml together with the API. These two are
+# downloads, and a download can lag a release without anything breaking.
+#
+# Why they live in a GitHub Release rather than on the VDS: the clients are
+# installed by hand onto one phone and one desktop (TaskRadar will never be
+# published to Play, see flutter-migration-plan.md). A Release gives a private,
+# authenticated, versioned download with a checksum and a build attestation, and
+# it keeps the TaskRadar origin serving only the API and the web bundle --
+# hosting a signed binary next to the data would buy nothing.
+#
+# Version input, not a build from main: both artifacts are built from an
+# existing release tag, so "which code is on the phone" has the same answer as
+# "which code is on the server".
 #
 # Separate from release.yml on purpose: the backend must be deployable without
-# waiting for a client build, and a client build must not be able to block a
-# server fix.
+# waiting for a native client build, and a native client build must not be able
+# to block a server fix.
 #
 # Signing: `app/android/app/build.gradle.kts` reads the release key from
 # `android/key.properties` or from TASKRADAR_ANDROID_* environment variables, and
@@ -185,6 +192,79 @@ jobs:
             gh release create "$VERSION" \
               "taskradar-$VERSION.apk" \
               "taskradar-$VERSION.apk.sha256" \
+              --verify-tag \
+              --title "TaskRadar $VERSION" \
+              --generate-notes
+          fi
+
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      VERSION: ${{ inputs.version }}
+      TASKRADAR_API_URL: ${{ vars.TASKRADAR_API_URL || vars.PRODUCTION_URL }}
+    # Independent of the APK job on purpose, and not because they are unrelated:
+    # they are the same app. The Android half is blocked whenever the release
+    # keystore is missing or wrong (app/RELEASE-ANDROID.md), and a desktop build
+    # that cannot be published because of a key it does not use would be the
+    # wrong kind of coupling. Both attach to the same Release, whichever gets
+    # there first creates it.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.version }}
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ inputs.flutter_version }}
+          channel: stable
+          cache: true
+
+      - name: Build the desktop client
+        working-directory: app
+        shell: bash
+        # https:// is required for the same reason as in the APK job, minus the
+        # cleartext-manifest part: a desktop build against http:// would work on
+        # a LAN and send the session token in the clear, and a release artifact
+        # is not the place to make that possible by accident.
+        run: |
+          case "$TASKRADAR_API_URL" in
+            https://*) ;;
+            *) echo 'TASKRADAR_API_URL must be an https:// origin.' >&2; exit 64 ;;
+          esac
+          flutter pub get
+          flutter build windows --release \
+            --build-name "$VERSION" \
+            --build-number "$GITHUB_RUN_NUMBER" \
+            --dart-define="TASKRADAR_API_URL=$TASKRADAR_API_URL"
+
+      - name: Package the installable zip
+        shell: pwsh
+        # The zip holds the build *and* install-windows-app.ps1: without the
+        # shortcut that script creates, Windows drops every notification this
+        # app posts, silently. See scripts/package-windows-app.ps1.
+        run: ./scripts/package-windows-app.ps1 -Version "$env:VERSION" -OutputDirectory dist
+
+      - name: Attest the zip
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: dist/taskradar-${{ inputs.version }}-windows-x64.zip
+
+      - name: Publish the zip to the GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          zip="dist/taskradar-$VERSION-windows-x64.zip"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "$zip" "$zip.sha256" --clobber
+          else
+            # --verify-tag, as in the APK job: tags are created only by the
+            # approved release workflow, never here.
+            gh release create "$VERSION" "$zip" "$zip.sha256" \
               --verify-tag \
               --title "TaskRadar $VERSION" \
               --generate-notes

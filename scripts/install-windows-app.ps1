@@ -79,7 +79,25 @@ $appUserModelId = 'com.taskradar.app'
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 if (-not $Source) {
-    $Source = Join-Path $repositoryRoot 'app\build\windows\x64\runner\Release'
+    # Two layouts, because this script now ships in two places: a developer's
+    # checkout, where the build sits in the tree, and the release zip from
+    # .github/workflows/app-release.yml, where the script sits next to a
+    # TaskRadar folder holding the same files. Each candidate is accepted only
+    # if it actually contains the exe, so an empty or half-copied directory
+    # falls through to the next one rather than being picked and then failing
+    # later with a confusing message.
+    $candidates = @(
+        (Join-Path $repositoryRoot 'app\build\windows\x64\runner\Release'),
+        (Join-Path $PSScriptRoot 'TaskRadar'),
+        $PSScriptRoot
+    )
+    foreach ($candidate in $candidates) {
+        if (Test-Path -LiteralPath (Join-Path $candidate $exeName)) {
+            $Source = $candidate
+            break
+        }
+    }
+    if (-not $Source) { $Source = $candidates[0] }
 }
 
 $shortcutPath = Join-Path $StartMenuPath "$appName.lnk"
@@ -326,7 +344,10 @@ if (-not (Test-Path -LiteralPath $sourceExe)) {
     throw @"
 No build at '$Source'.
 
-Build it first:
+From the release zip, run this script from the folder it was unpacked into --
+it expects a 'TaskRadar' folder beside it -- or pass -Source explicitly.
+
+From a checkout, build it first:
     cd app
     flutter build windows --release --dart-define=TASKRADAR_API_URL=https://<your-host>
 

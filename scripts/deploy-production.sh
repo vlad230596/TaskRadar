@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# TaskRadar production deployment. Installed on the VDS as
+# TaskRadar production deployment: the API image and the web client image, in
+# one approved release. Installed on the VDS as
 # /usr/local/sbin/taskradar-deploy (root:root 0755) and invoked over SSH by the
 # release workflow through the single sudo rule in
 # deploy/taskradar-deploy.sudoers.
@@ -18,14 +19,15 @@ readonly RELEASE_ENV='.release.env'
 readonly BACKUP_DIR='/var/backups/taskradar'
 readonly LOCK_FILE='/run/lock/taskradar-deploy.lock'
 
-if [[ $# -ne 3 ]]; then
-  echo 'Usage: taskradar-deploy VERSION BACKEND_IMAGE GHCR_USER' >&2
+if [[ $# -ne 4 ]]; then
+  echo 'Usage: taskradar-deploy VERSION BACKEND_IMAGE WEB_IMAGE GHCR_USER' >&2
   exit 64
 fi
 
 readonly VERSION="$1"
 readonly BACKEND_IMAGE="$2"
-readonly GHCR_USER="$3"
+readonly WEB_IMAGE="$3"
+readonly GHCR_USER="$4"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo 'Version must be a SemVer core such as 1.0.0.' >&2
@@ -39,6 +41,14 @@ fi
 # deploy TaskRadar's own backend.
 if [[ ! "$BACKEND_IMAGE" =~ ^ghcr\.io/[a-z0-9_.-]+/taskradar-backend@sha256:[a-f0-9]{64}$ ]]; then
   echo 'Backend image must be an approved GHCR digest reference.' >&2
+  exit 64
+fi
+# The web client (F10), by digest and under its own name, for the same reasons.
+# Two images rather than one: they are built from different sources and only the
+# API image goes anywhere near the database, so a mix-up between the two names
+# has to fail here rather than start a static file server as the backend.
+if [[ ! "$WEB_IMAGE" =~ ^ghcr\.io/[a-z0-9_.-]+/taskradar-web@sha256:[a-f0-9]{64}$ ]]; then
+  echo 'Web image must be an approved GHCR digest reference.' >&2
   exit 64
 fi
 if [[ ! "$GHCR_USER" =~ ^[A-Za-z0-9-]+$ ]]; then
@@ -80,6 +90,7 @@ trap cleanup EXIT
 
 printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin >/dev/null
 docker pull "$BACKEND_IMAGE"
+docker pull "$WEB_IMAGE"
 
 # Identity of the artifact, checked from the image label before anything starts.
 # The label is set at build time by the release workflow.
@@ -100,6 +111,16 @@ if [[ "$IMAGE_VERSION" != "$VERSION" ]]; then
   exit 65
 fi
 
+# The same question asked of the web image. Both are labelled by one workflow
+# run, so a mismatch here means one of the two digests came from a different
+# release -- which is exactly the mix-up that would otherwise be discovered by a
+# browser talking to an API it no longer agrees with.
+readonly WEB_IMAGE_VERSION="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$WEB_IMAGE")"
+if [[ "$WEB_IMAGE_VERSION" != "$VERSION" ]]; then
+  echo "Web image version label ($WEB_IMAGE_VERSION) does not match release $VERSION." >&2
+  exit 65
+fi
+
 # .release.env holds everything about the *current* release and is generated
 # here, never edited by hand. Keeping the previous copy is what makes a rollback
 # a one-liner: re-run Compose with .release.env.previous.
@@ -110,6 +131,7 @@ cat >"${RELEASE_ENV}.next" <<EOF
 APP_VERSION=$VERSION
 BUILD_DATE=$BUILD_DATE
 BACKEND_IMAGE=$BACKEND_IMAGE
+WEB_IMAGE=$WEB_IMAGE
 EOF
 mv "${RELEASE_ENV}.next" "$RELEASE_ENV"
 
@@ -162,5 +184,21 @@ if [[ "$GUARDED_STATUS" != '401' ]]; then
   exit 70
 fi
 
-echo "TaskRadar backend $VERSION deployed successfully (built $BUILD_DATE)."
+# And the other half of the origin: the web client, served from `/` through the
+# same site block by a different container. Checked by its loader script rather
+# than by the status code alone, because nginx's stock welcome page -- what an
+# image with a mis-copied site directory serves -- answers 200 just as happily.
+# `flutter_bootstrap.js` is the one string every `flutter build web` index.html
+# contains and nothing else on this origin does.
+#
+# What this does *not* prove is which release's bundle it is: every version's
+# index.html contains that string. That question is answered before anything
+# starts, by the image label checked above.
+readonly WEB_INDEX="$(curl --fail --silent --show-error --max-time 15 "$APP_ORIGIN/")"
+if [[ "$WEB_INDEX" != *'flutter_bootstrap.js'* ]]; then
+  echo "The web client is not being served through $APP_ORIGIN/." >&2
+  exit 70
+fi
+
+echo "TaskRadar $VERSION deployed successfully (built $BUILD_DATE): API and web client."
 echo "Pre-migration dump: $BACKUP_PATH"

@@ -14,6 +14,9 @@ Dockerfile text eol=lf
 Caddyfile* text eol=lf
 *.sudoers text eol=lf
 *.env.example text eol=lf
+# The static server's configuration, which ends up inside the web client image
+# the same way the shell scripts end up on the VDS.
+*.conf text eol=lf
 
 # Read only by tools that accept either ending, but keeping them LF means the
 # compose file the server sees is byte-identical to the one CI validated. Scoped

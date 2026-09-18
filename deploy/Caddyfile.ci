@@ -9,6 +9,13 @@
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		-Server
+		# Copied verbatim from the production block, like the matcher list below:
+		# a policy that breaks the web client breaks it silently (a blank page
+		# and a console error nobody reads in CI), so the integration workflow
+		# asserts the header is present and the string is the same one that will
+		# be deployed.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		X-Frame-Options "DENY"
 	}
 
 	request_body {
@@ -20,7 +27,14 @@
 		reverse_proxy backend:3001
 	}
 
+	# The web client's upstream. In production this is the `taskradar-web`
+	# container built from the Flutter bundle; here it is a stock nginx with the
+	# same deploy/web/nginx.conf and a two-file fixture, which is enough to prove
+	# what this file is for -- that the API prefixes still reach the backend,
+	# that everything else reaches the bundle, and that a path neither of them
+	# has still answers 404. Building the real bundle here would put a Flutter
+	# SDK into a workflow about Compose and Caddy; app-ci.yml builds it instead.
 	handle {
-		respond 404
+		reverse_proxy web:8080
 	}
 }

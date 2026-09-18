@@ -74,6 +74,19 @@ class LocalNotificationGateway implements NotificationGateway {
   @override
   NotificationSupport get support {
     if (_unavailable) return NotificationSupport.none;
+    // The browser build has no local notifications, and `defaultTargetPlatform`
+    // does not say so: on web it reports the platform the *browser* runs on, so
+    // a tab open on this machine claims to be `TargetPlatform.windows` and the
+    // switch below would happily report full Windows toast support. The plugin
+    // would then throw `MissingPluginException` from `initialize`, which the
+    // catch there turns into `NotificationSupport.none` anyway -- but only after
+    // the settings screen has already offered a reminder hour that nothing will
+    // ever fire. Answering honestly here is what keeps that UI truthful.
+    //
+    // (Web push is a different feature, not this one: it needs a service worker
+    // and a server holding VAPID keys, and this app deliberately has neither --
+    // see `notification_gateway.dart`.)
+    if (kIsWeb) return NotificationSupport.none;
     return switch (_platform) {
       TargetPlatform.android => NotificationSupport.android,
       TargetPlatform.windows => NotificationSupport.windows,

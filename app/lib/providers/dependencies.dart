@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/api_client.dart';
@@ -10,6 +11,7 @@ import '../storage/board_snapshot_store.dart';
 import '../storage/capture_queue_store.dart';
 import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
+import '../storage/web_stores.dart';
 
 part 'dependencies.g.dart';
 
@@ -33,8 +35,14 @@ TokenStorage tokenStorage(Ref ref) => TokenStorage();
 /// `path_provider` platform channel, so it must not be re-created per screen,
 /// and tests must be able to replace it with something that does not touch the
 /// filesystem.
+///
+/// The browser gets a different implementation rather than a disabled one: the
+/// file store's `path_provider` channel does not exist there at all. See
+/// `../storage/web_stores.dart` for what the two have in common and where they
+/// honestly differ.
 @Riverpod(keepAlive: true)
-BoardSnapshotStore boardSnapshotStore(Ref ref) => BoardSnapshotStore();
+BoardSnapshotStore boardSnapshotStore(Ref ref) =>
+    kIsWeb ? WebBoardSnapshotStore() : BoardSnapshotStore();
 
 /// The offline capture queue (F8.1): lines written down on this device that
 /// the server has not acknowledged yet.
@@ -44,8 +52,14 @@ BoardSnapshotStore boardSnapshotStore(Ref ref) => BoardSnapshotStore();
 /// to it: this file is the only copy of a line captured with no network, so a
 /// second instance writing the same path from another provider scope would be a
 /// way to lose one.
+///
+/// On web this is the `localStorage`-backed twin, and the substitution is
+/// load-bearing rather than tidy: the file store throws on every write in a
+/// browser, and this store's writes are the ones the capture screen turns into
+/// "не удалось записать".
 @Riverpod(keepAlive: true)
-CaptureQueueStore captureQueueStore(Ref ref) => CaptureQueueStore();
+CaptureQueueStore captureQueueStore(Ref ref) =>
+    kIsWeb ? WebCaptureQueueStore() : CaptureQueueStore();
 
 /// Persisted user preferences (F4): currently the reminder hour.
 ///

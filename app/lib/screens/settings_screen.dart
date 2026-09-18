@@ -68,6 +68,20 @@ class _VoiceModelTile extends ConsumerWidget {
     final model = notifier.model;
 
     return switch (state) {
+      // The browser build, where there is nothing to offer: no download button,
+      // because the download could not lead anywhere. See
+      // `VoiceModelUnsupported`.
+      VoiceModelUnsupported() => const ListTile(
+        leading: Icon(Icons.mic_off),
+        title: Text('Голосовой ввод недоступен'),
+        subtitle: Text(
+          'Распознавание идёт на устройстве и требует модели на диске — '
+          'в браузере её негде держать. Диктовка работает в приложении для '
+          'Android и Windows.',
+        ),
+        isThreeLine: true,
+      ),
+
       VoiceModelUnknown() => const ListTile(
         leading: Icon(Icons.mic_none),
         title: Text('Голосовой ввод'),

@@ -40,27 +40,31 @@ jobs:
     with:
       ref: ${{ inputs.ref }}
 
-  # No Flutter job here yet: the client is being built in app/ and its checks
-  # are not part of the deployment work. Add an `app-ci.yml` reusable workflow
-  # and list it in `needs` below when it exists -- the required gate is designed
-  # to grow that way.
+  # The Flutter client (F10). It joined the gate when the web bundle became
+  # something this repository deploys: see the header of app-ci.yml.
+  app:
+    uses: ./.github/workflows/app-ci.yml
+    with:
+      ref: ${{ inputs.ref }}
 
   required:
     name: Required checks
     # `always()` plus explicit result checks, rather than relying on job
     # failure: a skipped or cancelled component must not count as a pass.
     if: always()
-    needs: [backend, integration]
+    needs: [backend, integration, app]
     runs-on: ubuntu-latest
     steps:
       - name: Verify every component check
         env:
           BACKEND_RESULT: ${{ needs.backend.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
+          APP_RESULT: ${{ needs.app.result }}
         run: |
           results=(
             "$BACKEND_RESULT"
             "$INTEGRATION_RESULT"
+            "$APP_RESULT"
           )
           printf 'Component results: %s\n' "${results[*]}"
           for result in "${results[@]}"; do

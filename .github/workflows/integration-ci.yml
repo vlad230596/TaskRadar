@@ -52,6 +52,25 @@ jobs:
         # remembered to write here.
         run: node scripts/check-edge-route-coverage.mjs
 
+      - name: The CI ingress carries the production security headers
+        # Same reasoning as the route-coverage check above, for the other line
+        # that the two Caddyfiles have to keep identical. The CSP is what makes
+        # or breaks the web client -- too strict and the page comes up blank,
+        # and a blank page is the failure mode that this workflow is supposed to
+        # see instead of a browser.
+        run: |
+          for header in Content-Security-Policy X-Frame-Options; do
+            production="$(grep -F "$header " deploy/Caddyfile.taskradar.example | tr -s ' \t' ' ' | sed 's/^ //')"
+            ci="$(grep -F "$header " deploy/Caddyfile.ci | tr -s ' \t' ' ' | sed 's/^ //')"
+            printf '%s\n' "$production"
+            if [ "$production" != "$ci" ]; then
+              echo "$header differs between the two Caddyfiles:" >&2
+              echo "  production: $production" >&2
+              echo "  ci:         $ci" >&2
+              exit 1
+            fi
+          done
+
       - name: Validate the production Caddy site block
         run: |
           docker run --rm \
@@ -133,7 +152,28 @@ jobs:
             test "$status" = '401'
           done
 
+      - name: The root serves the web client, not the API
+        # The half of the origin the browser talks to (F10). `/` has to reach
+        # the web upstream -- proven by the fixture's marker, because a 200
+        # alone would also be true of nginx's welcome page -- and it has to
+        # arrive with the document headers, which only matter now that this
+        # origin returns a document at all.
+        run: |
+          headers="$(curl --fail --silent --show-error --dump-header - --output /tmp/index.html "$BASE_URL/")"
+          echo "$headers"
+          grep -q 'taskradar-web ci fixture' /tmp/index.html
+          echo "$headers" | grep -qi '^content-security-policy:.*wasm-unsafe-eval'
+          echo "$headers" | grep -qi '^x-frame-options: DENY'
+          # The bundle is served with revalidation rather than a long max-age,
+          # because `flutter build web` does not content-hash its output; see
+          # deploy/web/nginx.conf.
+          echo "$headers" | grep -qi '^cache-control: no-cache'
+
       - name: Unrouted paths are refused at the edge
+        # Still a 404, now from the web upstream rather than from Caddy: the
+        # bundle's server has no SPA fallback on purpose, so a path that is
+        # neither an API prefix nor a file in the bundle is refused instead of
+        # being answered with the app's HTML shell.
         run: |
           status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL/nope")"
           echo "/nope -> $status"

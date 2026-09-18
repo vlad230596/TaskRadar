@@ -78,6 +78,20 @@ services:
       timeout: 3s
       retries: 20
 
+  # The web client's upstream, as a stock nginx over the *production* server
+  # block and a fixture page. See deploy/web/ci-fixture/index.html for why the
+  # real Flutter bundle is not built here.
+  web:
+    image: nginx:1.29-alpine
+    volumes:
+      - ./web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./web/ci-fixture:/usr/share/nginx/html:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   gateway:
     image: caddy:2.10-alpine
     ports:
@@ -88,6 +102,8 @@ services:
       - ./Caddyfile.ci:/etc/caddy/Caddyfile:ro
     depends_on:
       backend:
+        condition: service_healthy
+      web:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]

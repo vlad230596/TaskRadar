@@ -162,3 +162,39 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Roboto, bundled rather than downloaded (F10).
+  #
+  # This exists for the web build and is load-bearing there. CanvasKit has no
+  # access to the system's fonts -- it rasterises text itself -- so with no
+  # bundled family the engine fetches Roboto from fonts.gstatic.com at run time.
+  # Behind the site block's `connect-src 'self'` that fetch is refused, and the
+  # result is not a fallback font but **no text at all**: buttons and fields
+  # render as empty shapes. Measured exactly that way before these four files
+  # were added.
+  #
+  # The alternative was allowing fonts.gstatic.com in the policy, which would
+  # make a self-hosted personal tool phone home to Google on every load and
+  # depend on a CDN it does not control. The same reasoning already put CanvasKit
+  # itself on our origin (`flutter build web --no-web-resources-cdn`).
+  #
+  # Android and Windows do not need it -- both have Roboto (or an equivalent)
+  # from the system -- and pay ~690 KB for it. That is the cost of `fonts:`
+  # being a per-project rather than a per-platform declaration, and it buys one
+  # more thing worth having: the three targets now rasterise the same glyphs.
+  #
+  # The files are copied from the Flutter SDK's own `material_fonts` artifact,
+  # which is where the engine would have got them anyway; Roboto is Apache-2.0
+  # and the licence travels with them in assets/fonts/Roboto-LICENSE.txt.
+  # Weights beyond these four (thin, light, black, condensed) are not declared
+  # because the Material text theme never asks for them.
+  fonts:
+    - family: Roboto
+      fonts:
+        - asset: assets/fonts/Roboto-Regular.ttf
+        - asset: assets/fonts/Roboto-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/Roboto-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/Roboto-Italic.ttf
+          style: italic

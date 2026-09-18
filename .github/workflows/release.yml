@@ -1,10 +1,16 @@
-name: Release TaskRadar backend
+name: Release TaskRadar
 
-# Manual, approved, backend-only release.
+# Manual, approved release of everything this origin serves: the API image and
+# the web client image, under one version and one deploy.
 #
-# The Android client is packaged by a separate workflow (app-release.yml): the
-# server and the phone are deployed on different rhythms, and an unsigned or
-# unsignable APK must not be able to block a backend fix.
+# The web client is here rather than in its own workflow because it is served by
+# the same origin as the API, so a browser tab and the backend have to agree
+# about the shapes they exchange. Releasing them together makes that true by
+# construction, and makes a rollback one operation instead of two.
+#
+# The Android client is the opposite case and stays in app-release.yml: it is
+# sideloaded onto a phone, it can lag a release without anything breaking, and
+# an unsignable APK must never be able to block a backend fix.
 
 on:
   workflow_dispatch:
@@ -154,8 +160,106 @@ jobs:
           subject-digest: ${{ steps.backend.outputs.digest }}
           push-to-registry: true
 
+  publish_web:
+    needs: [prepare, approve]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    outputs:
+      web_digest: ${{ steps.web.outputs.digest }}
+    env:
+      IMAGE_NAMESPACE: ${{ github.repository_owner }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      BUILD_DATE: ${{ needs.prepare.outputs.build_date }}
+      # Same pin as the APK job, and for the same reason: a Flutter release
+      # landing between two builds must not be able to change what ships.
+      FLUTTER_VERSION: ${{ vars.FLUTTER_VERSION || '3.41.8' }}
+    # A job of its own rather than a step in `publish`, so the Flutter SDK setup
+    # does not sit in front of the backend image build. The two run in parallel
+    # and fail separately; `deploy` waits for both, which is what keeps one
+    # version from being half-deployed.
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build the web bundle
+        working-directory: app
+        # No --dart-define here, deliberately. `AppConfig.apiBaseUrl` is empty on
+        # web and resolves to the page's own origin at run time, because the
+        # bundle and the API are served by one origin (deploy/Caddyfile.taskradar.example).
+        # Baking an address in would make the artifact wrong the moment the
+        # hostname changed, and would need a CORS policy on the backend that
+        # does not exist.
+        #
+        # --no-web-resources-cdn is load-bearing: without it the engine fetches
+        # CanvasKit from gstatic at run time, which the Content-Security-Policy
+        # on the site block forbids -- the app would come up blank on a host
+        # with no third-party access. With it, CanvasKit is served from this
+        # origin like everything else.
+        run: |
+          flutter pub get
+          flutter build web --release --no-web-resources-cdn --base-href /
+          test -s build/web/index.html
+          grep -q flutter_bootstrap.js build/web/index.html
+          test -d build/web/canvaskit
+
+      - name: Assemble the image context
+        # The Dockerfile has no builder stage (see deploy/web/Dockerfile), so it
+        # needs a context holding exactly the two things it copies. Built here
+        # rather than pointing Docker at the repository root, which would ship
+        # backend/node_modules and the Android build tree to the daemon.
+        run: |
+          install -d web-image/site
+          install -m 644 deploy/web/Dockerfile deploy/web/nginx.conf web-image/
+          cp -r app/build/web/. web-image/site/
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish the web image
+        id: web
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./web-image
+          file: ./web-image/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-web:${{ env.VERSION }}
+            ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-web:sha-${{ github.sha }}
+          # org.opencontainers.image.version is read back by the deploy script
+          # before anything starts, exactly as for the backend image: it is what
+          # makes deploying the web client of one release next to the API of
+          # another fail on the server instead of in a browser.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+
+      - name: Attest the web image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-web
+          subject-digest: ${{ steps.web.outputs.digest }}
+          push-to-registry: true
+
   deploy:
-    needs: [prepare, publish]
+    needs: [prepare, publish, publish_web]
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -168,6 +272,7 @@ jobs:
       # Digest, never a tag: this is what the deploy script validates and what
       # makes the deployed artifact immutable.
       BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/taskradar-backend@${{ needs.publish.outputs.backend_digest }}
+      WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/taskradar-web@${{ needs.publish_web.outputs.web_digest }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PORT: ${{ vars.VPS_PORT || '22' }}
@@ -195,4 +300,4 @@ jobs:
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/taskradar-deploy '$VERSION' '$BACKEND_IMAGE' '${{ github.actor }}'"
+            "sudo /usr/local/sbin/taskradar-deploy '$VERSION' '$BACKEND_IMAGE' '$WEB_IMAGE' '${{ github.actor }}'"

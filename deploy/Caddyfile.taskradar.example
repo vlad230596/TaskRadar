@@ -28,12 +28,37 @@
 		Referrer-Policy "no-referrer"
 		# Nothing here needs to advertise the proxy.
 		-Server
+
+		# Since the web client (F10) this origin does serve a document, so the
+		# two headers that only constrain documents are no longer moot. They
+		# were deliberately absent while it was an API-only host; that note is
+		# kept in DEPLOYMENT.md rather than here.
+		#
+		# The policy is as tight as a Flutter web bundle allows, and every
+		# relaxation below is one the engine genuinely needs:
+		#
+		#   * 'wasm-unsafe-eval' -- CanvasKit and Skwasm are WebAssembly, and
+		#     instantiating a module counts as eval to CSP. It permits Wasm and
+		#     nothing else; plain `eval` stays blocked.
+		#   * style-src 'unsafe-inline' -- the engine writes inline styles for
+		#     the glass pane and for the hidden input it does text editing
+		#     through. There is no nonce to give it: those styles are set from
+		#     Dart at runtime.
+		#   * worker-src blob: -- Skwasm runs its renderer in a worker created
+		#     from a Blob URL.
+		#
+		# `connect-src 'self'` is the load-bearing one: the client's base URL is
+		# the page's own origin (see AppConfig), so a bundle that has been
+		# tampered with cannot ship the board anywhere else. The build fetches
+		# CanvasKit from this origin too -- `flutter build web` is run with
+		# `--no-web-resources-cdn`, without which the engine would pull it from
+		# gstatic and this line would break the app.
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		# Belt to `frame-ancestors`' braces, for anything that still reads only
+		# this one.
+		X-Frame-Options "DENY"
 	}
 
-	# This host serves a JSON API and nothing else: no HTML, no static assets, no
-	# frontend image. That is why there is no Content-Security-Policy and no
-	# X-Frame-Options block -- both only constrain how a *document* may load
-	# subresources or be framed, and this origin never returns a document.
 
 	# Fastify's own default body limit is 1 MB; rejecting oversized bodies at the
 	# edge keeps them from being buffered by Node at all. Caddy applies
@@ -71,7 +96,27 @@
 		reverse_proxy taskradar-backend:3001
 	}
 
+	# Everything else is the web client (F10): the `flutter build web` bundle,
+	# served by the `taskradar-web` container from compose.prod.yaml over the
+	# same `taskradar-ingress` network as the backend.
+	#
+	# Not a `file_server` here, and that is the isolation model rather than a
+	# preference: this Caddy belongs to another tenant, and pointing it at a
+	# directory would mean mounting TaskRadar's filesystem into a container
+	# shared by four applications. A second upstream costs one line and keeps
+	# the only shared thing a network hop.
+	#
+	# `handle` blocks are mutually exclusive, so a request that matched `@api`
+	# never reaches this one; the unmatched rest lands here. That this really is
+	# the resulting order -- rather than something the Caddyfile adapter chose --
+	# is not taken on trust: deploy/Caddyfile.ci carries the same two blocks and
+	# .github/workflows/integration-ci.yml asserts through a real Caddy that
+	# /board still answers 401 from the backend while / answers the bundle.
+	#
+	# The bundle's own server answers 404 for anything that is not a file it
+	# holds: there is no SPA fallback, because Flutter keeps its routes in the
+	# URL fragment. See deploy/web/nginx.conf for why that matters here.
 	handle {
-		respond 404
+		reverse_proxy taskradar-web:8080
 	}
 }

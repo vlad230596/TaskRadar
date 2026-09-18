@@ -109,6 +109,21 @@ sealed class VoiceModelState {
   const VoiceModelState();
 }
 
+/// This build cannot dictate at all, and no amount of downloading would change
+/// that.
+///
+/// The web build, and only it. The recogniser is `sherpa_onnx` over
+/// onnxruntime reading a 225 MB model out of application-support storage, and a
+/// browser tab has neither that storage nor a way to hold the weights; the
+/// microphone package would work, the two halves behind it would not.
+///
+/// A state of its own rather than [VoiceModelMissing] because the two produce
+/// different screens: "missing" offers a download button, and offering a
+/// download that cannot succeed is the worst of the three possible answers.
+class VoiceModelUnsupported extends VoiceModelState {
+  const VoiceModelUnsupported();
+}
+
 /// Nobody has looked on disk yet.
 ///
 /// Distinct from [VoiceModelMissing] because the two produce different screens:
@@ -130,7 +145,11 @@ class VoiceModelMissing extends VoiceModelState {
 
 /// Downloading or unpacking.
 class VoiceModelInstalling extends VoiceModelState {
-  const VoiceModelInstalling({required this.receivedBytes, required this.totalBytes, required this.unpacking});
+  const VoiceModelInstalling({
+    required this.receivedBytes,
+    required this.totalBytes,
+    required this.unpacking,
+  });
 
   final int receivedBytes;
   final int totalBytes;

@@ -1,0 +1,135 @@
+name: App CI
+
+# The Flutter client's checks, for every push and pull request through ci.yml.
+#
+# Until F10 there was no Flutter job in CI at all, and the note in ci.yml said
+# why: the client was not part of the deployment work. That changed when the web
+# bundle became something the release workflow publishes and the origin serves.
+# A client that does not compile is now a release that cannot be made, so it has
+# to be caught on the branch.
+#
+# Two jobs, and the split is deliberate:
+#
+#   * `checks` -- analyzer and unit tests, plus the **web** build, on Linux.
+#     The web build is a check and not an artifact: the bundle that ships is
+#     built by release.yml from the tag, and building it twice would invite the
+#     two to differ.
+#   * `windows` -- the desktop build, on a Windows runner, packaged exactly as a
+#     release packages it. It is the only way to find out that the desktop
+#     target still compiles: nothing about it is exercised by the analyzer or by
+#     `flutter test`, both of which run on the host VM.
+#
+# The Android build is not here. It needs the release keystore to produce
+# anything installable, and a debug-signed APK on every push would prove nothing
+# that `checks` does not already prove -- see app-release.yml for why that key
+# is not in CI.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to verify
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  # One pin for every Flutter job in this repository. Overridable through a
+  # repository variable so that moving it is one change, not four.
+  FLUTTER_VERSION: ${{ vars.FLUTTER_VERSION || '3.41.8' }}
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        working-directory: app
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: app
+        run: flutter analyze
+
+      - name: Test
+        working-directory: app
+        run: flutter test
+
+      - name: Build the web bundle
+        working-directory: app
+        # The same command release.yml publishes from, flags and all, so a
+        # release cannot be the first place a web-only compile error shows up.
+        # The assertions after it are cheap and catch the failure that is not a
+        # non-zero exit: a build that "succeeds" into an output missing the
+        # pieces the CSP and the deploy check assume are there.
+        run: |
+          flutter build web --release --no-web-resources-cdn --base-href /
+          grep -q flutter_bootstrap.js build/web/index.html
+          test -d build/web/canvaskit
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Build the desktop client
+        working-directory: app
+        shell: bash
+        env:
+          # The address is baked in at build time and there is no settings
+          # screen for it. When the repository variable is set, this artifact is
+          # something the owner can actually install; when it is not, the build
+          # still has to happen -- it is the compile that is being checked --
+          # and it falls back to AppConfig's localhost default, which only makes
+          # sense next to a backend started by hand.
+          TASKRADAR_API_URL: ${{ vars.TASKRADAR_API_URL || vars.PRODUCTION_URL }}
+        run: |
+          flutter pub get
+          if [ -n "$TASKRADAR_API_URL" ]; then
+            echo "Building against $TASKRADAR_API_URL"
+            flutter build windows --release --dart-define="TASKRADAR_API_URL=$TASKRADAR_API_URL"
+          else
+            echo 'No TASKRADAR_API_URL/PRODUCTION_URL variable; building against the localhost default.'
+            flutter build windows --release
+          fi
+
+      - name: Package it the way a release does
+        shell: pwsh
+        # Through the same script app-release.yml uses, so the layout the owner
+        # installs from is exercised on every push rather than for the first
+        # time during a release.
+        run: |
+          ./scripts/package-windows-app.ps1 -Version "ci-$($env:GITHUB_SHA.Substring(0,7))" -OutputDirectory dist
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: taskradar-windows-x64
+          path: dist/*
+          # The default is 90 days. A build from a branch is interesting for
+          # about as long as the branch is, and these are ~40 MB each.
+          retention-days: 14

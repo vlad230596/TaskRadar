@@ -1,11 +1,12 @@
 # TaskRadar production stack.
 #
 # Tenant isolation model (see DEPLOYMENT.md): this project shares exactly one
-# thing with the other applications on the VDS -- the Caddy ingress. Neither
-# PostgreSQL nor the backend publishes a host port; Caddy reaches the backend
-# over the dedicated external network `taskradar-ingress` using the alias
-# `taskradar-backend`. Anything that would publish a port here, or attach these
-# services to another tenant's network, breaks that model.
+# thing with the other applications on the VDS -- the Caddy ingress. Nothing
+# here publishes a host port; Caddy reaches the two services that answer
+# requests over the dedicated external network `taskradar-ingress`, by the
+# aliases `taskradar-backend` (the API) and `taskradar-web` (the browser
+# client). Anything that would publish a port here, or attach these services to
+# another tenant's network, breaks that model.
 name: taskradar
 
 x-logging: &default-logging
@@ -168,6 +169,54 @@ services:
       default: {}
       taskradar-ingress:
         aliases: [taskradar-backend]
+    logging: *default-logging
+
+  # The web client (F10): the `flutter build web` bundle inside an nginx image,
+  # built and published by the same release workflow as the backend.
+  #
+  # ## Why a container and not files on the host
+  #
+  # The alternative is a directory under /opt/taskradar mounted into the shared
+  # Caddy. That would hand a container owned by another tenant a mount inside
+  # TaskRadar's directory, which is the one thing the isolation model says stays
+  # ours; and the bundle would then be deployed by copying files rather than by
+  # pulling an immutable digest, so "which client is live" would stop having an
+  # answer. An image costs one more service and keeps both properties.
+  #
+  # ## Why it is versioned with the backend rather than on its own
+  #
+  # Unlike the APK, the web client is served *by this origin*. A browser that
+  # loaded the bundle an hour ago and an API deployed a minute ago have to agree
+  # about the shapes they exchange, and the cheapest way to guarantee that is to
+  # release them together: one version, one deploy, one rollback. The phone can
+  # lag a release; a tab on the same origin should not have to.
+  web:
+    image: ${WEB_IMAGE:-taskradar-web:local}
+    restart: unless-stopped
+    init: true
+    # Nothing in this image is written at run time except nginx's own scratch
+    # space, which is what the tmpfs mounts below are for.
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+      - /var/cache/nginx:size=16m,mode=0755
+      - /var/run:size=1m,mode=0755
+    healthcheck:
+      # The index page, which is the only document this container serves. Both
+      # `wget` and `/` are deliberate: the image is Alpine (busybox wget, no
+      # curl), and a 200 here means the bundle really is in the image -- an
+      # empty or mis-copied site directory answers 403/404 and fails the check
+      # before `up --wait` calls the release finished.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    networks:
+      # Only the ingress: this container has no business reaching PostgreSQL or
+      # the backend, and being off the default network means it cannot.
+      taskradar-ingress:
+        aliases: [taskradar-web]
     logging: *default-logging
 
 volumes:

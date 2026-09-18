@@ -55,6 +55,10 @@ class VoiceModelInstallation extends _$VoiceModelInstallation {
 
   @override
   VoiceModelState build() {
+    // No probe on web: the store behind it is `path_provider` plus `dart:io`,
+    // which answers `MissingPluginException` in a browser, and the answer is
+    // known without asking anyway.
+    if (kIsWeb) return const VoiceModelUnsupported();
     unawaited(_probe());
     return const VoiceModelUnknown();
   }
@@ -74,6 +78,7 @@ class VoiceModelInstallation extends _$VoiceModelInstallation {
 
   /// Downloads and unpacks the model. Never throws -- the failure is the state.
   Future<void> install() async {
+    if (state is VoiceModelUnsupported) return;
     if (state is VoiceModelInstalling || state is VoiceModelReady) return;
 
     final cancel = _cancel = CancelToken();
