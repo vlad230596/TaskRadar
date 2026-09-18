@@ -24,6 +24,15 @@ abstract interface class VoiceRecorder {
   /// Stops and throws away whatever was recorded.
   Future<void> cancel();
 
+  /// How loud the microphone is hearing right now, from 0 (silence) to 1,
+  /// sampled while a recording is running.
+  ///
+  /// This is the one piece of feedback that proves the microphone is hearing
+  /// *you* rather than merely being switched on. A timer counts up just as
+  /// happily with the phone in a pocket; a level that moves with the voice is
+  /// the difference between "it is recording" and "it is recording me".
+  Stream<double> levels();
+
   Future<void> dispose();
 }
 
@@ -53,6 +62,20 @@ class RecordVoiceRecorder implements VoiceRecorder {
   );
 
   String? _path;
+
+  /// How often the level is sampled. 120 ms is roughly eight bars a second:
+  /// fast enough that the meter moves with speech rather than lagging behind
+  /// it, slow enough that it is not a platform-channel round trip per frame.
+  static const Duration _levelInterval = Duration(milliseconds: 120);
+
+  /// The quietest level the meter bothers to show, in dBFS.
+  ///
+  /// `package:record` reports amplitude in dBFS -- 0 is clipping and the floor
+  /// is around -160 for digital silence. Mapping that whole range onto the
+  /// meter would leave ordinary speech pinned near the top with nothing
+  /// visible happening, so the scale starts where a phone microphone in a
+  /// quiet room already sits.
+  static const double _floorDbfs = -45;
 
   @override
   Future<bool> ensurePermission() => _recorder.hasPermission();
@@ -85,6 +108,18 @@ class RecordVoiceRecorder implements VoiceRecorder {
       debugPrint('Could not cancel the recording: $error');
     }
     await _discard();
+  }
+
+  @override
+  Stream<double> levels() {
+    return _recorder.onAmplitudeChanged(_levelInterval).map((amplitude) {
+      final normalised = (amplitude.current - _floorDbfs) / -_floorDbfs;
+      // NaN reaches here on some Android builds when the first sample lands
+      // before the input is running; `clamp` would propagate it into a layout
+      // constraint and crash the frame.
+      if (normalised.isNaN) return 0.0;
+      return normalised.clamp(0.0, 1.0);
+    });
   }
 
   @override

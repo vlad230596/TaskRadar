@@ -10,9 +10,8 @@ import '../providers/board_providers.dart';
 import '../providers/capture_queue_providers.dart';
 import '../providers/inbox_providers.dart';
 import '../providers/scope_providers.dart';
-import '../providers/voice_providers.dart';
 import '../storage/capture_queue_store.dart';
-import '../widgets/dictate_button.dart';
+import '../widgets/dictation.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_name_dialog.dart';
 
@@ -266,53 +265,37 @@ class _ComposerState extends ConsumerState<_Composer> {
   /// is appended, so dictating twice adds a second sentence instead of eating
   /// the first, and the caret ends up after it ready to be corrected.
   void _insertDictated(String text) {
-    final existing = _controller.text.trim();
-    final combined = existing.isEmpty ? text : '$existing $text';
-
-    _controller.value = TextEditingValue(
-      text: combined,
-      selection: TextSelection.collapsed(offset: combined.length),
-    );
+    appendDictated(_controller, text: text);
     _focus.requestFocus();
   }
 
   @override
   Widget build(BuildContext context) {
-    final canDictate = ref.watch(canDictateProvider);
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              focusNode: _focus,
-              // Opens the keyboard with the screen: this screen is reached in
-              // order to type, and a tap spent putting the caret in the field
-              // is a tap spent on nothing.
-              autofocus: true,
-              textInputAction: TextInputAction.done,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'Что не забыть…',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
+      child: DictatedField(
+        onText: _insertDictated,
+        field: TextField(
+          controller: _controller,
+          focusNode: _focus,
+          // Opens the keyboard with the screen: this screen is reached in
+          // order to type, and a tap spent putting the caret in the field
+          // is a tap spent on nothing.
+          autofocus: true,
+          textInputAction: TextInputAction.done,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            hintText: 'Что не забыть…',
+            isDense: true,
+            border: OutlineInputBorder(),
           ),
-          // The microphone is only here when there is a model to dictate with;
-          // see `DictateButton` for why an always-present button that answers
-          // "download 163 MB first" would be the wrong thing.
-          if (canDictate) DictateButton(onText: _insertDictated),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: 'Записать',
-            onPressed: _submit,
-            icon: const Icon(Icons.add),
-          ),
-        ],
+          onSubmitted: (_) => _submit(),
+        ),
+        trailing: IconButton.filled(
+          tooltip: 'Записать',
+          onPressed: _submit,
+          icon: const Icon(Icons.add),
+        ),
       ),
     );
   }

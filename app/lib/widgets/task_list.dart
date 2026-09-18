@@ -6,6 +6,7 @@ import '../domain/reminders.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../providers/project_providers.dart';
+import 'dictation.dart';
 import 'mutation_feedback.dart';
 
 /// The task half of the project screen: an inline composer on top and a
@@ -175,29 +176,28 @@ class _TaskComposerState extends ConsumerState<_TaskComposer> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              focusNode: _focus,
-              textInputAction: TextInputAction.done,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'Новая задача…',
-                isDense: true,
-                border: OutlineInputBorder(),
-              ),
-              onSubmitted: (_) => _submit(),
-            ),
+      child: DictatedField(
+        onText: (text) {
+          appendDictated(_controller, text: text);
+          _focus.requestFocus();
+        },
+        field: TextField(
+          controller: _controller,
+          focusNode: _focus,
+          textInputAction: TextInputAction.done,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            hintText: 'Новая задача…',
+            isDense: true,
+            border: OutlineInputBorder(),
           ),
-          const SizedBox(width: 8),
-          IconButton.filled(
-            tooltip: 'Добавить задачу',
-            onPressed: _submit,
-            icon: const Icon(Icons.add),
-          ),
-        ],
+          onSubmitted: (_) => _submit(),
+        ),
+        trailing: IconButton.filled(
+          tooltip: 'Добавить задачу',
+          onPressed: _submit,
+          icon: const Icon(Icons.add),
+        ),
       ),
     );
   }
@@ -680,16 +680,33 @@ class _DescriptionDialogState extends State<_DescriptionDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: const Text('Описание задачи'),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        maxLines: 6,
-        minLines: 3,
-        textCapitalization: TextCapitalization.sentences,
-        decoration: const InputDecoration(
-          hintText: 'Кто, что, к какому сроку…',
-          border: OutlineInputBorder(),
-        ),
+      // The description is the longest thing anybody types into this app and
+      // the one most likely to be dictated: several lines of prose, often from
+      // somewhere that is not a desk. The microphone sits under the box rather
+      // than beside it, because the box is six lines tall and a button pinned
+      // to its side would have nothing to align with.
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            maxLines: 6,
+            minLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              hintText: 'Кто, что, к какому сроку…',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          DictatedField(
+            // A new sentence rather than a new paragraph: a description
+            // dictated in two goes is usually one thought continued, and a
+            // blank line between the halves would be a formatting decision
+            // nobody asked for.
+            onText: (text) => appendDictated(_controller, text: text),
+          ),
+        ],
       ),
       actions: [
         TextButton(

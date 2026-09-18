@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'dictation.dart';
+
 /// Asks for a project's name -- the new one, or a corrected one.
 ///
 /// One dialog for creating and for renaming, because `POST /projects` and
@@ -97,17 +99,31 @@ class _NameDialogState extends State<_NameDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: TextField(
-        controller: _controller,
-        autofocus: true,
-        textCapitalization: TextCapitalization.sentences,
-        textInputAction: TextInputAction.done,
-        decoration: InputDecoration(
-          hintText: widget.hint,
-          border: const OutlineInputBorder(),
-        ),
-        onChanged: (_) => setState(() {}),
-        onSubmitted: (_) => _submit(),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              hintText: widget.hint,
+              border: const OutlineInputBorder(),
+            ),
+            onChanged: (_) => setState(() {}),
+            onSubmitted: (_) => _submit(),
+          ),
+          DictatedField(
+            // `setState` as well as the insertion: the confirm button is
+            // disabled while the field is empty, and it reads the controller
+            // rather than listening to it, so dictated text has to say so.
+            onText: (text) {
+              appendDictated(_controller, text: text);
+              setState(() {});
+            },
+          ),
+        ],
       ),
       actions: [
         TextButton(

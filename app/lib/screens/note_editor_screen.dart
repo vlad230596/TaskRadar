@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/note.dart';
 import '../providers/project_providers.dart';
+import '../widgets/dictation.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_markdown.dart';
 
@@ -164,17 +165,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              TextField(
-                controller: _title,
-                textInputAction: TextInputAction.next,
-                style: theme.textTheme.titleMedium,
-                decoration: InputDecoration(
-                  labelText: 'Заголовок',
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                  errorText: _titleValid
-                      ? null
-                      : 'Заголовок не может быть пустым',
+              DictatedField(
+                onText: (text) => appendDictated(_title, text: text),
+                field: TextField(
+                  controller: _title,
+                  textInputAction: TextInputAction.next,
+                  style: theme.textTheme.titleMedium,
+                  decoration: InputDecoration(
+                    labelText: 'Заголовок',
+                    border: const OutlineInputBorder(),
+                    isDense: true,
+                    errorText: _titleValid
+                        ? null
+                        : 'Заголовок не может быть пустым',
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -207,6 +211,19 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                         ),
                       ),
               ),
+              // The body's microphone sits under the text area rather than
+              // beside it: the field fills the rest of the screen, so there is
+              // no edge to pin a button to. Hidden in preview mode, where
+              // there is nothing to dictate into.
+              if (!_preview)
+                DictatedField(
+                  // A new line, not a space. The body is Markdown and is
+                  // dictated in chunks -- one thought, then the next -- and
+                  // running them together into one paragraph is the one thing
+                  // that would make the result worse than typing it.
+                  onText: (text) =>
+                      appendDictated(_content, text: text, separator: '\n'),
+                ),
             ],
           ),
         ),

@@ -14,7 +14,10 @@ import '../models/scope.dart';
 import '../providers/inbox_providers.dart';
 import '../providers/scope_providers.dart';
 import '../providers/session_provider.dart';
+import '../providers/capture_queue_providers.dart';
+import '../providers/voice_providers.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/dictation.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_card.dart';
 import '../widgets/project_column.dart';
@@ -69,6 +72,9 @@ class BoardScreen extends ConsumerWidget {
     // Which board is on screen (F7). Null until the scope list has loaded,
     // which reads as "show everything" -- see `projectsInScope`.
     final scope = ref.watch(activeScopeProvider);
+
+    final canDictate = ref.watch(canDictateProvider);
+    final dictating = ref.watch(voiceDictationProvider) is! DictationIdle;
 
     return Scaffold(
       appBar: AppBar(
@@ -151,11 +157,32 @@ class BoardScreen extends ConsumerWidget {
       // place a thumb reaches without looking. Until F4 it was not possible from
       // the app at all, which made "live a whole day inside it" false by
       // construction: a new project meant opening the old web client.
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _createProject(context, ref),
-        icon: const Icon(Icons.add),
-        label: const Text('Проект'),
-      ),
+      //
+      // Above it, since the dictation rework, a microphone -- the only one in
+      // the app with no text field under it. It is here for the scenario the
+      // sandbox was built for and the sandbox screen cannot serve: walking,
+      // one hand, "надо не забыть". Every other route to writing a line down
+      // costs a navigation first, and a thought survives about that long.
+      // While a dictation is running both buttons go away and the panel at the
+      // bottom of the board is the only control on screen.
+      floatingActionButton: dictating
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (canDictate)
+                  DictateButton(
+                    onText: (text) => _captureDictated(context, ref, text),
+                  ),
+                const SizedBox(height: 8),
+                FloatingActionButton.extended(
+                  onPressed: () => _createProject(context, ref),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Проект'),
+                ),
+              ],
+            ),
       // The switcher sits above the scrollable rather than inside it: it is
       // the answer to "which board am I looking at", and a control that scrolls
       // away leaves that question unanswered exactly when a long board makes it
@@ -188,9 +215,53 @@ class BoardScreen extends ConsumerWidget {
               },
             ),
           ),
+          // Same strip as under every text field, in the same relationship to
+          // the thing being dictated into -- which here is the sandbox itself.
+          if (canDictate)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: const DictationPanel(),
+            ),
         ],
       ),
     );
+  }
+
+  /// A line dictated from the board goes straight into the sandbox.
+  ///
+  /// Straight in, rather than into a field to be checked first, and that is a
+  /// deliberate exception to the rule the other microphones follow. There is no
+  /// field here to check it in, and the sandbox is the one place where an
+  /// imperfect line is harmless: it is read and filed by hand later anyway, and
+  /// "Поправить" is one tap away while the message is still on screen.
+  ///
+  /// It goes through the capture queue like everything else the sandbox
+  /// accepts, so dictating with no signal writes the line to disk and sends it
+  /// when there is one (F8.1).
+  Future<void> _captureDictated(
+    BuildContext context,
+    WidgetRef ref,
+    String text,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await runMutation(
+      context,
+      () => ref.read(captureQueueProvider.notifier).capture(text),
+      failure: 'Не удалось записать строчку на устройство.',
+    );
+    if (!ok || !context.mounted) return;
+
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('В песочницу: «$text»'),
+          action: SnackBarAction(
+            label: 'Поправить',
+            onPressed: () => AppRoutes.openInbox(context),
+          ),
+        ),
+      );
   }
 }
 

@@ -57,6 +57,14 @@ class FakeVoiceRecorder implements VoiceRecorder {
     recording = false;
   }
 
+  /// What [levels] replays. Empty by default: the meter is decoration over a
+  /// platform stream, and a test that does not care about it should not have to
+  /// drain one.
+  List<double> levelSamples = const <double>[];
+
+  @override
+  Stream<double> levels() => Stream<double>.fromIterable(levelSamples);
+
   @override
   Future<void> dispose() async {
     disposeCount++;

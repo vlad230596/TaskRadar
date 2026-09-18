@@ -319,39 +319,69 @@ final class CanDictateProvider extends $FunctionalProvider<bool, bool, bool>
 
 String _$canDictateHash() => r'50b1c45973d088a817e8ce12084a9e03bfdefc76';
 
-/// The dictation gesture: hold, speak, release, get text.
+/// The dictation gesture: start, speak, stop, get text.
 ///
 /// ## Why this is a state machine and not three awaits in the widget
 ///
 /// Because every step of it can end somewhere other than "text": permission
-/// refused, a press too short to be speech, a release while the model is still
-/// loading, a phrase the recogniser heard as silence. Each of those needs a
-/// different thing said to the user, and a widget holding that in local state
+/// refused, a release while the model is still loading, a phrase the recogniser
+/// heard as silence, a recording that ran into the ceiling. Each of those needs
+/// a different thing said to the user, and a widget holding that in local state
 /// would end up with the same machine, spelled less clearly and untested.
+///
+/// ## Why the text is delivered through a sink instead of returned
+///
+/// It used to be returned to the widget that held the button, which worked
+/// while the only way to end a dictation was to lift the finger off that
+/// button. It no longer is: a locked recording is ended from the panel, which
+/// is a different widget and deliberately knows nothing about which field the
+/// text belongs in. So the field hands its own insertion callback over when the
+/// dictation starts, and whoever ends it -- the button, the panel, the ceiling
+/// -- delivers to the same place.
 
 @ProviderFor(VoiceDictation)
 final voiceDictationProvider = VoiceDictationProvider._();
 
-/// The dictation gesture: hold, speak, release, get text.
+/// The dictation gesture: start, speak, stop, get text.
 ///
 /// ## Why this is a state machine and not three awaits in the widget
 ///
 /// Because every step of it can end somewhere other than "text": permission
-/// refused, a press too short to be speech, a release while the model is still
-/// loading, a phrase the recogniser heard as silence. Each of those needs a
-/// different thing said to the user, and a widget holding that in local state
+/// refused, a release while the model is still loading, a phrase the recogniser
+/// heard as silence, a recording that ran into the ceiling. Each of those needs
+/// a different thing said to the user, and a widget holding that in local state
 /// would end up with the same machine, spelled less clearly and untested.
+///
+/// ## Why the text is delivered through a sink instead of returned
+///
+/// It used to be returned to the widget that held the button, which worked
+/// while the only way to end a dictation was to lift the finger off that
+/// button. It no longer is: a locked recording is ended from the panel, which
+/// is a different widget and deliberately knows nothing about which field the
+/// text belongs in. So the field hands its own insertion callback over when the
+/// dictation starts, and whoever ends it -- the button, the panel, the ceiling
+/// -- delivers to the same place.
 final class VoiceDictationProvider
     extends $NotifierProvider<VoiceDictation, DictationState> {
-  /// The dictation gesture: hold, speak, release, get text.
+  /// The dictation gesture: start, speak, stop, get text.
   ///
   /// ## Why this is a state machine and not three awaits in the widget
   ///
   /// Because every step of it can end somewhere other than "text": permission
-  /// refused, a press too short to be speech, a release while the model is still
-  /// loading, a phrase the recogniser heard as silence. Each of those needs a
-  /// different thing said to the user, and a widget holding that in local state
+  /// refused, a release while the model is still loading, a phrase the recogniser
+  /// heard as silence, a recording that ran into the ceiling. Each of those needs
+  /// a different thing said to the user, and a widget holding that in local state
   /// would end up with the same machine, spelled less clearly and untested.
+  ///
+  /// ## Why the text is delivered through a sink instead of returned
+  ///
+  /// It used to be returned to the widget that held the button, which worked
+  /// while the only way to end a dictation was to lift the finger off that
+  /// button. It no longer is: a locked recording is ended from the panel, which
+  /// is a different widget and deliberately knows nothing about which field the
+  /// text belongs in. So the field hands its own insertion callback over when the
+  /// dictation starts, and whoever ends it -- the button, the panel, the ceiling
+  /// -- delivers to the same place.
   VoiceDictationProvider._()
     : super(
         from: null,
@@ -379,17 +409,27 @@ final class VoiceDictationProvider
   }
 }
 
-String _$voiceDictationHash() => r'3077831e1435b2f339cec08d5b6f22a36c916d63';
+String _$voiceDictationHash() => r'c07cbbd01ce067edbb9dd06b64494b5c7d73168f';
 
-/// The dictation gesture: hold, speak, release, get text.
+/// The dictation gesture: start, speak, stop, get text.
 ///
 /// ## Why this is a state machine and not three awaits in the widget
 ///
 /// Because every step of it can end somewhere other than "text": permission
-/// refused, a press too short to be speech, a release while the model is still
-/// loading, a phrase the recogniser heard as silence. Each of those needs a
-/// different thing said to the user, and a widget holding that in local state
+/// refused, a release while the model is still loading, a phrase the recogniser
+/// heard as silence, a recording that ran into the ceiling. Each of those needs
+/// a different thing said to the user, and a widget holding that in local state
 /// would end up with the same machine, spelled less clearly and untested.
+///
+/// ## Why the text is delivered through a sink instead of returned
+///
+/// It used to be returned to the widget that held the button, which worked
+/// while the only way to end a dictation was to lift the finger off that
+/// button. It no longer is: a locked recording is ended from the panel, which
+/// is a different widget and deliberately knows nothing about which field the
+/// text belongs in. So the field hands its own insertion callback over when the
+/// dictation starts, and whoever ends it -- the button, the panel, the ceiling
+/// -- delivers to the same place.
 
 abstract class _$VoiceDictation extends $Notifier<DictationState> {
   DictationState build();

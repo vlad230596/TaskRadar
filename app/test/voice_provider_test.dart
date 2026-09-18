@@ -7,7 +7,8 @@ import 'package:taskradar/voice/voice_model.dart';
 
 import 'support/fake_voice.dart';
 
-/// The dictation gesture (F9), everywhere it ends somewhere other than text.
+/// The dictation state machine (F9), everywhere it ends somewhere other than
+/// text.
 ///
 /// The happy path is one line; the reason this file exists is the rest of them.
 /// A microphone that fails silently is worse than no microphone: the user
@@ -16,10 +17,16 @@ import 'support/fake_voice.dart';
 void main() {
   late FakeVoiceRecorder recorder;
   late FakeSpeechRecognizer recognizer;
+  late List<String> spoken;
+
+  /// Stands in for the field a dictation belongs to. Opaque by design -- the
+  /// notifier never looks inside it, it only has to come back unchanged.
+  final Object field = Object();
 
   setUp(() {
     recorder = FakeVoiceRecorder();
     recognizer = FakeSpeechRecognizer();
+    spoken = <String>[];
   });
 
   ProviderContainer makeContainer({bool modelReady = true}) {
@@ -42,19 +49,36 @@ void main() {
     return container;
   }
 
+  /// Starts a dictation the way a field does, with somewhere for the text to go.
+  Future<bool> begin(VoiceDictation dictation, {bool locked = false}) =>
+      dictation.start(owner: field, sink: spoken.add, locked: locked);
+
   group('a phrase that works', () {
-    test('records, recognises, and hands back the text', () async {
+    test('records, recognises, and delivers the text to the field', () async {
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
 
-      expect(await dictation.start(), isTrue);
+      expect(await begin(dictation), isTrue);
       expect(container.read(voiceDictationProvider), isA<DictationRecording>());
 
-      final text = await dictation.stopAndTranscribe();
+      await dictation.finish();
 
-      expect(text, 'Купить кабель');
+      expect(spoken, <String>['Купить кабель']);
       expect(container.read(voiceDictationProvider), isA<DictationIdle>());
       expect(recorder.recording, isFalse);
+    });
+
+    test('says which field it belongs to, from the first press', () async {
+      // Two microphones can be on one screen (a note has a title and a body),
+      // and only the one that was pressed may light up.
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+
+      await begin(dictation);
+      expect(container.read(voiceDictationProvider).owner, same(field));
+
+      await dictation.finish();
+      expect(container.read(voiceDictationProvider).owner, isNull);
     });
 
     test('loads the model once across several phrases', () async {
@@ -64,12 +88,13 @@ void main() {
       final dictation = container.read(voiceDictationProvider.notifier);
 
       for (var i = 0; i < 3; i++) {
-        await dictation.start();
-        await dictation.stopAndTranscribe();
+        await begin(dictation);
+        await dictation.finish();
       }
 
       expect(recognizer.loadCount, 1);
       expect(recognizer.transcribeCount, 3);
+      expect(spoken, hasLength(3));
     });
 
     test('a release during loading waits instead of failing', () async {
@@ -80,15 +105,48 @@ void main() {
       final gate = Completer<void>();
       recognizer.loadGate = gate;
 
-      await dictation.start();
-      final pending = dictation.stopAndTranscribe();
+      await begin(dictation);
+      final pending = dictation.finish();
       // One turn of the loop, so the recorder has stopped and the state has
       // moved on -- but the weights are still held by the gate.
       await Future<void>.delayed(Duration.zero);
-      expect(container.read(voiceDictationProvider), isA<DictationRecognising>());
+      expect(
+        container.read(voiceDictationProvider),
+        isA<DictationRecognising>(),
+      );
 
       gate.complete();
-      expect(await pending, 'Купить кабель');
+      await pending;
+      expect(spoken, <String>['Купить кабель']);
+    });
+  });
+
+  group('locking', () {
+    test('a locked recording is the same recording, running alone', () async {
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+
+      await begin(dictation);
+      expect(
+        (container.read(voiceDictationProvider) as DictationRecording).locked,
+        isFalse,
+      );
+
+      dictation.lock();
+
+      final state = container.read(voiceDictationProvider) as DictationRecording;
+      expect(state.locked, isTrue);
+      // Locking is a change of who ends it, not a restart: the microphone was
+      // never touched.
+      expect(recorder.startCount, 1);
+      expect(recorder.stopCount, 0);
+    });
+
+    test('locking something that is not recording does nothing', () async {
+      final container = makeContainer();
+      container.read(voiceDictationProvider.notifier).lock();
+
+      expect(container.read(voiceDictationProvider), isA<DictationIdle>());
     });
   });
 
@@ -96,21 +154,27 @@ void main() {
     test('no microphone permission: says so, records nothing', () async {
       recorder.permitted = false;
       final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
 
-      expect(await container.read(voiceDictationProvider.notifier).start(), isFalse);
+      expect(await begin(dictation), isFalse);
 
       final state = container.read(voiceDictationProvider);
       expect(state, isA<DictationFailed>());
       expect((state as DictationFailed).message, contains('микрофон'));
+      // Nothing to retry: saying it again cannot grant a permission.
+      expect(state.retryable, isFalse);
       expect(recorder.startCount, 0);
     });
 
     test('no model: refuses before touching the microphone', () async {
       final container = makeContainer(modelReady: false);
+      final dictation = container.read(voiceDictationProvider.notifier);
 
-      expect(await container.read(voiceDictationProvider.notifier).start(), isFalse);
+      expect(await begin(dictation), isFalse);
 
-      expect(container.read(voiceDictationProvider), isA<DictationFailed>());
+      final state = container.read(voiceDictationProvider);
+      expect(state, isA<DictationFailed>());
+      expect((state as DictationFailed).retryable, isFalse);
       expect(recorder.startCount, 0);
     });
 
@@ -118,32 +182,73 @@ void main() {
       recorder.recordingPath = null;
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
-      await dictation.start();
+      await begin(dictation);
 
-      expect(await dictation.stopAndTranscribe(), isNull);
+      await dictation.finish();
+
+      expect(spoken, isEmpty);
       expect(container.read(voiceDictationProvider), isA<DictationFailed>());
     });
 
     test('silence is "ничего не расслышали", not an error', () async {
-      // A button held by accident, or a phrase the model heard as nothing. The
-      // difference between "it is broken" and "say it again".
+      // A button pressed by accident, or a phrase the model heard as nothing.
+      // The difference between "it is broken" and "say it again".
       recognizer.text = '';
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
-      await dictation.start();
+      await begin(dictation);
 
-      expect(await dictation.stopAndTranscribe(), isNull);
-      final state = container.read(voiceDictationProvider);
-      expect((state as DictationFailed).message, contains('расслышали'));
+      await dictation.finish();
+
+      expect(spoken, isEmpty);
+      final state = container.read(voiceDictationProvider) as DictationFailed;
+      expect(state.message, contains('расслышали'));
+      // ...and this one *is* worth another go, from the same panel.
+      expect(state.retryable, isTrue);
     });
 
-    test('a recogniser that throws does not leave the button spinning', () async {
+    test('"ещё раз" reopens the microphone for the same field', () async {
+      recognizer.text = '';
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+      await begin(dictation);
+      await dictation.finish();
+
+      recognizer.text = 'Купить кабель';
+      await dictation.retry();
+
+      final state = container.read(voiceDictationProvider);
+      expect(state, isA<DictationRecording>());
+      expect(state.owner, same(field));
+      // Locked, because the user got here by pressing a button rather than by
+      // holding one, and there is no finger on anything to release.
+      expect((state as DictationRecording).locked, isTrue);
+
+      await dictation.finish();
+      expect(spoken, <String>['Купить кабель']);
+    });
+
+    test('"ещё раз" is refused for a failure it cannot fix', () async {
+      recorder.permitted = false;
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+      await begin(dictation);
+
+      await dictation.retry();
+
+      expect(container.read(voiceDictationProvider), isA<DictationFailed>());
+      expect(recorder.startCount, 0);
+    });
+
+    test('a recogniser that throws does not leave the panel spinning', () async {
       recognizer.transcribeFailure = StateError('onnxruntime said no');
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
-      await dictation.start();
+      await begin(dictation);
 
-      expect(await dictation.stopAndTranscribe(), isNull);
+      await dictation.finish();
+
+      expect(spoken, isEmpty);
       expect(container.read(voiceDictationProvider), isA<DictationFailed>());
     });
 
@@ -151,27 +256,31 @@ void main() {
       recorder.startFailure = Exception('the device is busy');
       final container = makeContainer();
 
-      expect(await container.read(voiceDictationProvider.notifier).start(), isFalse);
+      expect(
+        await begin(container.read(voiceDictationProvider.notifier)),
+        isFalse,
+      );
       expect(container.read(voiceDictationProvider), isA<DictationFailed>());
     });
 
     test('cancelling throws the audio away and says nothing', () async {
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
-      await dictation.start();
+      await begin(dictation);
 
       await dictation.cancel();
 
       expect(recorder.cancelCount, 1);
       expect(container.read(voiceDictationProvider), isA<DictationIdle>());
       expect(recognizer.transcribeCount, 0);
+      expect(spoken, isEmpty);
     });
 
     test('a failure is cleared once it has been said', () async {
       recorder.permitted = false;
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
-      await dictation.start();
+      await begin(dictation);
 
       dictation.acknowledge();
 
@@ -180,14 +289,13 @@ void main() {
       expect(container.read(voiceDictationProvider), isA<DictationIdle>());
     });
 
-    test('stopping when nothing is recording does nothing at all', () async {
+    test('finishing when nothing is recording does nothing at all', () async {
       final container = makeContainer();
 
-      expect(
-        await container.read(voiceDictationProvider.notifier).stopAndTranscribe(),
-        isNull,
-      );
+      await container.read(voiceDictationProvider.notifier).finish();
+
       expect(recorder.stopCount, 0);
+      expect(spoken, isEmpty);
     });
   });
 
