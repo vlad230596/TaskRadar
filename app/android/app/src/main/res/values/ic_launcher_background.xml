@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The background layer of the adaptive icon, as a colour rather than a bitmap:
+  the tile behind the mark is flat, and a colour resource costs nothing at any
+  density. Same value as the tile in scripts/generate-app-icons.py and in the
+  SVG masters under design/icon/ — change it in all three or the launcher icon
+  stops matching the favicon.
+-->
+<resources>
+    <color name="ic_launcher_background">#1B2050</color>
+</resources>

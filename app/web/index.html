@@ -21,7 +21,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="TaskRadar">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <!--
+    Square-cornered on purpose: iOS applies its own rounded mask to a
+    home-screen icon and paints whatever is transparent behind it black, so the
+    rounded tile the browser tab and the manifest use would get black corners
+    there. Every icon in this folder is drawn by scripts/generate-app-icons.py.
+  -->
+  <link rel="apple-touch-icon" href="icons/Icon-apple-180.png">
 
   <link rel="icon" type="image/png" href="favicon.png"/>
 

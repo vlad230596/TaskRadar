@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher icon on Android 8+ (API 26), where the system, not the app,
+  decides the icon's silhouette: the launcher masks these two layers into
+  whatever shape the device uses (circle, squircle, teardrop) and parallaxes
+  them when the user scrolls. That is why the foreground is a transparent PNG
+  whose drawing stays inside the central 66% of the canvas — anything closer to
+  the edge is cropped on some devices and not on others.
+
+  The flat mipmap-*/ic_launcher.png files are still shipped: they are what
+  API 25 and below use, and what Play Store style listings and some launchers
+  fall back to.
+
+  <monochrome> is the themed icon of Android 13+: the system throws the colours
+  away and tints the silhouette with the wallpaper palette, so that layer is the
+  radar without its sweep (see scripts/generate-app-icons.py, which explains why
+  the silhouette is a different drawing rather than the same one recoloured).
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome" />
+</adaptive-icon>

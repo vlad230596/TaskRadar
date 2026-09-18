@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="TaskRadar">
+  <rect width="512" height="512" rx="116" fill="#1B2050"/>
+  <path d="M256 256 L256 48 A208 208 0 0 1 436.1 152 Z" fill="#4A56BE"/>
+  <g fill="none" stroke="#9AA5F7" stroke-width="22">
+    <circle cx="256" cy="256" r="200"/>
+    <circle cx="256" cy="256" r="116"/>
+  </g>
+  <circle cx="256" cy="256" r="16" fill="#9AA5F7"/>
+  <circle cx="338" cy="174" r="28" fill="#F0A33C"/>
+</svg>

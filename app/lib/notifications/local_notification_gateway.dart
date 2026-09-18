@@ -35,14 +35,19 @@ class LocalNotificationGateway implements NotificationGateway {
         importance: Importance.high,
       );
 
-  /// `@mipmap/ic_launcher` is against Android's guidance (a notification icon is
-  /// supposed to be a white-on-transparent silhouette, and a full-colour
-  /// launcher icon renders as a grey blob on some versions). It is used anyway
-  /// for F1 because it is guaranteed to exist: a missing icon resource makes the
-  /// notification fail *silently*, which would be indistinguishable from the
-  /// power-management failure this iteration exists to measure. Swap it for a
-  /// dedicated monochrome drawable when the app gets real branding.
-  static const String _androidIcon = '@mipmap/ic_launcher';
+  /// The status-bar icon, and it has to be a white-on-transparent silhouette:
+  /// Android takes only the alpha channel of a small notification icon and
+  /// tints it, so the full-colour launcher icon used here until the app had
+  /// branding rendered as a grey blob on some versions.
+  ///
+  /// `drawable-*/ic_notification.png` is drawn by
+  /// scripts/generate-app-icons.py at every density, which is what makes this
+  /// string safe to use: the plugin resolves it by name at run time
+  /// (`Resources.getIdentifier`) and a missing resource makes the notification
+  /// fail *silently* — indistinguishable from the power-management failure F1
+  /// exists to measure. res/raw/keep.xml protects it from the resource
+  /// shrinker for the same reason.
+  static const String _androidIcon = '@drawable/ic_notification';
 
   final FlutterLocalNotificationsPlugin _plugin;
   final TargetPlatform _platform;

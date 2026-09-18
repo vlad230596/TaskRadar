@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="TaskRadar">
+  <g fill="none" stroke="currentColor" stroke-width="30">
+    <circle cx="256" cy="256" r="192"/>
+    <circle cx="256" cy="256" r="108"/>
+  </g>
+  <circle cx="256" cy="256" r="20" fill="currentColor"/>
+  <circle cx="332" cy="180" r="34" fill="currentColor"/>
+</svg>

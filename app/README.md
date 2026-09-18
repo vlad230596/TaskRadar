@@ -749,3 +749,31 @@ On Windows the scheduler runs and the queue is inspectable, but desktop toasts
 are **not** part of F1's acceptance — an unpackaged Win32 app needs a Start-menu
 shortcut carrying its AppUserModelID, which `flutter build windows` does not
 create. See `NotificationSupport.windows`.
+
+## The icon
+
+A radar sweep: two rings, a sector opening from the centre, one amber blip on
+the inner ring. Dark indigo tile, `#1B2050`.
+
+Every file that ships it is drawn by `scripts/generate-app-icons.py` from one
+set of constants at the top of that script — about twenty PNGs plus a
+seven-image `.ico`, across web, Android and Windows. Change the geometry or the
+colours there and re-run it; the SVG masters under `design/icon/` are written by
+the same run, so they cannot drift from what ships:
+
+```
+python -m pip install pillow
+python scripts/generate-app-icons.py
+```
+
+Three details are not the same drawing at different sizes, and the script says
+why for each: the **maskable** web icons and the Android **adaptive**
+foreground are full-bleed with the art pulled into the safe zone a launcher
+mask cannot crop; the **apple-touch-icon** has square corners because iOS
+rounds it itself and paints transparency black; and the **monochrome**
+silhouette (Android 13 themed icons, and the status-bar icon at 24 dp) drops
+the sector, which would merge with the rings once everything is one colour.
+
+The status-bar icon is `@drawable/ic_notification`, resolved by name at run
+time — which is what `res/raw/keep.xml` exists to protect from R8 (see Local
+reminders, above).
