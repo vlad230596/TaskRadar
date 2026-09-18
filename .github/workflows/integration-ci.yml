@@ -45,6 +45,13 @@ jobs:
       # TaskRadar. The address comes from the environment so the example file
       # contains no invented domain; the value below is a throwaway used only to
       # make the file complete enough to parse.
+      - name: Caddy's allowlist covers every backend route
+        # Cheapest check in the workflow and the one that would have caught the
+        # F7/F8 regression: the matcher list is compared against the routes
+        # declared in backend/src/routes/ rather than against a list somebody
+        # remembered to write here.
+        run: node scripts/check-edge-route-coverage.mjs
+
       - name: Validate the production Caddy site block
         run: |
           docker run --rm \
@@ -115,8 +122,12 @@ jobs:
         # 401 means the app is up and the guard works, 404 means the Caddy
         # matcher list is missing the prefix, 502 means the backend is not
         # reachable on the ingress network.
+        #
+        # /scopes and /inbox are in the list because they are what the missing
+        # prefix looked like in production: both answered 404 from the edge for
+        # a whole release.
         run: |
-          for path in /board /projects /auth/me; do
+          for path in /board /projects /scopes /inbox /auth/me; do
             status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL$path")"
             echo "$path -> $status"
             test "$status" = '401'

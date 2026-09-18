@@ -49,10 +49,21 @@
 	#
 	# TRAP: this list has to be updated when a new top-level route is added to
 	# backend/src/routes/. A forgotten prefix looks like a client bug -- 404 from
-	# Caddy is indistinguishable from 404 from Fastify -- so the same prefixes are
-	# exercised through Caddy by the integration check in
-	# .github/workflows/integration-ci.yml, using deploy/Caddyfile.ci.
-	@api path /health /ready /version /auth/* /board /projects /projects/* /tasks/* /notes/*
+	# Caddy is indistinguishable from 404 from Fastify -- and it survived a
+	# release exactly that way: /scopes (F7) and /inbox (F8) were served by the
+	# backend and refused here, so the sandbox answered 404 to every capture from
+	# the phone while all of CI was green.
+	#
+	# So the list is no longer trusted to be maintained by hand:
+	# scripts/check-edge-route-coverage.mjs derives the required prefixes from
+	# backend/src/routes/ and fails the build when one is missing here or in
+	# deploy/Caddyfile.ci. The prefixes are additionally exercised through a real
+	# Caddy by .github/workflows/integration-ci.yml.
+	#
+	# Neither check can see the file that actually serves traffic: this one is
+	# pasted into the shared Caddyfile on the VDS by hand, so a fix here is not
+	# live until that is done (DEPLOYMENT.md).
+	@api path /health /ready /version /auth/* /board /scopes /scopes/* /projects /projects/* /tasks/* /notes/* /inbox /inbox/*
 	handle @api {
 		# Matches the alias and port from compose.prod.yaml. Resolution works only
 		# because the Caddy container is attached to the `taskradar-ingress`
