@@ -7,7 +7,7 @@ import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/archive_screen.dart';
-import 'package:taskradar/screens/board_screen.dart';
+import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 
 import 'support/fake_backend.dart';
@@ -277,7 +277,7 @@ void main() {
       final projectId = server.addProject(name: 'Дача', id: 'prj_1');
       server.addTask(projectId: projectId, title: 'Покрасить забор');
 
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
       await tester.tap(find.text('Дача'));
       await settle(tester);
       expect(find.byType(ProjectScreen), findsOneWidget);
@@ -299,7 +299,7 @@ void main() {
 
       // Back on the board, and the card is gone from it.
       expect(find.byType(ProjectScreen), findsNothing);
-      expect(find.byType(BoardScreen), findsOneWidget);
+      expect(find.byType(ShellScreen), findsOneWidget);
       expect(find.text('Дача'), findsNothing);
       expect(
         server.projects.values.single['archivedAt'],
@@ -338,7 +338,7 @@ void main() {
       server.addProject(name: 'Дача', id: 'prj_1');
       server.addTask(projectId: 'prj_1', title: 'Покрасить забор');
 
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
       await tester.tap(find.text('Дача'));
       await settle(tester);
 
@@ -368,7 +368,7 @@ void main() {
       // board would show up here as an extra read.
       await tester.pageBack();
       await settle(tester);
-      expect(find.byType(BoardScreen), findsOneWidget);
+      expect(find.byType(ShellScreen), findsOneWidget);
       expect(find.text('Дача и баня'), findsOneWidget);
       expect(
         backend.requests.where((request) => request.path == '/board').length,
@@ -379,7 +379,7 @@ void main() {
     testWidgets('sends the name and nothing else', (tester) async {
       server.addProject(name: 'Дача', id: 'prj_1');
 
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
       await tester.tap(find.text('Дача'));
       await settle(tester);
       await tester.tap(find.byTooltip('Действия с проектом'));
@@ -508,10 +508,10 @@ void main() {
 
   group('creating a project from the board', () {
     testWidgets('names it, creates it and opens it', (tester) async {
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
       expect(find.text('Проектов пока нет'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Проект'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Проект'));
       await tester.pumpAndSettle();
 
       await tester.enterText(find.byType(TextField), '  Ремонт кухни  ');
@@ -527,9 +527,9 @@ void main() {
     });
 
     testWidgets('an empty name cannot be submitted', (tester) async {
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
 
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Проект'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Проект'));
       await tester.pumpAndSettle();
 
       expect(
@@ -556,10 +556,10 @@ void main() {
     testWidgets('a failed create says why and stays on the board', (
       tester,
     ) async {
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
       backend.alwaysFailToConnect();
 
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Проект'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Проект'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), 'Ремонт кухни');
       await tester.pumpAndSettle();

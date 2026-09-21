@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,7 +11,13 @@ import '../models/scope.dart';
 import '../providers/archive_providers.dart';
 import '../providers/project_providers.dart';
 import '../providers/scope_providers.dart';
+import '../navigation/app_routes.dart';
+import '../theme/app_theme.dart';
+import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/glance.dart';
+import '../widgets/mode_navigation.dart';
+import 'dictation_screen.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_list.dart';
 import '../widgets/project_name_dialog.dart';
@@ -105,7 +113,7 @@ class ProjectScreen extends ConsumerWidget {
   }
 }
 
-class _ProjectBody extends ConsumerWidget {
+class _ProjectBody extends ConsumerStatefulWidget {
   const _ProjectBody({
     required this.view,
     required this.projectId,
@@ -117,7 +125,31 @@ class _ProjectBody extends ConsumerWidget {
   final String? highlightTaskId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ProjectBody> createState() => _ProjectBodyState();
+}
+
+class _ProjectBodyState extends ConsumerState<_ProjectBody> {
+  /// Which of the two lists the narrow layout is showing.
+  ///
+  /// ## Why this replaced the tab strip (F12)
+  ///
+  /// The tabs were never about navigation -- they were a mechanism. The task
+  /// list is a `ReorderableListView` and it must *be* the scrollable in order
+  /// to scroll, to pull-to-refresh and to auto-scroll during a drag, which
+  /// rules out stacking it above the notes in one scroll view. A tab gave each
+  /// its own viewport.
+  ///
+  /// A boolean plus one header button gives each its own viewport too, and it
+  /// buys back the 48 px strip the tabs cost on every project screen -- on a
+  /// screen whose job is showing as many 56 px task rows as will fit. It also
+  /// matches `design/reference/Project.html`, which puts the notes behind an
+  /// icon in the header and gives the whole body to the tasks.
+  bool _notes = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final view = widget.view;
+    final projectId = widget.projectId;
     final notes = ref.watch(projectNotesProvider(projectId));
     final summary = ProjectSummary.of(
       BoardProject(project: view.project, tasks: view.tasks),
@@ -134,7 +166,7 @@ class _ProjectBody extends ConsumerWidget {
     final taskPane = TaskListView(
       projectId: projectId,
       tasks: view.tasks,
-      highlightTaskId: highlightTaskId,
+      highlightTaskId: widget.highlightTaskId,
     );
 
     final notePane = switch (notes) {
@@ -167,30 +199,125 @@ class _ProjectBody extends ConsumerWidget {
       );
     }
 
-    return DefaultTabController(
-      // Tasks first, and first is the default. That is also the right landing
-      // tab for F4's reminder deep link, which always names a *task* -- so
-      // `highlightTaskId` needs no special case here.
-      initialIndex: 0,
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(view.project.name),
-          bottom: TabBar(
-            tabs: <Widget>[
-              Tab(text: tasksLabel),
-              Tab(text: notesLabel),
-            ],
-          ),
-          actions: _projectActions(view),
-        ),
-        body: Column(
-          children: [
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _ProjectHeader(
+              view: view,
+              summary: summary,
+              notesOpen: _notes,
+              onToggleNotes: () => setState(() => _notes = !_notes),
+            ),
             if (view.isStale || view.refreshError != null)
               _ProjectBanner(view: view, projectId: projectId),
-            Expanded(child: TabBarView(children: <Widget>[taskPane, notePane])),
+            Expanded(child: _notes ? notePane : taskPane),
           ],
         ),
+      ),
+      // The same indigo square in the same corner as on every other
+      // sub-screen -- "микрофон живёт в одном месте". Here it dictates straight
+      // into this project, which is the one destination the screen can be sure
+      // of.
+      floatingActionButton: MicrophoneSquare(
+        tooltip: 'Задача голосом',
+        onPressed: () => unawaited(
+          AppRoutes.openDictation(
+            context,
+            destination: ProjectDestination(
+              projectId: projectId,
+              name: view.project.name,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The project's own header: back, its name, the shape of its task list, the
+/// notes, and the menu.
+///
+/// The dots and the counter are the same ones the planning list draws for this
+/// project, in the same order -- so arriving here continues the row that was
+/// tapped rather than describing the same project a second way.
+class _ProjectHeader extends StatelessWidget {
+  const _ProjectHeader({
+    required this.view,
+    required this.summary,
+    required this.notesOpen,
+    required this.onToggleNotes,
+  });
+
+  final ProjectReady view;
+  final ProjectSummary summary;
+  final bool notesOpen;
+  final VoidCallback onToggleNotes;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(4, 10, 8, 10),
+      child: Row(
+        children: <Widget>[
+          IconButton(
+            tooltip: 'К списку проектов',
+            onPressed: () => Navigator.of(context).pop(),
+            icon: const Icon(Icons.chevron_left, size: 26),
+            color: AppColors.ink,
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  view.project.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.screen,
+                ),
+                const SizedBox(height: 5),
+                Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: TaskDots(tasks: view.tasks, size: 9, maxDots: 10),
+                    ),
+                    const SizedBox(width: 4),
+                    TaskCount(
+                      done: summary.doneCount,
+                      total: summary.totalCount,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (view.isRefreshing)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          IconButton(
+            tooltip: notesOpen ? 'К задачам' : 'Заметки проекта',
+            onPressed: onToggleNotes,
+            icon: Icon(
+              notesOpen ? Icons.checklist : Icons.sticky_note_2_outlined,
+              size: 21,
+            ),
+            color: notesOpen ? AppColors.indigoLink : AppColors.muted,
+          ),
+          _ProjectMenu(project: view.project),
+        ],
       ),
     );
   }

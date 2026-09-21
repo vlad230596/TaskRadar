@@ -198,3 +198,43 @@ flutter:
           weight: 700
         - asset: assets/fonts/Roboto-Italic.ttf
           style: italic
+
+    # Golos Text and Unbounded, the two faces of the F12 interface language
+    # (`design/three-modes-spec.md`). Both are SIL OFL 1.1 and both carry full
+    # Cyrillic, which is the reason they were chosen over anything Material
+    # ships with.
+    #
+    # Bundled for exactly the reason Roboto above is bundled, and more strictly:
+    # the spec states it as a requirement -- "не тянуть из сети: приложение
+    # обязано открываться без неё". On the web build a font fetched from
+    # fonts.gstatic.com is refused by the site policy's `connect-src 'self'`
+    # and the result is not a fallback face but *no text at all*.
+    #
+    # These are the **static instances**, one file per weight, not the variable
+    # `GolosText[wght].ttf` that google/fonts publishes upstream. Flutter's
+    # `fonts:` block maps a file to a weight, so a single variable file declared
+    # four times would render four identical regulars -- the weight axis is not
+    # applied by the asset declaration. The statics come from the same place the
+    # browser would have got them (the Google Fonts CSS API, `v7`/`v12`), and
+    # the licences travel with them in assets/fonts/*-LICENSE.txt.
+    #
+    # Golos carries 400/500/600/700 because the interface uses all four:
+    # body, current task, buttons and chips, headings. Unbounded carries only
+    # 600/700 because it is used only for large numbers, mode names and screen
+    # titles -- it is ~340 KB per weight, five times Golos, and a weight nothing
+    # asks for would be 340 KB of nothing.
+    - family: Golos Text
+      fonts:
+        - asset: assets/fonts/GolosText-Regular.ttf
+        - asset: assets/fonts/GolosText-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/GolosText-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/GolosText-Bold.ttf
+          weight: 700
+    - family: Unbounded
+      fonts:
+        - asset: assets/fonts/Unbounded-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/Unbounded-Bold.ttf
+          weight: 700

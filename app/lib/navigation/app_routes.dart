@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../screens/archive_screen.dart';
+import '../screens/dictation_screen.dart';
 import '../screens/inbox_screen.dart';
 import '../screens/project_screen.dart';
 import '../screens/scopes_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/task_screen.dart';
 
 /// The app's routes, and the seam F4 plugs the notification deep link into.
 ///
@@ -53,6 +55,23 @@ class ProjectRouteArgs {
   final String? highlightTaskId;
 }
 
+/// Arguments for [AppRoutes.task].
+///
+/// Both ids, not the [Task] itself, for the same reason [ProjectRouteArgs]
+/// carries an id: the screen reads the live row out of
+/// `projectTasksProvider` and therefore follows an optimistic edit, a refresh,
+/// or a change made on another device, instead of drawing a copy taken at the
+/// moment of the tap.
+@immutable
+class TaskRouteArgs {
+  const TaskRouteArgs({required this.projectId, this.taskId});
+
+  final String projectId;
+
+  /// Null opens the screen as a draft -- see [TaskScreen.draft].
+  final String? taskId;
+}
+
 abstract final class AppRoutes {
   /// The project screen. See [ProjectRouteArgs].
   static const String project = '/project';
@@ -70,6 +89,12 @@ abstract final class AppRoutes {
 
   /// The sandbox (F8): capture a line without choosing a project, sort later.
   static const String inbox = '/inbox';
+
+  /// One task, large (F12). See [TaskRouteArgs].
+  static const String task = '/task';
+
+  /// The dictation screen (F12). Pushed from the one microphone there is.
+  static const String dictation = '/dictation';
 
   /// Hooked up as `MaterialApp.onGenerateRoute`.
   ///
@@ -102,6 +127,39 @@ abstract final class AppRoutes {
       return MaterialPageRoute<void>(
         settings: settings,
         builder: (_) => const ScopesScreen(),
+      );
+    }
+
+    if (settings.name == task) {
+      final args = settings.arguments;
+      if (args is! TaskRouteArgs) {
+        throw ArgumentError.value(
+          args,
+          'settings.arguments',
+          'route $task requires TaskRouteArgs',
+        );
+      }
+      return MaterialPageRoute<void>(
+        settings: settings,
+        builder: (_) => args.taskId == null
+            ? TaskScreen.draft(projectId: args.projectId)
+            : TaskScreen(projectId: args.projectId, taskId: args.taskId),
+      );
+    }
+
+    if (settings.name == dictation) {
+      final args = settings.arguments;
+      return MaterialPageRoute<String>(
+        settings: settings,
+        // Full screen, opaque, and deliberately **not** a dialog or a sheet:
+        // the whole point is that it owns the display, so nothing behind it can
+        // take a tap meant for "Готово".
+        fullscreenDialog: true,
+        builder: (_) => DictationScreen(
+          destination: args is DictationDestination
+              ? args
+              : const SandboxDestination(),
+        ),
       );
     }
 
@@ -158,6 +216,45 @@ abstract final class AppRoutes {
   /// Opens the sandbox (F8).
   static Future<void> openInbox(BuildContext context) =>
       Navigator.of(context).pushNamed<void>(inbox);
+
+  /// Opens a blank task screen, which creates the row when it is saved (F12).
+  static Future<void> openNewTask(
+    BuildContext context, {
+    required String projectId,
+  }) {
+    return Navigator.of(context).pushNamed<void>(
+      task,
+      arguments: TaskRouteArgs(projectId: projectId),
+    );
+  }
+
+  /// Opens one task, large (F12).
+  static Future<void> openTask(
+    BuildContext context, {
+    required String projectId,
+    required String taskId,
+  }) {
+    return Navigator.of(context).pushNamed<void>(
+      task,
+      arguments: TaskRouteArgs(projectId: projectId, taskId: taskId),
+    );
+  }
+
+  /// Opens the dictation screen (F12).
+  ///
+  /// Returns the recognised text only for a [FieldDestination] -- the case
+  /// where a field behind this screen is waiting for words. For the sandbox and
+  /// for a project the screen files the text itself and this answers null,
+  /// because there is nobody behind it to hand anything to.
+  static Future<String?> openDictation(
+    BuildContext context, {
+    DictationDestination destination = const SandboxDestination(),
+  }) {
+    return Navigator.of(context).pushNamed<String>(
+      dictation,
+      arguments: destination,
+    );
+  }
 
   /// Opens a project from outside the widget tree -- a notification tap, or
   /// anything else that starts at a platform channel.

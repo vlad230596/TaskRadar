@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'dictation.dart';
+import 'dictate_into.dart';
 
 /// Asks for a project's name -- the new one, or a corrected one.
 ///
@@ -102,26 +102,32 @@ class _NameDialogState extends State<_NameDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          TextField(
-            controller: _controller,
-            autofocus: true,
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.done,
-            decoration: InputDecoration(
-              hintText: widget.hint,
-              border: const OutlineInputBorder(),
-            ),
-            onChanged: (_) => setState(() {}),
-            onSubmitted: (_) => _submit(),
-          ),
-          DictatedField(
-            // `setState` as well as the insertion: the confirm button is
-            // disabled while the field is empty, and it reads the controller
-            // rather than listening to it, so dictated text has to say so.
-            onText: (text) {
-              appendDictated(_controller, text: text);
-              setState(() {});
-            },
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.done,
+                  decoration: InputDecoration(
+                    hintText: widget.hint,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (_) => _submit(),
+                ),
+              ),
+              DictateInto(
+                controller: _controller,
+                label: 'в название',
+                // `setState` as well as the insertion: the confirm button is
+                // disabled while the field is empty, and it reads the
+                // controller rather than listening to it, so dictated text has
+                // to say so.
+                onInserted: () => setState(() {}),
+              ),
+            ],
           ),
         ],
       ),

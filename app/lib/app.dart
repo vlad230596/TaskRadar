@@ -4,9 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'navigation/app_routes.dart';
 import 'notifications/reminder_lifecycle.dart';
 import 'providers/session_provider.dart';
-import 'screens/board_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/shell_screen.dart';
 import 'screens/splash_screen.dart';
+import 'theme/app_theme.dart';
 import 'widgets/capture_flush_scope.dart';
 import 'widgets/notification_link_scope.dart';
 
@@ -58,15 +59,14 @@ class TaskRadarApp extends ConsumerWidget {
         // until then; see `navigation/app_routes.dart`.
         navigatorKey: appNavigatorKey,
         onGenerateRoute: AppRoutes.onGenerateRoute,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
-        ),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.indigo,
-            brightness: Brightness.dark,
-          ),
-        ),
+        // F12: one theme, built from the palette in the app's own icon rather
+        // than generated from a seed, and deliberately the same in both slots.
+        // `ColorScheme.fromSeed(brightness: dark)` used to invent a second skin
+        // nobody had designed or looked at; see `theme/app_theme.dart`. The one
+        // dark surface in the product is the dictation screen, which is dark on
+        // purpose and always.
+        theme: buildAppTheme(),
+        darkTheme: buildAppTheme(),
         home: switch (session) {
           // F4: the board is wrapped rather than replaced. `NotificationLinkScope`
           // is where a reminder tap turns into a route, and it sits *inside* the
@@ -80,9 +80,14 @@ class TaskRadarApp extends ConsumerWidget {
           // sent from here when the app starts or comes back to the
           // foreground -- both of which need a session, which is exactly what
           // this branch means.
+          // F12: the board screen became `ShellScreen` -- the three modes, with
+          // planning as one of them. Everything around it is unchanged, which
+          // is the point: the shell sits *below* the session switch and *above*
+          // the router, so neither of the two rules this file is built on had
+          // to move.
           AsyncData(:final value) => value == SessionStatus.signedIn
               ? const CaptureFlushScope(
-                  child: NotificationLinkScope(child: BoardScreen()),
+                  child: NotificationLinkScope(child: ShellScreen()),
                 )
               : const LoginScreen(),
 

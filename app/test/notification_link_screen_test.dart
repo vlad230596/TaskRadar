@@ -5,7 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
-import 'package:taskradar/screens/board_screen.dart';
+import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/widgets/notification_link_scope.dart';
 
@@ -73,7 +73,7 @@ void main() {
         child: MaterialApp(
           navigatorKey: appNavigatorKey,
           onGenerateRoute: AppRoutes.onGenerateRoute,
-          home: const NotificationLinkScope(child: BoardScreen()),
+          home: const NotificationLinkScope(child: ShellScreen()),
         ),
       ),
     );
@@ -143,7 +143,7 @@ void main() {
 
     await tester.tap(find.text('Понятно'));
     await settle(tester);
-    expect(find.byType(BoardScreen), findsOneWidget);
+    expect(find.byType(ShellScreen), findsOneWidget);
   });
 
   testWidgets('no network is "нет связи", with a retry that works', (

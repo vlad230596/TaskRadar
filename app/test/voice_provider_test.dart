@@ -7,21 +7,31 @@ import 'package:taskradar/voice/voice_model.dart';
 
 import 'support/fake_voice.dart';
 
-/// The dictation state machine (F9), everywhere it ends somewhere other than
-/// text.
+/// The dictation state machine, everywhere it ends somewhere other than text.
 ///
 /// The happy path is one line; the reason this file exists is the rest of them.
 /// A microphone that fails silently is worse than no microphone: the user
 /// believes they wrote something down, which is the exact failure the sandbox
 /// exists to prevent.
+///
+/// ## What F12 added here
+///
+/// The `locking` group is gone, because there is no hold and therefore nothing
+/// to lock. In its place is `the first press`, which covers the three ordering
+/// defects that made the old version fail on the first press of a session --
+/// see the long note on `VoiceDictation`. Each of the three has a test that
+/// fails against the old implementation:
+///
+/// - the screen is told the microphone is opening **before** the platform is
+///   asked, so the answer can never arrive with nobody to receive it;
+/// - a dismissal during that window leaves the machine idle, so the *next*
+///   press is not refused as "already running";
+/// - a weight load that throws becomes a stated failure rather than an
+///   unhandled asynchronous error plus a second concurrent load.
 void main() {
   late FakeVoiceRecorder recorder;
   late FakeSpeechRecognizer recognizer;
   late List<String> spoken;
-
-  /// Stands in for the field a dictation belongs to. Opaque by design -- the
-  /// notifier never looks inside it, it only has to come back unchanged.
-  final Object field = Object();
 
   setUp(() {
     recorder = FakeVoiceRecorder();
@@ -43,18 +53,18 @@ void main() {
     addTearDown(container.dispose);
     // A listener, not just a read: the dictation provider is auto-disposed, and
     // without one it would be torn down (and its state reset to idle) between
-    // the press and the release -- which is also exactly what would happen on
-    // screen if nothing watched it.
+    // two calls -- which is also exactly what would happen on screen if nothing
+    // watched it.
     container.listen(voiceDictationProvider, (_, _) {});
     return container;
   }
 
-  /// Starts a dictation the way a field does, with somewhere for the text to go.
-  Future<bool> begin(VoiceDictation dictation, {bool locked = false}) =>
-      dictation.start(owner: field, sink: spoken.add, locked: locked);
+  /// Starts a dictation the way the screen does.
+  Future<bool> begin(VoiceDictation dictation) =>
+      dictation.start(sink: spoken.add);
 
   group('a phrase that works', () {
-    test('records, recognises, and delivers the text to the field', () async {
+    test('records, recognises, and delivers the text', () async {
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
 
@@ -66,19 +76,6 @@ void main() {
       expect(spoken, <String>['Купить кабель']);
       expect(container.read(voiceDictationProvider), isA<DictationIdle>());
       expect(recorder.recording, isFalse);
-    });
-
-    test('says which field it belongs to, from the first press', () async {
-      // Two microphones can be on one screen (a note has a title and a body),
-      // and only the one that was pressed may light up.
-      final container = makeContainer();
-      final dictation = container.read(voiceDictationProvider.notifier);
-
-      await begin(dictation);
-      expect(container.read(voiceDictationProvider).owner, same(field));
-
-      await dictation.finish();
-      expect(container.read(voiceDictationProvider).owner, isNull);
     });
 
     test('loads the model once across several phrases', () async {
@@ -97,8 +94,8 @@ void main() {
       expect(spoken, hasLength(3));
     });
 
-    test('a release during loading waits instead of failing', () async {
-      // The first press pays for the load, and a short phrase can easily end
+    test('a finish during loading waits instead of failing', () async {
+      // The first phrase pays for the load, and a short one can easily end
       // before the weights are in memory.
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
@@ -119,34 +116,122 @@ void main() {
       await pending;
       expect(spoken, <String>['Купить кабель']);
     });
-  });
 
-  group('locking', () {
-    test('a locked recording is the same recording, running alone', () async {
+    test('says so while the weights are still coming', () async {
+      // The audio is written from the first frame; only the recognition at the
+      // end needs the model. A screen that did not say this looked exactly like
+      // one that had hung.
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
+      final gate = Completer<void>();
+      recognizer.loadGate = gate;
 
       await begin(dictation);
       expect(
-        (container.read(voiceDictationProvider) as DictationRecording).locked,
+        (container.read(voiceDictationProvider) as DictationRecording)
+            .modelLoading,
+        isTrue,
+      );
+      expect(recorder.recording, isTrue);
+
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        (container.read(voiceDictationProvider) as DictationRecording)
+            .modelLoading,
         isFalse,
       );
+    });
+  });
 
-      dictation.lock();
+  group('the first press', () {
+    test('the screen is told it is starting before the platform is asked', () async {
+      // Defect (1). The old code did the permission check inside a press
+      // gesture and discarded the result if the gesture ended first -- which,
+      // on a first run, it always did: the system dialog takes the window
+      // focus, Flutter delivers a pointer cancel, and the half-started
+      // recording was cancelled the moment it appeared.
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+      final gate = Completer<void>();
+      recorder.permissionGate = gate;
 
-      final state = container.read(voiceDictationProvider) as DictationRecording;
-      expect(state.locked, isTrue);
-      // Locking is a change of who ends it, not a restart: the microphone was
-      // never touched.
-      expect(recorder.startCount, 1);
-      expect(recorder.stopCount, 0);
+      final starting = begin(dictation);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(container.read(voiceDictationProvider), isA<DictationStarting>());
+      expect(recorder.startCount, 0);
+
+      gate.complete();
+      expect(await starting, isTrue);
+      expect(container.read(voiceDictationProvider), isA<DictationRecording>());
     });
 
-    test('locking something that is not recording does nothing', () async {
+    test('dismissing during the prompt leaves it idle, not half-started', () async {
+      // ...and therefore the *next* press is not refused with "already
+      // running", which is the old bug wearing a different hat.
       final container = makeContainer();
-      container.read(voiceDictationProvider.notifier).lock();
+      final dictation = container.read(voiceDictationProvider.notifier);
+      final gate = Completer<void>();
+      recorder.permissionGate = gate;
+
+      unawaited(begin(dictation));
+      await Future<void>.delayed(Duration.zero);
+      await dictation.cancel();
 
       expect(container.read(voiceDictationProvider), isA<DictationIdle>());
+
+      gate.complete();
+      await Future<void>.delayed(Duration.zero);
+
+      recorder.permissionGate = null;
+      expect(await begin(dictation), isTrue);
+    });
+
+    test('it waits for the disk probe instead of guessing', () async {
+      // The third face of the same bug, and the only one that needs the *real*
+      // installation provider: `build` cannot answer synchronously (finding out
+      // whether 236 MB are on disk is a filesystem round trip), so it answers
+      // `VoiceModelUnknown` and corrects itself a moment later.
+      //
+      // A `start` that read that snapshot said "модель ещё не скачана" about a
+      // model sitting on the disk. Press again a second later and it worked --
+      // which is complaint number two, word for word.
+      final container = ProviderContainer(
+        overrides: [
+          voiceRecorderProvider.overrideWithValue(recorder),
+          speechRecognizerProvider.overrideWithValue(recognizer),
+          voiceModelStoreProvider.overrideWithValue(
+            FakeVoiceModelStore(present: true),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(voiceDictationProvider, (_, _) {});
+
+      // The state the first press actually finds.
+      expect(
+        container.read(voiceModelInstallationProvider),
+        isA<VoiceModelUnknown>(),
+      );
+
+      final dictation = container.read(voiceDictationProvider.notifier);
+      expect(await dictation.start(sink: spoken.add), isTrue);
+      expect(
+        container.read(voiceDictationProvider),
+        isA<DictationRecording>(),
+      );
+    });
+
+    test('starting twice is a no-op, not a second recording', () async {
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+
+      expect(await begin(dictation), isTrue);
+      expect(await begin(dictation), isFalse);
+
+      expect(recorder.startCount, 1);
+      expect(container.read(voiceDictationProvider), isA<DictationRecording>());
     });
   });
 
@@ -178,6 +263,28 @@ void main() {
       expect(recorder.startCount, 0);
     });
 
+    test('weights that will not load are said once, not loaded twice', () async {
+      // Defect (2). The old `_ensureLoaded` was fired with `unawaited` and
+      // cleared its dedupe handle in `whenComplete`, so a throwing `load`
+      // escaped into the zone *and* left `finish` free to start a second load
+      // of the same 236 MB. Both halves are asserted here: the failure is a
+      // state, and the count is one.
+      recognizer.loadFailure = StateError('onnxruntime said no');
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+
+      await begin(dictation);
+      await dictation.finish();
+
+      expect(spoken, isEmpty);
+      expect(recognizer.loadCount, 1);
+      expect(recognizer.transcribeCount, 0);
+
+      final state = container.read(voiceDictationProvider) as DictationFailed;
+      expect(state.message, contains('Модель'));
+      expect(state.retryable, isFalse);
+    });
+
     test('the recording never happened: reported, not left hanging', () async {
       recorder.recordingPath = null;
       final container = makeContainer();
@@ -191,7 +298,7 @@ void main() {
     });
 
     test('silence is "ничего не расслышали", not an error', () async {
-      // A button pressed by accident, or a phrase the model heard as nothing.
+      // A screen opened by accident, or a phrase the model heard as nothing.
       // The difference between "it is broken" and "say it again".
       recognizer.text = '';
       final container = makeContainer();
@@ -203,11 +310,11 @@ void main() {
       expect(spoken, isEmpty);
       final state = container.read(voiceDictationProvider) as DictationFailed;
       expect(state.message, contains('расслышали'));
-      // ...and this one *is* worth another go, from the same panel.
+      // ...and this one *is* worth another go, on the same screen.
       expect(state.retryable, isTrue);
     });
 
-    test('"ещё раз" reopens the microphone for the same field', () async {
+    test('"ещё раз" reopens the microphone into the same sink', () async {
       recognizer.text = '';
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
@@ -217,12 +324,7 @@ void main() {
       recognizer.text = 'Купить кабель';
       await dictation.retry();
 
-      final state = container.read(voiceDictationProvider);
-      expect(state, isA<DictationRecording>());
-      expect(state.owner, same(field));
-      // Locked, because the user got here by pressing a button rather than by
-      // holding one, and there is no finger on anything to release.
-      expect((state as DictationRecording).locked, isTrue);
+      expect(container.read(voiceDictationProvider), isA<DictationRecording>());
 
       await dictation.finish();
       expect(spoken, <String>['Купить кабель']);
@@ -240,7 +342,7 @@ void main() {
       expect(recorder.startCount, 0);
     });
 
-    test('a recogniser that throws does not leave the panel spinning', () async {
+    test('a recogniser that throws does not leave the screen spinning', () async {
       recognizer.transcribeFailure = StateError('onnxruntime said no');
       final container = makeContainer();
       final dictation = container.read(voiceDictationProvider.notifier);
@@ -299,14 +401,15 @@ void main() {
     });
   });
 
-  group('the button appears only with a model', () {
+  group('whether it can record at all', () {
     test('ready means yes', () async {
       expect(makeContainer().read(canDictateProvider), isTrue);
     });
 
     test('missing means no', () async {
-      // A microphone button that answers "сначала скачайте 163 МБ" is a button
-      // that lies about what it does.
+      // The *button* is still on screen -- it is a navigation item now, and one
+      // that disappears is a bar whose other items move. What it no longer does
+      // is record; the screen it opens says why.
       expect(makeContainer(modelReady: false).read(canDictateProvider), isFalse);
     });
   });

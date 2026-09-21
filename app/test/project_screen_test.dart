@@ -9,6 +9,8 @@ import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/note_editor_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
+import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
 import 'package:taskradar/widgets/note_list.dart';
 import 'package:taskradar/widgets/task_list.dart';
@@ -53,10 +55,11 @@ void main() {
 
   /// The composer inside whichever list is on screen.
   ///
-  /// `find.byType(TextField).first` is wrong here and wrong in a way that passes
-  /// half the time: `TabBarView` keeps both tabs' children in the tree, so the
-  /// "first" text field is the *tasks* composer even while the notes tab is
-  /// showing.
+  /// Only the notes list has one now: F12 removed the task composer, because a
+  /// one-line field was complaint number one. Adding a task opens
+  /// `TaskScreen.draft` instead. The finder stays scoped to a list rather than
+  /// using `find.byType(TextField).first`, because on the desktop both panes
+  /// are on screen at once.
   Finder composerIn(Type list) => find
       .descendant(of: find.byType(list), matching: find.byType(TextField))
       .first;
@@ -73,6 +76,7 @@ void main() {
           notificationGatewayProvider.overrideWithValue(gateway),
         ],
         child: MaterialApp(
+          theme: buildAppTheme(),
           home: ProjectScreen(
             projectId: projectId,
             highlightTaskId: highlightTaskId,
@@ -84,8 +88,30 @@ void main() {
     await settle(tester);
   }
 
+  /// Swaps the body to the notes.
+  ///
+  /// A header button rather than a tab since F12: the tabs cost a 48 px strip
+  /// on every project screen to answer a question the icon answers, on a screen
+  /// whose job is fitting as many 56 px task rows as it can.
   Future<void> openNotesTab(WidgetTester tester) async {
-    await tester.tap(find.textContaining('Заметки'));
+    await tester.tap(find.byTooltip('Заметки проекта'));
+    await settle(tester);
+  }
+
+  Future<void> openTasksTab(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('К задачам'));
+    await settle(tester);
+  }
+
+  /// Opens one task on its own screen -- which is where every edit lives now.
+  Future<void> openTask(WidgetTester tester, String title) async {
+    await tester.tap(find.text(title));
+    await settle(tester);
+  }
+
+  /// Opens the blank task screen from the end of the list.
+  Future<void> openDraft(WidgetTester tester) async {
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Задача'));
     await settle(tester);
   }
 
@@ -106,16 +132,18 @@ void main() {
       expect(find.text('Дача'), findsOneWidget);
     });
 
-    testWidgets('an empty project says so and still offers the composer', (
+    testWidgets('an empty project says so and still offers a way in', (
       tester,
     ) async {
       await pumpProject(tester);
 
       expect(find.text('Задач пока нет'), findsOneWidget);
-      // The composer is the point of the screen, so it is there even with
-      // nothing to show.
-      expect(find.widgetWithText(TextField, ''), findsWidgets);
-      expect(find.byTooltip('Добавить задачу'), findsOneWidget);
+      // No composer any more -- that one-line field was complaint number one.
+      // What is here instead is the button that opens a 252 px one, and the
+      // microphone, which skips the screen entirely.
+      expect(find.byType(TextField), findsNothing);
+      expect(find.widgetWithText(OutlinedButton, 'Задача'), findsOneWidget);
+      expect(find.byTooltip('Задача голосом'), findsOneWidget);
     });
 
     testWidgets('no network and no cache: an error, and it names the cause', (
@@ -243,11 +271,13 @@ void main() {
       ]);
     });
 
-    testWidgets('the tab counts done against total', (tester) async {
+    testWidgets('the header counts done against total', (tester) async {
       await pumpProject(tester);
 
-      // Same rule as the board card: blocked is not done.
-      expect(find.text('Задачи · 1/3'), findsOneWidget);
+      // Same rule as the planning row, and the same counter drawn the same way:
+      // arriving here continues the row that was tapped rather than describing
+      // the project a second way. Blocked is not done.
+      expect(find.text('1 / 3'), findsOneWidget);
     });
 
     testWidgets(
@@ -271,11 +301,13 @@ void main() {
     testWidgets('a due reminder is shown on the blocked task', (tester) async {
       await pumpProject(tester);
 
+      // The one row in the whole app that asks for action *today*, so it says
+      // so before it says the date.
       final today = DateTime.now();
-      final label =
-          'Напомнить · ${today.day.toString().padLeft(2, '0')}.'
+      final date =
+          '${today.day.toString().padLeft(2, '0')}.'
           '${today.month.toString().padLeft(2, '0')}';
-      expect(find.text(label), findsOneWidget);
+      expect(find.textContaining('пора · $date'), findsOneWidget);
     });
 
     testWidgets('highlightTaskId outlines the row F4 will point at', (
@@ -309,7 +341,13 @@ void main() {
       final handle = find.byIcon(Icons.drag_indicator).first;
       final gesture = await tester.startGesture(tester.getCenter(handle));
       await tester.pump(const Duration(milliseconds: 200));
-      await gesture.moveBy(const Offset(0, 90));
+      // In steps, and past the whole of the next row: `ReorderableListView`
+      // decides on the drop by where the pointer is relative to the item it is
+      // over, and one jump can land between two frames of the animation.
+      for (var i = 0; i < 4; i++) {
+        await gesture.moveBy(const Offset(0, 18));
+        await tester.pump(const Duration(milliseconds: 20));
+      }
       await tester.pump(const Duration(milliseconds: 50));
       await gesture.up();
       await settle(tester);
@@ -324,60 +362,82 @@ void main() {
   });
 
   group('writing', () {
-    testWidgets('typing a title and submitting creates the task', (
-      tester,
-    ) async {
+    testWidgets('the blank task screen creates the task', (tester) async {
       await pumpProject(tester);
 
-      await tester.enterText(composerIn(TaskListView), 'Позвонить прорабу');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await openDraft(tester);
+      // The field this screen exists for: 252 px of it, at 20 px type.
+      expect(find.byType(TaskScreen), findsOneWidget);
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.style?.fontSize, 20);
+      expect(field.maxLines, isNull);
+
+      await tester.enterText(find.byType(TextField), 'Позвонить прорабу');
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
 
-      expect(find.text('Позвонить прорабу'), findsOneWidget);
       expect(server.titlesInOrder(projectId), <String>['Позвонить прорабу']);
-      // The field is empty again, ready for the next one -- this is the fast
-      // path and it has to stay fast.
-      expect(
-        tester.widget<TextField>(composerIn(TaskListView)).controller?.text,
-        isEmpty,
-      );
+      // ...and it is back on the list, which is where the next one is added
+      // from.
+      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.text('Позвонить прорабу'), findsOneWidget);
     });
 
     testWidgets('a create with no network rolls back and says why', (
       tester,
     ) async {
       await pumpProject(tester);
+      await openDraft(tester);
       backend.alwaysFailToConnect();
 
-      await tester.enterText(composerIn(TaskListView), 'Не доедет');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.enterText(find.byType(TextField), 'Не доедет');
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
 
-      // Gone from the list...
-      expect(find.text('Не доедет'), findsNothing);
-      // ...and the reason is on screen, not swallowed. A silent revert reads as
-      // a UI bug and gets retried forever.
+      // Nothing was created...
+      expect(server.tasks, isEmpty);
+      // ...the reason is on screen, not swallowed -- a silent revert reads as a
+      // UI bug and gets retried forever...
       expect(
         find.textContaining('Не удалось добавить задачу.'),
         findsOneWidget,
       );
       expect(find.textContaining('Нет связи с сервером.'), findsOneWidget);
+      // ...and the words are still in the field. The old composer cleared
+      // before the await and relied on a snackbar to say the sentence was
+      // gone; a screen that is still open can simply keep it.
+      expect(find.byType(TaskScreen), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Не доедет',
+      );
     });
 
-    testWidgets('the status menu changes the status', (tester) async {
+    testWidgets('one tap on the circle marks the task done', (tester) async {
+      // The change that happens dozens of times a day costs one tap; the
+      // three-way choice, which happens once in a while, is behind a long
+      // press. The old row had it the other way round.
       server.addTask(projectId: projectId, title: 'Позвонить прорабу');
       await pumpProject(tester);
 
-      await tester.tap(find.byIcon(Icons.radio_button_unchecked));
-      await settle(tester);
-      expect(find.text('Готово'), findsOneWidget);
-
-      await tester.tap(find.text('Готово'));
+      await tester.tap(find.byTooltip('Отметить сделанной'));
       await settle(tester);
 
       expect(server.tasks.single['status'], 'done');
       // And only the status went over the wire.
       expect(server.patches.last.body, <String, dynamic>{'status': 'done'});
+    });
+
+    testWidgets('a long press offers the three-way choice', (tester) async {
+      server.addTask(projectId: projectId, title: 'Позвонить прорабу');
+      await pumpProject(tester);
+
+      await tester.longPress(find.byTooltip('Отметить сделанной'));
+      await settle(tester);
+
+      expect(find.text('В очереди'), findsOneWidget);
+      expect(find.text('Блокер'), findsOneWidget);
+      expect(find.text('Сделано'), findsOneWidget);
     });
 
     testWidgets('renaming sends only the title', (tester) async {
@@ -388,11 +448,9 @@ void main() {
       );
       await pumpProject(tester);
 
-      await tester.tap(find.text('Старое'));
-      await settle(tester);
-
-      await tester.enterText(find.byType(TextField).last, 'Новое');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await openTask(tester, 'Старое');
+      await tester.enterText(find.byType(TextField).first, 'Новое');
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
       expect(find.text('Новое'), findsOneWidget);
@@ -405,6 +463,7 @@ void main() {
     testWidgets('deleting asks first, then deletes', (tester) async {
       server.addTask(projectId: projectId, title: 'Лишняя');
       await pumpProject(tester);
+      await openTask(tester, 'Лишняя');
 
       await tester.tap(find.byTooltip('Удалить задачу'));
       await settle(tester);
@@ -421,34 +480,41 @@ void main() {
       await settle(tester);
 
       expect(server.tasks, isEmpty);
+      // ...and the screen the task was on is gone with it, rather than sitting
+      // there addressing a row that no longer exists.
+      expect(find.byType(TaskScreen), findsNothing);
       expect(find.text('Лишняя'), findsNothing);
     });
 
-    testWidgets('the description dialog can set and then clear it', (
-      tester,
-    ) async {
-      server.addTask(projectId: projectId, title: 'Задача');
+    testWidgets('the note can be set and then cleared', (tester) async {
+      // Folded away when empty, because the screen that matters is a 252 px
+      // field and three status buttons -- but reachable, because eleven
+      // existing tasks already carry a description and a screen that edited
+      // only the title would quietly make that text unreachable.
+      server.addTask(projectId: projectId, title: 'Вентилятор в туалете');
       await pumpProject(tester);
+      await openTask(tester, 'Вентилятор в туалете');
 
-      await tester.tap(find.text('описание'));
+      await tester.tap(find.text('Заметка к задаче'));
       await settle(tester);
-
       await tester.enterText(
         find.byType(TextField).last,
         'у Петра до вторника',
       );
-      await tester.tap(find.text('Сохранить'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
-      expect(find.text('у Петра до вторника'), findsOneWidget);
       expect(server.tasks.single['description'], 'у Петра до вторника');
 
       // Emptying the field means "erase", which has to reach the server as an
       // explicit null rather than as an omission.
-      await tester.tap(find.text('у Петра до вторника'));
-      await settle(tester);
+      await openTask(tester, 'Вентилятор в туалете');
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'у Петра до вторника',
+      );
       await tester.enterText(find.byType(TextField).last, '');
-      await tester.tap(find.text('Сохранить'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
       expect(server.patches.last.body.containsKey('description'), isTrue);
@@ -475,7 +541,6 @@ void main() {
       await pumpProject(tester);
       await openNotesTab(tester);
 
-      expect(find.text('Заметки · 1'), findsOneWidget);
       expect(find.text('Контекст'), findsOneWidget);
       expect(find.text('Что помнить'), findsOneWidget);
       expect(find.text('ключи у соседей'), findsOneWidget);
@@ -593,8 +658,7 @@ void main() {
       expect(find.text('Не удалось загрузить заметки'), findsOneWidget);
       expect(find.textContaining('Нет связи с сервером.'), findsOneWidget);
       // The tasks side is untouched.
-      await tester.tap(find.textContaining('Задачи'));
-      await settle(tester);
+      await openTasksTab(tester);
       expect(find.text('Задач пока нет'), findsOneWidget);
     });
   });
@@ -768,7 +832,7 @@ void main() {
 
       await pumpProject(tester);
 
-      expect(find.text('Задачи · 0/1'), findsOneWidget);
+      expect(find.text('0 / 1'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

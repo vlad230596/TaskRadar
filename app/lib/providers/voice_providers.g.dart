@@ -237,7 +237,7 @@ final class VoiceModelInstallationProvider
 }
 
 String _$voiceModelInstallationHash() =>
-    r'2bd913407db451d138c78daeb9f7db471e919677';
+    r'324736dafa7899dd10a22c5660a127e5656e8cb9';
 
 /// Is the speech model on this device, and getting it here if not.
 
@@ -259,31 +259,82 @@ abstract class _$VoiceModelInstallation extends $Notifier<VoiceModelState> {
   }
 }
 
-/// Whether the microphone button should be on screen at all.
+/// Whether a dictation can actually record anything right now.
 ///
-/// False while the model is missing on purpose: the button's job is to record,
-/// and one that answers "сначала скачайте 163 МБ" is a button that lies about
-/// what it does. Offering the download is Settings' job, and the composer says
-/// so in a line of text instead.
+/// ## What changed in F12, and why the microphone no longer disappears
+///
+/// This used to decide whether the microphone was **on screen at all**: no
+/// model, no button, on the reasoning that a button answering "сначала скачайте
+/// 163 МБ" lies about what it does.
+///
+/// That reasoning was right about the button and wrong about the layout, and
+/// the layout is now the problem. The microphone has become a fixed part of the
+/// shell -- the fourth item of the bottom bar, the bottom of the desktop rail,
+/// *"микрофон живёт в одном месте"* -- and a navigation item that is sometimes
+/// missing is a navigation bar whose other three items move. Worse, it is
+/// missing for the first few hundred milliseconds of **every cold start**,
+/// because [VoiceModelInstallation] answers `VoiceModelUnknown` until a disk
+/// probe comes back. A tap in that window landed on nothing at all, which is
+/// one of the two halves of "запускается не с первого раза".
+///
+/// So the button is always there, and this now answers a different question:
+/// may [VoiceDictation.start] open the microphone. A tap with no model still
+/// gets a truthful answer -- it just gets it on the dictation screen, in a
+/// sentence, next to the way to fix it, instead of by the control quietly not
+/// existing.
 
 @ProviderFor(canDictate)
 final canDictateProvider = CanDictateProvider._();
 
-/// Whether the microphone button should be on screen at all.
+/// Whether a dictation can actually record anything right now.
 ///
-/// False while the model is missing on purpose: the button's job is to record,
-/// and one that answers "сначала скачайте 163 МБ" is a button that lies about
-/// what it does. Offering the download is Settings' job, and the composer says
-/// so in a line of text instead.
+/// ## What changed in F12, and why the microphone no longer disappears
+///
+/// This used to decide whether the microphone was **on screen at all**: no
+/// model, no button, on the reasoning that a button answering "сначала скачайте
+/// 163 МБ" lies about what it does.
+///
+/// That reasoning was right about the button and wrong about the layout, and
+/// the layout is now the problem. The microphone has become a fixed part of the
+/// shell -- the fourth item of the bottom bar, the bottom of the desktop rail,
+/// *"микрофон живёт в одном месте"* -- and a navigation item that is sometimes
+/// missing is a navigation bar whose other three items move. Worse, it is
+/// missing for the first few hundred milliseconds of **every cold start**,
+/// because [VoiceModelInstallation] answers `VoiceModelUnknown` until a disk
+/// probe comes back. A tap in that window landed on nothing at all, which is
+/// one of the two halves of "запускается не с первого раза".
+///
+/// So the button is always there, and this now answers a different question:
+/// may [VoiceDictation.start] open the microphone. A tap with no model still
+/// gets a truthful answer -- it just gets it on the dictation screen, in a
+/// sentence, next to the way to fix it, instead of by the control quietly not
+/// existing.
 
 final class CanDictateProvider extends $FunctionalProvider<bool, bool, bool>
     with $Provider<bool> {
-  /// Whether the microphone button should be on screen at all.
+  /// Whether a dictation can actually record anything right now.
   ///
-  /// False while the model is missing on purpose: the button's job is to record,
-  /// and one that answers "сначала скачайте 163 МБ" is a button that lies about
-  /// what it does. Offering the download is Settings' job, and the composer says
-  /// so in a line of text instead.
+  /// ## What changed in F12, and why the microphone no longer disappears
+  ///
+  /// This used to decide whether the microphone was **on screen at all**: no
+  /// model, no button, on the reasoning that a button answering "сначала скачайте
+  /// 163 МБ" lies about what it does.
+  ///
+  /// That reasoning was right about the button and wrong about the layout, and
+  /// the layout is now the problem. The microphone has become a fixed part of the
+  /// shell -- the fourth item of the bottom bar, the bottom of the desktop rail,
+  /// *"микрофон живёт в одном месте"* -- and a navigation item that is sometimes
+  /// missing is a navigation bar whose other three items move. Worse, it is
+  /// missing for the first few hundred milliseconds of **every cold start**,
+  /// because [VoiceModelInstallation] answers `VoiceModelUnknown` until a disk
+  /// probe comes back. A tap in that window landed on nothing at all, which is
+  /// one of the two halves of "запускается не с первого раза".
+  ///
+  /// So the button is always there, and this now answers a different question:
+  /// may [VoiceDictation.start] open the microphone. A tap with no model still
+  /// gets a truthful answer -- it just gets it on the dictation screen, in a
+  /// sentence, next to the way to fix it, instead of by the control quietly not
+  /// existing.
   CanDictateProvider._()
     : super(
         from: null,
@@ -319,69 +370,147 @@ final class CanDictateProvider extends $FunctionalProvider<bool, bool, bool>
 
 String _$canDictateHash() => r'50b1c45973d088a817e8ce12084a9e03bfdefc76';
 
-/// The dictation gesture: start, speak, stop, get text.
+/// The dictation: start, speak, stop, get text.
 ///
 /// ## Why this is a state machine and not three awaits in the widget
 ///
 /// Because every step of it can end somewhere other than "text": permission
-/// refused, a release while the model is still loading, a phrase the recogniser
-/// heard as silence, a recording that ran into the ceiling. Each of those needs
-/// a different thing said to the user, and a widget holding that in local state
-/// would end up with the same machine, spelled less clearly and untested.
+/// refused, a model still loading when the recording ends, a phrase the
+/// recogniser heard as silence, a recording that ran into the ceiling. Each of
+/// those needs a different thing said to the user, and a widget holding that in
+/// local state would end up with the same machine, spelled less clearly and
+/// untested.
+///
+/// ## What F12 took out: the gesture
+///
+/// There used to be two gestures on one button -- hold to record, tap to
+/// "lock" a recording that carries on by itself -- and a 350 ms timer deciding
+/// which one had happened. That was the second half of complaint number two
+/// ("непонятно, тап это или удержание"), and it is gone entirely. There is one
+/// gesture: a tap, which opens a screen on which recording has **already
+/// started**. Nothing here knows about presses any more.
+///
+/// ## The three ordering defects this rework fixes
+///
+/// All three were real, all three could produce "запускается не с первого
+/// раза", and none of them would have been fixed by changing the gesture alone:
+///
+/// 1. **The permission dialog raced the gesture.** See [DictationStarting].
+///    Fixed by there being no gesture to race: the screen is already open, and
+///    `start` is called by a widget that stays mounted for the whole answer.
+/// 2. **A failing weight load became an unhandled asynchronous error** and was
+///    then retried concurrently. `_ensureLoaded` was fired with `unawaited` and
+///    cleared its own dedupe handle in `whenComplete`, so a `load()` that threw
+///    escaped into the zone *and* left [finish] free to start a second load of
+///    the same 236 MB. See [_ensureLoaded].
+/// 3. **`state` was assigned after `await` with no liveness check.** Closing
+///    the screen while the permission dialog was up disposed this notifier, and
+///    the assignment that followed threw out of a future nobody was holding.
+///    Every await below is now followed by a `ref.mounted` check.
 ///
 /// ## Why the text is delivered through a sink instead of returned
 ///
-/// It used to be returned to the widget that held the button, which worked
-/// while the only way to end a dictation was to lift the finger off that
-/// button. It no longer is: a locked recording is ended from the panel, which
-/// is a different widget and deliberately knows nothing about which field the
-/// text belongs in. So the field hands its own insertion callback over when the
-/// dictation starts, and whoever ends it -- the button, the panel, the ceiling
-/// -- delivers to the same place.
+/// Because the thing that ends a dictation is not the thing that started it:
+/// "Готово", a tap on the text area, and [ceiling] all finish the same
+/// recording, and only the opener knows where the words belong. The opener
+/// hands its own insertion callback over, and whoever ends it delivers to the
+/// same place.
 
 @ProviderFor(VoiceDictation)
 final voiceDictationProvider = VoiceDictationProvider._();
 
-/// The dictation gesture: start, speak, stop, get text.
+/// The dictation: start, speak, stop, get text.
 ///
 /// ## Why this is a state machine and not three awaits in the widget
 ///
 /// Because every step of it can end somewhere other than "text": permission
-/// refused, a release while the model is still loading, a phrase the recogniser
-/// heard as silence, a recording that ran into the ceiling. Each of those needs
-/// a different thing said to the user, and a widget holding that in local state
-/// would end up with the same machine, spelled less clearly and untested.
+/// refused, a model still loading when the recording ends, a phrase the
+/// recogniser heard as silence, a recording that ran into the ceiling. Each of
+/// those needs a different thing said to the user, and a widget holding that in
+/// local state would end up with the same machine, spelled less clearly and
+/// untested.
+///
+/// ## What F12 took out: the gesture
+///
+/// There used to be two gestures on one button -- hold to record, tap to
+/// "lock" a recording that carries on by itself -- and a 350 ms timer deciding
+/// which one had happened. That was the second half of complaint number two
+/// ("непонятно, тап это или удержание"), and it is gone entirely. There is one
+/// gesture: a tap, which opens a screen on which recording has **already
+/// started**. Nothing here knows about presses any more.
+///
+/// ## The three ordering defects this rework fixes
+///
+/// All three were real, all three could produce "запускается не с первого
+/// раза", and none of them would have been fixed by changing the gesture alone:
+///
+/// 1. **The permission dialog raced the gesture.** See [DictationStarting].
+///    Fixed by there being no gesture to race: the screen is already open, and
+///    `start` is called by a widget that stays mounted for the whole answer.
+/// 2. **A failing weight load became an unhandled asynchronous error** and was
+///    then retried concurrently. `_ensureLoaded` was fired with `unawaited` and
+///    cleared its own dedupe handle in `whenComplete`, so a `load()` that threw
+///    escaped into the zone *and* left [finish] free to start a second load of
+///    the same 236 MB. See [_ensureLoaded].
+/// 3. **`state` was assigned after `await` with no liveness check.** Closing
+///    the screen while the permission dialog was up disposed this notifier, and
+///    the assignment that followed threw out of a future nobody was holding.
+///    Every await below is now followed by a `ref.mounted` check.
 ///
 /// ## Why the text is delivered through a sink instead of returned
 ///
-/// It used to be returned to the widget that held the button, which worked
-/// while the only way to end a dictation was to lift the finger off that
-/// button. It no longer is: a locked recording is ended from the panel, which
-/// is a different widget and deliberately knows nothing about which field the
-/// text belongs in. So the field hands its own insertion callback over when the
-/// dictation starts, and whoever ends it -- the button, the panel, the ceiling
-/// -- delivers to the same place.
+/// Because the thing that ends a dictation is not the thing that started it:
+/// "Готово", a tap on the text area, and [ceiling] all finish the same
+/// recording, and only the opener knows where the words belong. The opener
+/// hands its own insertion callback over, and whoever ends it delivers to the
+/// same place.
 final class VoiceDictationProvider
     extends $NotifierProvider<VoiceDictation, DictationState> {
-  /// The dictation gesture: start, speak, stop, get text.
+  /// The dictation: start, speak, stop, get text.
   ///
   /// ## Why this is a state machine and not three awaits in the widget
   ///
   /// Because every step of it can end somewhere other than "text": permission
-  /// refused, a release while the model is still loading, a phrase the recogniser
-  /// heard as silence, a recording that ran into the ceiling. Each of those needs
-  /// a different thing said to the user, and a widget holding that in local state
-  /// would end up with the same machine, spelled less clearly and untested.
+  /// refused, a model still loading when the recording ends, a phrase the
+  /// recogniser heard as silence, a recording that ran into the ceiling. Each of
+  /// those needs a different thing said to the user, and a widget holding that in
+  /// local state would end up with the same machine, spelled less clearly and
+  /// untested.
+  ///
+  /// ## What F12 took out: the gesture
+  ///
+  /// There used to be two gestures on one button -- hold to record, tap to
+  /// "lock" a recording that carries on by itself -- and a 350 ms timer deciding
+  /// which one had happened. That was the second half of complaint number two
+  /// ("непонятно, тап это или удержание"), and it is gone entirely. There is one
+  /// gesture: a tap, which opens a screen on which recording has **already
+  /// started**. Nothing here knows about presses any more.
+  ///
+  /// ## The three ordering defects this rework fixes
+  ///
+  /// All three were real, all three could produce "запускается не с первого
+  /// раза", and none of them would have been fixed by changing the gesture alone:
+  ///
+  /// 1. **The permission dialog raced the gesture.** See [DictationStarting].
+  ///    Fixed by there being no gesture to race: the screen is already open, and
+  ///    `start` is called by a widget that stays mounted for the whole answer.
+  /// 2. **A failing weight load became an unhandled asynchronous error** and was
+  ///    then retried concurrently. `_ensureLoaded` was fired with `unawaited` and
+  ///    cleared its own dedupe handle in `whenComplete`, so a `load()` that threw
+  ///    escaped into the zone *and* left [finish] free to start a second load of
+  ///    the same 236 MB. See [_ensureLoaded].
+  /// 3. **`state` was assigned after `await` with no liveness check.** Closing
+  ///    the screen while the permission dialog was up disposed this notifier, and
+  ///    the assignment that followed threw out of a future nobody was holding.
+  ///    Every await below is now followed by a `ref.mounted` check.
   ///
   /// ## Why the text is delivered through a sink instead of returned
   ///
-  /// It used to be returned to the widget that held the button, which worked
-  /// while the only way to end a dictation was to lift the finger off that
-  /// button. It no longer is: a locked recording is ended from the panel, which
-  /// is a different widget and deliberately knows nothing about which field the
-  /// text belongs in. So the field hands its own insertion callback over when the
-  /// dictation starts, and whoever ends it -- the button, the panel, the ceiling
-  /// -- delivers to the same place.
+  /// Because the thing that ends a dictation is not the thing that started it:
+  /// "Готово", a tap on the text area, and [ceiling] all finish the same
+  /// recording, and only the opener knows where the words belong. The opener
+  /// hands its own insertion callback over, and whoever ends it delivers to the
+  /// same place.
   VoiceDictationProvider._()
     : super(
         from: null,
@@ -409,27 +538,53 @@ final class VoiceDictationProvider
   }
 }
 
-String _$voiceDictationHash() => r'c07cbbd01ce067edbb9dd06b64494b5c7d73168f';
+String _$voiceDictationHash() => r'c74c50670fbfd7937bdae2cddb0014b072ccaeaa';
 
-/// The dictation gesture: start, speak, stop, get text.
+/// The dictation: start, speak, stop, get text.
 ///
 /// ## Why this is a state machine and not three awaits in the widget
 ///
 /// Because every step of it can end somewhere other than "text": permission
-/// refused, a release while the model is still loading, a phrase the recogniser
-/// heard as silence, a recording that ran into the ceiling. Each of those needs
-/// a different thing said to the user, and a widget holding that in local state
-/// would end up with the same machine, spelled less clearly and untested.
+/// refused, a model still loading when the recording ends, a phrase the
+/// recogniser heard as silence, a recording that ran into the ceiling. Each of
+/// those needs a different thing said to the user, and a widget holding that in
+/// local state would end up with the same machine, spelled less clearly and
+/// untested.
+///
+/// ## What F12 took out: the gesture
+///
+/// There used to be two gestures on one button -- hold to record, tap to
+/// "lock" a recording that carries on by itself -- and a 350 ms timer deciding
+/// which one had happened. That was the second half of complaint number two
+/// ("непонятно, тап это или удержание"), and it is gone entirely. There is one
+/// gesture: a tap, which opens a screen on which recording has **already
+/// started**. Nothing here knows about presses any more.
+///
+/// ## The three ordering defects this rework fixes
+///
+/// All three were real, all three could produce "запускается не с первого
+/// раза", and none of them would have been fixed by changing the gesture alone:
+///
+/// 1. **The permission dialog raced the gesture.** See [DictationStarting].
+///    Fixed by there being no gesture to race: the screen is already open, and
+///    `start` is called by a widget that stays mounted for the whole answer.
+/// 2. **A failing weight load became an unhandled asynchronous error** and was
+///    then retried concurrently. `_ensureLoaded` was fired with `unawaited` and
+///    cleared its own dedupe handle in `whenComplete`, so a `load()` that threw
+///    escaped into the zone *and* left [finish] free to start a second load of
+///    the same 236 MB. See [_ensureLoaded].
+/// 3. **`state` was assigned after `await` with no liveness check.** Closing
+///    the screen while the permission dialog was up disposed this notifier, and
+///    the assignment that followed threw out of a future nobody was holding.
+///    Every await below is now followed by a `ref.mounted` check.
 ///
 /// ## Why the text is delivered through a sink instead of returned
 ///
-/// It used to be returned to the widget that held the button, which worked
-/// while the only way to end a dictation was to lift the finger off that
-/// button. It no longer is: a locked recording is ended from the panel, which
-/// is a different widget and deliberately knows nothing about which field the
-/// text belongs in. So the field hands its own insertion callback over when the
-/// dictation starts, and whoever ends it -- the button, the panel, the ceiling
-/// -- delivers to the same place.
+/// Because the thing that ends a dictation is not the thing that started it:
+/// "Готово", a tap on the text area, and [ceiling] all finish the same
+/// recording, and only the opener knows where the words belong. The opener
+/// hands its own insertion callback over, and whoever ends it delivers to the
+/// same place.
 
 abstract class _$VoiceDictation extends $Notifier<DictationState> {
   DictationState build();

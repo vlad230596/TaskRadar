@@ -52,6 +52,30 @@ abstract interface class SettingsStore {
 
   /// Remembers which scope the board is showing. May throw.
   Future<void> writeSelectedScopeId(String scopeId);
+
+  /// The mode the app was in when it was last closed (F12), as the mode's own
+  /// wire name -- `plan` / `work` / `history`.
+  ///
+  /// A **string**, not the enum, for the same reason the scope is an id: this
+  /// file must not know what a mode is, and a stored `index` would silently
+  /// point at a different mode the day a fourth one is inserted anywhere but
+  /// the end. Null, or a name this build does not recognise, reads as "нечего
+  /// восстанавливать" and lands on planning.
+  Future<String?> readAppMode();
+
+  /// Remembers the mode. May throw.
+  Future<void> writeAppMode(String mode);
+
+  /// How the planning mode was drawing projects -- `list` or `tiles` (F12).
+  ///
+  /// Remembered because the spec makes the two **equal**, not a default plus a
+  /// novelty: someone who prefers tiles prefers them every morning, and a
+  /// toggle that resets on every launch is a toggle that says the other view is
+  /// the real one.
+  Future<String?> readPlanLayout();
+
+  /// Remembers the planning layout. May throw.
+  Future<void> writePlanLayout(String layout);
 }
 
 /// [SettingsStore] on top of `shared_preferences`.
@@ -69,7 +93,35 @@ class PreferencesSettingsStore implements SettingsStore {
   /// wherever it is resolved, which is the same answer a missing key gives.
   static const String selectedScopeKey = 'board.scopeId';
 
+  /// F12. The three-mode shell's last mode and the planning layout. Both are
+  /// wire names rather than enum indices -- see the interface.
+  static const String appModeKey = 'shell.mode';
+  static const String planLayoutKey = 'plan.layout';
+
   final Future<SharedPreferences> Function() _preferences;
+
+  /// The three string preferences all behave identically: a missing key, an
+  /// empty value and an unreadable platform channel are the same answer
+  /// ("nothing saved"), because every caller resolves that answer against what
+  /// actually exists and falls back to a default. Written once rather than
+  /// three times so a fourth preference cannot accidentally get a fourth
+  /// behaviour.
+  Future<String?> _readString(String key) async {
+    try {
+      final preferences = await _preferences();
+      final value = preferences.getString(key);
+      if (value == null || value.isEmpty) return null;
+      return value;
+    } catch (error) {
+      debugPrint('Could not read $key: $error');
+      return null;
+    }
+  }
+
+  Future<void> _writeString(String key, String value) async {
+    final preferences = await _preferences();
+    await preferences.setString(key, value);
+  }
 
   @override
   Future<ReminderTime?> readReminderTime() async {
@@ -106,26 +158,27 @@ class PreferencesSettingsStore implements SettingsStore {
     await preferences.setInt(minuteKey, time.minute);
   }
 
+  /// An empty string is not an id, and treating it as one would send the board
+  /// looking for a scope that cannot exist. A missing platform channel costs
+  /// the default (the first scope), not a crash -- same contract as the
+  /// reminder hour.
   @override
-  Future<String?> readSelectedScopeId() async {
-    try {
-      final preferences = await _preferences();
-      final value = preferences.getString(selectedScopeKey);
-      // An empty string is not an id, and treating it as one would send the
-      // board looking for a scope that cannot exist.
-      if (value == null || value.isEmpty) return null;
-      return value;
-    } catch (error) {
-      // Same contract as the reminder hour: a missing platform channel costs
-      // the default (the first scope), not a crash.
-      debugPrint('Could not read the selected scope: $error');
-      return null;
-    }
-  }
+  Future<String?> readSelectedScopeId() => _readString(selectedScopeKey);
 
   @override
-  Future<void> writeSelectedScopeId(String scopeId) async {
-    final preferences = await _preferences();
-    await preferences.setString(selectedScopeKey, scopeId);
-  }
+  Future<void> writeSelectedScopeId(String scopeId) =>
+      _writeString(selectedScopeKey, scopeId);
+
+  @override
+  Future<String?> readAppMode() => _readString(appModeKey);
+
+  @override
+  Future<void> writeAppMode(String mode) => _writeString(appModeKey, mode);
+
+  @override
+  Future<String?> readPlanLayout() => _readString(planLayoutKey);
+
+  @override
+  Future<void> writePlanLayout(String layout) =>
+      _writeString(planLayoutKey, layout);
 }

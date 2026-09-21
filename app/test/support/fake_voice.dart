@@ -26,6 +26,12 @@ class FakeVoiceRecorder implements VoiceRecorder {
   /// Set to throw out of [start].
   Object? startFailure;
 
+  /// Holds [ensurePermission] open, so a test can stand exactly where the
+  /// Android permission dialog stands: the screen is up, the microphone is not
+  /// open yet, and the user may do something else in the meantime. That window
+  /// is where the old "запускается не с первого раза" lived.
+  Completer<void>? permissionGate;
+
   bool recording = false;
   int startCount = 0;
   int stopCount = 0;
@@ -33,7 +39,11 @@ class FakeVoiceRecorder implements VoiceRecorder {
   int disposeCount = 0;
 
   @override
-  Future<bool> ensurePermission() async => permitted;
+  Future<bool> ensurePermission() async {
+    final gate = permissionGate;
+    if (gate != null) await gate.future;
+    return permitted;
+  }
 
   @override
   Future<String> start() async {
@@ -79,6 +89,10 @@ class FakeSpeechRecognizer implements SpeechRecognizer {
   /// Set to throw out of [transcribe].
   Object? transcribeFailure;
 
+  /// Set to throw out of [load] -- a corrupt download, a file the archive did
+  /// not contain, an ONNX runtime that refuses the model.
+  Object? loadFailure;
+
   /// Holds [load] open, so a test can release the button while the weights are
   /// still being read.
   Completer<void>? loadGate;
@@ -96,6 +110,8 @@ class FakeSpeechRecognizer implements SpeechRecognizer {
     loadCount++;
     final gate = loadGate;
     if (gate != null) await gate.future;
+    final failure = loadFailure;
+    if (failure != null) throw failure;
     _loaded = true;
   }
 

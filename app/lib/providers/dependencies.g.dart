@@ -89,6 +89,11 @@ String _$tokenStorageHash() => r'a42816fb1cf5af728e44ff5c48bfcaf5dc6b12aa';
 /// `path_provider` platform channel, so it must not be re-created per screen,
 /// and tests must be able to replace it with something that does not touch the
 /// filesystem.
+///
+/// The browser gets a different implementation rather than a disabled one: the
+/// file store's `path_provider` channel does not exist there at all. See
+/// `../storage/web_stores.dart` for what the two have in common and where they
+/// honestly differ.
 
 @ProviderFor(boardSnapshotStore)
 final boardSnapshotStoreProvider = BoardSnapshotStoreProvider._();
@@ -98,6 +103,11 @@ final boardSnapshotStoreProvider = BoardSnapshotStoreProvider._();
 /// `path_provider` platform channel, so it must not be re-created per screen,
 /// and tests must be able to replace it with something that does not touch the
 /// filesystem.
+///
+/// The browser gets a different implementation rather than a disabled one: the
+/// file store's `path_provider` channel does not exist there at all. See
+/// `../storage/web_stores.dart` for what the two have in common and where they
+/// honestly differ.
 
 final class BoardSnapshotStoreProvider
     extends
@@ -112,6 +122,11 @@ final class BoardSnapshotStoreProvider
   /// `path_provider` platform channel, so it must not be re-created per screen,
   /// and tests must be able to replace it with something that does not touch the
   /// filesystem.
+  ///
+  /// The browser gets a different implementation rather than a disabled one: the
+  /// file store's `path_provider` channel does not exist there at all. See
+  /// `../storage/web_stores.dart` for what the two have in common and where they
+  /// honestly differ.
   BoardSnapshotStoreProvider._()
     : super(
         from: null,
@@ -147,7 +162,7 @@ final class BoardSnapshotStoreProvider
 }
 
 String _$boardSnapshotStoreHash() =>
-    r'16db2ea1889e40d5ab88ca0b364e8184c0f3bcba';
+    r'1efd1e4aadfdfafcaa1d4653fca34b2d35efb9cb';
 
 /// The offline capture queue (F8.1): lines written down on this device that
 /// the server has not acknowledged yet.
@@ -157,6 +172,11 @@ String _$boardSnapshotStoreHash() =>
 /// to it: this file is the only copy of a line captured with no network, so a
 /// second instance writing the same path from another provider scope would be a
 /// way to lose one.
+///
+/// On web this is the `localStorage`-backed twin, and the substitution is
+/// load-bearing rather than tidy: the file store throws on every write in a
+/// browser, and this store's writes are the ones the capture screen turns into
+/// "не удалось записать".
 
 @ProviderFor(captureQueueStore)
 final captureQueueStoreProvider = CaptureQueueStoreProvider._();
@@ -169,6 +189,11 @@ final captureQueueStoreProvider = CaptureQueueStoreProvider._();
 /// to it: this file is the only copy of a line captured with no network, so a
 /// second instance writing the same path from another provider scope would be a
 /// way to lose one.
+///
+/// On web this is the `localStorage`-backed twin, and the substitution is
+/// load-bearing rather than tidy: the file store throws on every write in a
+/// browser, and this store's writes are the ones the capture screen turns into
+/// "не удалось записать".
 
 final class CaptureQueueStoreProvider
     extends
@@ -186,6 +211,11 @@ final class CaptureQueueStoreProvider
   /// to it: this file is the only copy of a line captured with no network, so a
   /// second instance writing the same path from another provider scope would be a
   /// way to lose one.
+  ///
+  /// On web this is the `localStorage`-backed twin, and the substitution is
+  /// load-bearing rather than tidy: the file store throws on every write in a
+  /// browser, and this store's writes are the ones the capture screen turns into
+  /// "не удалось записать".
   CaptureQueueStoreProvider._()
     : super(
         from: null,
@@ -220,7 +250,7 @@ final class CaptureQueueStoreProvider
   }
 }
 
-String _$captureQueueStoreHash() => r'db636038bbc49fbc07bd37d7a684fbe011c6ad93';
+String _$captureQueueStoreHash() => r'b16af3d3fe18d9dc421b237c7c7b4a196d1f51f7';
 
 /// Persisted user preferences (F4): currently the reminder hour.
 ///

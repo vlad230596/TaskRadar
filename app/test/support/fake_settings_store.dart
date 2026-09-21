@@ -19,12 +19,22 @@ class FakeSettingsStore implements SettingsStore {
   /// which is what a first launch looks like.
   String? selectedScopeId;
 
-  /// When set, [writeReminderTime] throws it.
+  /// What [readAppMode] returns (F12). Null is a first launch, which lands on
+  /// planning.
+  String? appMode;
+
+  /// What [readPlanLayout] returns (F12). Null is a first launch, which is the
+  /// list.
+  String? planLayout;
+
+  /// When set, every write throws it.
   Object? writeFailure;
 
   int readCount = 0;
   final List<ReminderTime> writes = <ReminderTime>[];
   final List<String> scopeWrites = <String>[];
+  final List<String> modeWrites = <String>[];
+  final List<String> layoutWrites = <String>[];
 
   @override
   Future<ReminderTime?> readReminderTime() async {
@@ -52,5 +62,33 @@ class FakeSettingsStore implements SettingsStore {
     if (failure != null) throw failure;
     scopeWrites.add(scopeId);
     selectedScopeId = scopeId;
+  }
+
+  @override
+  Future<String?> readAppMode() async {
+    readCount++;
+    return appMode;
+  }
+
+  @override
+  Future<void> writeAppMode(String mode) async {
+    final failure = writeFailure;
+    if (failure != null) throw failure;
+    modeWrites.add(mode);
+    appMode = mode;
+  }
+
+  @override
+  Future<String?> readPlanLayout() async {
+    readCount++;
+    return planLayout;
+  }
+
+  @override
+  Future<void> writePlanLayout(String layout) async {
+    final failure = writeFailure;
+    if (failure != null) throw failure;
+    layoutWrites.add(layout);
+    planLayout = layout;
   }
 }

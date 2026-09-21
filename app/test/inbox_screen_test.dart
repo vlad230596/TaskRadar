@@ -7,27 +7,36 @@ import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
-import 'package:taskradar/screens/board_screen.dart';
+import 'package:taskradar/screens/dictation_screen.dart';
 import 'package:taskradar/screens/inbox_screen.dart';
+import 'package:taskradar/screens/shell_screen.dart';
+import 'package:taskradar/theme/app_theme.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_capture_queue_store.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_project_backend.dart';
-import 'support/fake_voice.dart';
 import 'support/fake_settings_store.dart';
+import 'support/fake_voice.dart';
 
-/// The sandbox screen (F8), as F8.1 left it: capture at the top, sorting
-/// underneath, and both working with no network.
+/// The sandbox screen, as F12 redrew it: the line you are working on is open
+/// and editable, and the projects are buttons under it.
 ///
-/// The assertions worth naming: **a line captured with no signal appears
-/// immediately, marked as unsent**, and **a sandbox that could not be loaded
-/// still shows what this device has written down**. F8's rule -- the text stays
-/// in the field until the server has it -- was the right one when there was
-/// nowhere else to put the line, and the queue replaced it: the field now
-/// clears as soon as the line is on disk, and only a failed *disk* write keeps
-/// it.
+/// ## What changed, and why these tests changed with it
+///
+/// F8 put a one-line composer at the top and a `ListTile` per line under it,
+/// each with a four-item overflow menu. That screen carried two of the three
+/// complaints this redesign answers: the field showed two or three words of a
+/// dictated sentence, and filing a line cost a menu, a dialog and a scroll
+/// through every project.
+///
+/// So the composer is gone -- capture is the microphone, which opens the
+/// dictation screen -- and the menu is gone: one tap on a project's name files
+/// the line. What has **not** changed is the queue (F8.1), and the assertions
+/// about it are word for word the ones F8.1 wrote: a line captured with no
+/// signal appears immediately, marked as unsent, and a sandbox that could not be
+/// loaded still shows what this device has written down.
 void main() {
   late FakeBackend backend;
   late FakeProjectBackend server;
@@ -79,6 +88,7 @@ void main() {
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
         ],
         child: MaterialApp(
+          theme: buildAppTheme(),
           home: home ?? const InboxScreen(),
           onGenerateRoute: AppRoutes.onGenerateRoute,
         ),
@@ -87,46 +97,200 @@ void main() {
     await settle(tester);
   }
 
-  Future<void> capture(WidgetTester tester, String text) async {
-    await tester.enterText(find.byType(TextField).first, text);
-    await tester.pump();
-    await tester.tap(find.byTooltip('Записать'));
+  /// Captures a line the only way the screen offers: the microphone, the
+  /// dictation screen, and two presses of "Готово" -- one to stop the phrase,
+  /// one to commit it.
+  Future<void> dictate(WidgetTester tester, String heard) async {
+    recogniser.text = heard;
+    await tester.tap(find.byTooltip('Записать ещё'));
+    await settle(tester);
+
+    await tester.tap(find.text('Готово'));
+    await settle(tester);
+    await tester.tap(find.text('Готово'));
     await settle(tester);
   }
 
-  group('capture', () {
+  /// The field of whichever sandbox line is open for editing.
+  String openLineText(WidgetTester tester) =>
+      tester.widget<TextField>(find.byType(TextField).first).controller!.text;
+
+  group('the pile', () {
     testWidgets('an empty sandbox says what it is for', (tester) async {
       await pump(tester);
 
       expect(find.text('Песочница пуста'), findsOneWidget);
       expect(find.textContaining('записано на ходу'), findsOneWidget);
-      // ...and the field is there anyway, because that is the point of opening
-      // this screen.
+      // ...and the microphone is there anyway, because that is the point of
+      // opening this screen.
+      expect(find.byTooltip('Записать ещё'), findsOneWidget);
+    });
+
+    testWidgets('the oldest line is open and editable, the rest are rows', (
+      tester,
+    ) async {
+      // The pile is worked oldest first: the line at risk of rotting is the one
+      // that has waited longest.
+      server.addInboxItem(text: 'Спросить про кабель');
+      server.addInboxItem(text: 'Посмотреть налоги');
+      await pump(tester);
+
+      expect(openLineText(tester), 'Спросить про кабель');
+      expect(find.text('Посмотреть налоги'), findsOneWidget);
+      // Exactly one line is open, so there is exactly one field.
       expect(find.byType(TextField), findsOneWidget);
     });
 
-    testWidgets('one line, one Enter, and the field is ready for the next', (
-      tester,
-    ) async {
+    testWidgets('tapping another line opens that one instead', (tester) async {
+      server.addInboxItem(text: 'Спросить про кабель');
+      server.addInboxItem(text: 'Посмотреть налоги');
       await pump(tester);
 
-      await capture(tester, 'Спросить про кабель');
+      await tester.tap(find.text('Посмотреть налоги'));
+      await settle(tester);
 
-      expect(find.text('Спросить про кабель'), findsOneWidget);
+      expect(openLineText(tester), 'Посмотреть налоги');
+      expect(find.byType(TextField), findsOneWidget);
+    });
+
+    testWidgets('the open line is a text area, not a one-line field', (
+      tester,
+    ) async {
+      // Complaint number one: a dictated sentence has to be readable in the
+      // place it is corrected.
+      server.addInboxItem(text: 'Спросить про кабель');
+      await pump(tester);
+
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.maxLines, isNull);
+      expect(field.style?.fontSize, 19);
+    });
+  });
+
+  group('sorting', () {
+    testWidgets('one tap on a project turns the line into a task', (
+      tester,
+    ) async {
+      // The whole screen, in one gesture. F8 spent a menu, a dialog and a
+      // scroll on this.
+      final projectId = server.addProject(name: 'Дача');
+      server.addInboxItem(text: 'Спросить про кабель');
+      await pump(tester);
+
+      await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
+      await settle(tester);
+
+      expect(server.titlesInOrder(projectId), contains('Спросить про кабель'));
+      expect(server.inbox, isEmpty);
+      expect(find.text('Песочница пуста'), findsOneWidget);
+      // It disappeared from here, so it says where it went.
+      expect(find.textContaining('Задача добавлена в «Дача»'), findsOneWidget);
+    });
+
+    testWidgets('every project is offered, whatever scope it is in', (
+      tester,
+    ) async {
+      // A line captured without deciding which part of life it belongs to must
+      // not be filed through a switcher that has already decided.
+      final dacha = server.addScope(name: 'Дача');
+      server.addProject(name: 'Крыша', scopeId: dacha);
+      server.addProject(name: 'Бэкенд');
+      server.addInboxItem(text: 'Спросить про кабель');
+      await pump(tester);
+
+      expect(find.text('Крыша'), findsOneWidget);
+      expect(find.text('Бэкенд'), findsOneWidget);
+    });
+
+    testWidgets('an edit made before filing is what gets filed', (
+      tester,
+    ) async {
+      // The moment the line becomes a task is the only moment its text has to
+      // be right, and a correction that was typed and then filed must not be
+      // filed in its old wording.
+      final projectId = server.addProject(name: 'Дача');
+      server.addInboxItem(text: 'Спросить про кабель');
+      await pump(tester);
+
+      await tester.enterText(
+        find.byType(TextField),
+        'Спросить про кабель у Пети',
+      );
+      await tester.pump();
+      await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
+      await settle(tester);
+
+      expect(
+        server.titlesInOrder(projectId),
+        contains('Спросить про кабель у Пети'),
+      );
+    });
+
+    testWidgets('a line can become a project of its own', (tester) async {
+      server.addInboxItem(text: 'Ремонт балкона');
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('В новый проект'));
+      await tester.pumpAndSettle();
+
+      // The captured line is offered as the name -- usually it is the name, or
+      // nearly.
+      expect(
+        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+        'Ремонт балкона',
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Создать'));
+      await settle(tester);
+
+      final created = server.projects.values.firstWhere(
+        (project) => project['name'] == 'Ремонт балкона',
+      );
+      expect(
+        server.titlesInOrder(created['id'] as String),
+        <String>['Ремонт балкона'],
+      );
+      expect(server.inbox, isEmpty);
+    });
+
+    testWidgets('throwing a line away asks first', (tester) async {
+      server.addInboxItem(text: 'Спросить про кабель');
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Выбросить строку'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Выбросить строчку?'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, 'Выбросить'));
+      await settle(tester);
+
+      expect(server.inbox, isEmpty);
+      expect(find.text('Песочница пуста'), findsOneWidget);
+    });
+  });
+
+  group('capture, with and without a signal', () {
+    testWidgets('the microphone writes a line straight into the pile', (
+      tester,
+    ) async {
+      await pump(tester, withVoiceModel: true);
+
+      await dictate(tester, 'Спросить про кабель');
+
       expect(server.inbox.single['text'], 'Спросить про кабель');
-      // Cleared and still focused: the gesture is "empty my head", not "add one
-      // item".
-      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, '');
-      expect(tester.widget<TextField>(find.byType(TextField)).focusNode!.hasFocus, isTrue);
+      // Through the queue and out the other side: with a network it drains
+      // immediately, so what is left is a server row and an empty queue.
+      expect(queue.queue, isEmpty);
+      expect(find.text('Песочница'), findsOneWidget);
     });
 
     testWidgets('a line captured with no network appears, marked as unsent', (
       tester,
     ) async {
-      await pump(tester);
+      await pump(tester, withVoiceModel: true);
       backend.failingPaths.add('/inbox');
 
-      await capture(tester, 'Спросить про кабель');
+      await dictate(tester, 'Спросить про кабель');
 
       // The promise of the sandbox is "it is written down now", and with the
       // queue that promise is true offline: the line is on this device's disk
@@ -134,39 +298,32 @@ void main() {
       expect(find.text('Спросить про кабель'), findsOneWidget);
       expect(find.textContaining('Не отправлено'), findsOneWidget);
       expect(queue.queue.single.text, 'Спросить про кабель');
-      // The field is empty and focused all the same -- the gesture is "empty my
-      // head", and a signal is not part of it.
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        '',
-      );
       expect(server.inbox, isEmpty);
     });
 
-    testWidgets('a line that could not reach the disk stays in the field', (
+    testWidgets('a line that could not reach the disk is reported', (
       tester,
     ) async {
-      // The one failure that still has to be reported: if the queue file could
-      // not be written, the line exists nowhere at all.
-      await pump(tester);
+      // The one failure that still has to be said out loud: if the queue file
+      // could not be written, the line exists nowhere at all -- so the screen
+      // holding it must not close.
+      await pump(tester, withVoiceModel: true);
       queue.writeFailure = const FileSystemException('disk full');
 
-      await capture(tester, 'Спросить про кабель');
+      await dictate(tester, 'Спросить про кабель');
 
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        'Спросить про кабель',
-      );
       expect(
         find.textContaining('Не удалось записать строчку на устройство.'),
         findsOneWidget,
       );
+      // Still on the dictation screen, with the words still in it.
+      expect(find.byType(DictationScreen), findsOneWidget);
     });
 
     testWidgets('an unsent line can be thrown away', (tester) async {
-      await pump(tester);
+      await pump(tester, withVoiceModel: true);
       backend.failingPaths.add('/inbox');
-      await capture(tester, 'Спросить про кабель');
+      await dictate(tester, 'Спросить про кабель');
 
       await tester.tap(find.byTooltip('Выбросить'));
       await tester.pumpAndSettle();
@@ -185,9 +342,9 @@ void main() {
       // to see, and hiding them behind "не удалось загрузить" would say the
       // thought was lost while it sits on this device's disk.
       backend.failingPaths.add('/inbox');
-      await pump(tester);
+      await pump(tester, withVoiceModel: true);
 
-      await capture(tester, 'Спросить про кабель');
+      await dictate(tester, 'Спросить про кабель');
 
       expect(find.text('Спросить про кабель'), findsOneWidget);
       expect(find.text('Не удалось загрузить песочницу'), findsNothing);
@@ -197,216 +354,68 @@ void main() {
         reason: 'the failure is a banner over the lines, not instead of them',
       );
     });
-
-    testWidgets('an empty sandbox with nothing queued still says it is empty', (
-      tester,
-    ) async {
-      await pump(tester);
-      expect(find.text('Песочница пуста'), findsOneWidget);
-    });
   });
 
-  group('sorting', () {
-    testWidgets('filing a line into an existing project', (tester) async {
-      final projectId = server.addProject(name: 'Дача');
-      server.addInboxItem(text: 'Спросить про кабель');
-      await pump(tester);
+  group('from planning', () {
+    testWidgets('the sandbox row opens the sandbox', (tester) async {
+      await pump(tester, home: const ShellScreen());
 
-      await tester.tap(find.text('Спросить про кабель'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Дача'));
-      await settle(tester);
-
-      expect(server.titlesInOrder(projectId), contains('Спросить про кабель'));
-      expect(server.inbox, isEmpty);
-      expect(find.text('Песочница пуста'), findsOneWidget);
-      // It disappeared from here, so it says where it went.
-      expect(find.textContaining('Задача добавлена в «Дача»'), findsOneWidget);
-    });
-
-    testWidgets('the picker groups projects by scope when there is more than one', (
-      tester,
-    ) async {
-      final dacha = server.addScope(name: 'Дача');
-      server.addProject(name: 'Крыша', scopeId: dacha);
-      server.addProject(name: 'Бэкенд');
-      server.addInboxItem(text: 'Спросить про кабель');
-      await pump(tester);
-
-      await tester.tap(find.text('Спросить про кабель'));
-      await tester.pumpAndSettle();
-
-      // Every project of every scope: a line captured without deciding which
-      // part of life it belongs to must not be filed through a switcher that
-      // has already decided.
-      expect(find.text('Крыша'), findsOneWidget);
-      expect(find.text('Бэкенд'), findsOneWidget);
-      expect(find.text('Основной'), findsOneWidget, reason: 'the scope heading');
-    });
-
-    testWidgets('a line can become a project of its own', (tester) async {
-      server.addInboxItem(text: 'Ремонт балкона');
-      await pump(tester);
-
-      await tester.tap(find.text('Ремонт балкона'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Новый проект…'));
-      await tester.pumpAndSettle();
-
-      // The captured line is offered as the name -- usually it is the name, or
-      // nearly.
-      expect(
-        tester.widget<TextField>(find.byType(TextField).last).controller!.text,
-        'Ремонт балкона',
-      );
-
-      await tester.tap(find.widgetWithText(FilledButton, 'Создать'));
-      await settle(tester);
-
-      final created = server.projects.values.firstWhere(
-        (project) => project['name'] == 'Ремонт балкона',
-      );
-      expect(server.titlesInOrder(created['id'] as String), <String>['Ремонт балкона']);
-      expect(server.inbox, isEmpty);
-    });
-
-    testWidgets('editing a line before filing it', (tester) async {
-      server.addInboxItem(text: 'Спросить про кабель');
-      await pump(tester);
-
-      await tester.tap(find.byTooltip('Что сделать со строчкой'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Поправить текст'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).last, 'Спросить про кабель у Пети');
-      await tester.pump();
-      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
-      await settle(tester);
-
-      expect(find.text('Спросить про кабель у Пети'), findsOneWidget);
-      expect(server.inbox.single['text'], 'Спросить про кабель у Пети');
-    });
-
-    testWidgets('throwing a line away asks first', (tester) async {
-      server.addInboxItem(text: 'Спросить про кабель');
-      await pump(tester);
-
-      await tester.tap(find.byTooltip('Что сделать со строчкой'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Выбросить'));
-      await tester.pumpAndSettle();
-
-      expect(find.text('Выбросить строчку?'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, 'Выбросить'));
-      await settle(tester);
-
-      expect(server.inbox, isEmpty);
-      expect(find.text('Песочница пуста'), findsOneWidget);
-    });
-  });
-
-  group('from the board', () {
-    testWidgets('the button opens the sandbox', (tester) async {
-      await pump(tester, home: const BoardScreen());
-
-      await tester.tap(find.byTooltip(InboxScreen.title));
+      await tester.tap(find.text('Песочница'));
       await settle(tester);
 
       expect(find.byType(InboxScreen), findsOneWidget);
     });
 
-    testWidgets('the badge counts what is waiting', (tester) async {
+    testWidgets('the count is on the row, because a pile nobody sees rots', (
+      tester,
+    ) async {
       server.addInboxItem(text: 'Спросить про кабель');
       server.addInboxItem(text: 'Посмотреть налоги');
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
 
-      // A pile nobody is reminded of is a pile that rots, and things were
-      // written there *instead of* being remembered.
-      expect(find.widgetWithText(Badge, '2'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
     });
 
-    testWidgets('an empty sandbox draws no badge at all', (tester) async {
-      await pump(tester, home: const BoardScreen());
+    testWidgets('an empty sandbox shows no number at all', (tester) async {
+      // Not "0": a count that says zero and then changes to three is a small
+      // lie told on every cold start.
+      await pump(tester, home: const ShellScreen());
 
-      expect(find.byType(Badge), findsNothing);
-      expect(find.byTooltip(InboxScreen.title), findsOneWidget);
+      expect(find.text('Песочница'), findsOneWidget);
+      expect(find.text('0'), findsNothing);
     });
   });
 
-  /// Dictation (F9). The sandbox is where it writes, which is the whole reason
-  /// the sandbox was built before it.
   group('dictation', () {
-    testWidgets('no microphone until there is a model to dictate with', (
+    testWidgets('the microphone is on the screen whatever the model says', (
       tester,
     ) async {
+      // It used to disappear without one. It is structural now -- the same
+      // indigo square in the same corner on every sub-screen -- and the screen
+      // it opens is what explains a missing model.
       await pump(tester);
 
-      // A button that answers "сначала скачайте 163 МБ" is a button that lies
-      // about what it does; Settings offers the download instead.
-      expect(find.byIcon(Icons.mic_none), findsNothing);
+      expect(find.byTooltip('Записать ещё'), findsOneWidget);
     });
 
-    testWidgets('with a model, holding the microphone fills the field', (
+    testWidgets('the open line can be dictated into, appending', (
       tester,
     ) async {
+      // A phrase said in two goes is one thought continued, not two.
+      server.addInboxItem(text: 'Купить');
       await pump(tester, withVoiceModel: true);
-      expect(find.byIcon(Icons.mic_none), findsOneWidget);
-
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byIcon(Icons.mic_none)),
-      );
-      await tester.pump(const Duration(seconds: 1));
-      await gesture.up();
-      await settle(tester);
-
-      // Into the field, not straight into the pile: a misheard word is obvious
-      // on screen and invisible in a list you will read tomorrow.
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        'Купить кабель',
-      );
-      expect(server.inbox, isEmpty);
-    });
-
-    testWidgets('dictating twice adds a sentence instead of eating the first', (
-      tester,
-    ) async {
-      await pump(tester, withVoiceModel: true);
-      await tester.enterText(find.byType(TextField).first, 'Купить');
-      await tester.pump();
       recogniser.text = 'кабель для монитора';
 
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byIcon(Icons.mic_none)),
-      );
-      await tester.pump(const Duration(seconds: 1));
-      await gesture.up();
+      await tester.tap(find.byTooltip('Договорить голосом'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
       await settle(tester);
 
-      expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
-        'Купить кабель для монитора',
-      );
-    });
-
-    testWidgets('and the dictated line is captured like any other', (
-      tester,
-    ) async {
-      await pump(tester, withVoiceModel: true);
-
-      final gesture = await tester.startGesture(
-        tester.getCenter(find.byIcon(Icons.mic_none)),
-      );
-      await tester.pump(const Duration(seconds: 1));
-      await gesture.up();
-      await settle(tester);
-      await tester.tap(find.byTooltip('Записать'));
-      await settle(tester);
-
-      // Through the queue and out the other side: with a network it drains
-      // immediately, so what is left behind is a server row and an empty queue.
-      expect(server.inbox.single['text'], 'Купить кабель');
-      expect(queue.queue, isEmpty);
+      expect(openLineText(tester), 'Купить кабель для монитора');
+      // Nothing was filed: the words went into the line, to be checked.
+      expect(server.inbox.single['text'], 'Купить');
     });
   });
 }

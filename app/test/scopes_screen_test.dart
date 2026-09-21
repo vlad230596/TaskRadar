@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
-import 'package:taskradar/screens/board_screen.dart';
+import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/scopes_screen.dart';
 
 import 'support/fake_backend.dart';
@@ -166,14 +166,26 @@ void main() {
     });
   });
 
+  /// Opens the planning header's scope pill and picks [name].
+  ///
+  /// Two taps rather than one, which is what the pill costs against the old row
+  /// of chips -- and what it buys is a header that does not scroll away and a
+  /// switcher that costs no vertical space when there is one scope.
+  Future<void> chooseScope(WidgetTester tester, String name) async {
+    await tester.tap(find.byTooltip('Какой экран проектов'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(name).last);
+    await settle(tester);
+  }
+
   group('the board follows the switcher', () {
     testWidgets('one scope draws no switcher at all', (tester) async {
       server.addProject(name: 'Дача');
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
 
       // The feature is invisible until it means something: every installation
       // has exactly one scope the moment the migration runs.
-      expect(find.byType(ChoiceChip), findsNothing);
+      expect(find.byTooltip('Какой экран проектов'), findsNothing);
       expect(find.text('Дача'), findsOneWidget);
     });
 
@@ -184,9 +196,12 @@ void main() {
       server.addProject(name: 'Крыша', scopeId: dacha);
       server.addProject(name: 'Бэкенд');
 
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
 
-      expect(find.byType(ChoiceChip), findsNWidgets(2));
+      // F12: one pill in the planning header rather than a row of chips over
+      // the board -- see `PlanHeader`. It names the scope that is showing and
+      // opens the rest.
+      expect(find.byTooltip('Какой экран проектов'), findsOneWidget);
       // The first scope by position is the default, and the board shows only
       // its projects.
       expect(find.text('Бэкенд'), findsOneWidget);
@@ -200,9 +215,8 @@ void main() {
       server.addProject(name: 'Крыша', scopeId: dacha);
       server.addProject(name: 'Бэкенд');
 
-      await pump(tester, home: const BoardScreen());
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Дача'));
-      await settle(tester);
+      await pump(tester, home: const ShellScreen());
+      await chooseScope(tester, 'Дача');
 
       expect(find.text('Крыша'), findsOneWidget);
       expect(find.text('Бэкенд'), findsNothing);
@@ -217,25 +231,23 @@ void main() {
       final dacha = server.addScope(name: 'Дача');
       server.addProject(name: 'Бэкенд');
 
-      await pump(tester, home: const BoardScreen());
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Дача'));
-      await settle(tester);
+      await pump(tester, home: const ShellScreen());
+      await chooseScope(tester, 'Дача');
 
       // Not "Проектов пока нет": the projects exist, they are one tap away.
-      expect(find.text('В этом скоупе пусто'), findsOneWidget);
+      expect(find.text('Здесь пусто'), findsOneWidget);
       expect(find.text('Проектов пока нет'), findsNothing);
-      expect(find.textContaining('в остальных скоупах их 1'), findsOneWidget);
+      expect(find.textContaining('в остальных их 1'), findsOneWidget);
       expect(settings.scopeWrites, <String>[dacha]);
     });
 
     testWidgets('a new project lands in the scope on screen', (tester) async {
       final dacha = server.addScope(name: 'Дача');
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Дача'));
-      await settle(tester);
+      await chooseScope(tester, 'Дача');
 
-      await tester.tap(find.widgetWithText(FloatingActionButton, 'Проект'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Проект'));
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'Забор');
       await tester.pump();
@@ -253,7 +265,7 @@ void main() {
 
   group('reachability', () {
     testWidgets('the board menu opens this screen', (tester) async {
-      await pump(tester, home: const BoardScreen());
+      await pump(tester, home: const ShellScreen());
 
       await tester.tap(find.byTooltip('Ещё'));
       await tester.pumpAndSettle();

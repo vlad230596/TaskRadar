@@ -5,6 +5,7 @@ import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/project_screen.dart';
+import 'package:taskradar/theme/app_theme.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
@@ -12,13 +13,25 @@ import 'support/fake_notification_gateway.dart';
 import 'support/fake_project_backend.dart';
 import 'support/fake_settings_store.dart';
 
-/// The gesture this whole iteration exists for, at the widget level (F4):
+/// The gesture this product exists for, at the widget level:
 /// "блокер → выбрал дату → дата наступила → видно → снял".
 ///
 /// The date picker is a real `showDatePicker`, driven the way a person drives
 /// it, because the interesting part is not that a callback fires but **which
 /// day ends up in the request body** -- and that is exactly where a timezone
 /// off-by-one hides.
+///
+/// ## Where the controls moved in F12
+///
+/// The date used to be set from a 30 px text button inside a task row. It is
+/// now a full-width row on the task screen, for the same reason everything else
+/// moved there: a row is 56 px and has to hold a title, and the controls that
+/// were squeezed in beside it were the ones nobody could hit.
+///
+/// What did **not** move is the chaining rule -- blocking a task with no date
+/// offers the picker immediately -- because that is a rule about the product,
+/// not about a screen. It is now in `setTaskStatus`, shared by the row and the
+/// task screen, and it is exercised here from the row.
 void main() {
   late FakeBackend backend;
   late FakeProjectBackend server;
@@ -56,11 +69,18 @@ void main() {
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
         ],
         child: MaterialApp(
+          theme: buildAppTheme(),
           home: ProjectScreen(projectId: projectId),
           onGenerateRoute: AppRoutes.onGenerateRoute,
         ),
       ),
     );
+    await settle(tester);
+  }
+
+  /// Opens one task on its own screen, which is where the reminder lives.
+  Future<void> openTask(WidgetTester tester, String title) async {
+    await tester.tap(find.text(title));
     await settle(tester);
   }
 
@@ -85,9 +105,7 @@ void main() {
   }
 
   group('setting a date on a blocker', () {
-    testWidgets('a dateless blocker offers the picker in words', (
-      tester,
-    ) async {
+    testWidgets('a dateless blocker says so on the row', (tester) async {
       server.addTask(
         projectId: projectId,
         title: 'Жду кабель',
@@ -95,10 +113,9 @@ void main() {
       );
       await pumpProject(tester);
 
-      // Not the F3 placeholder ("дата появится на F4"), and not silence: a
-      // blocker with no date is a task that will never ask again, so the row
-      // says what to do about it.
-      expect(find.text('напомнить…'), findsOneWidget);
+      // Not silence: a blocker with no date is a task that will never ask
+      // again, and the row is where that is noticed.
+      expect(find.textContaining('без даты'), findsOneWidget);
     });
 
     testWidgets('picking a day sends that calendar day, and the row shows it', (
@@ -110,8 +127,9 @@ void main() {
         status: 'blocked',
       );
       await pumpProject(tester);
+      await openTask(tester, 'Жду кабель');
 
-      await tester.tap(find.text('напомнить…'));
+      await tester.tap(find.text('Напомнить когда-нибудь…'));
       await tester.pumpAndSettle();
       expect(find.text('Когда напомнить'), findsOneWidget);
 
@@ -128,8 +146,10 @@ void main() {
         reason: 'a bare calendar date, not an instant',
       );
 
-      // Dated today, so the row is the loud "act on this" variant.
-      expect(find.textContaining('Напомнить · '), findsOneWidget);
+      expect(
+        find.textContaining('Напомнить ${_pad2(today.day)}.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('changing an existing date opens on the day already set', (
@@ -144,12 +164,15 @@ void main() {
       await pumpProject(tester);
 
       final chosen = DateTime.now().add(const Duration(days: 3));
+      // The row carries the date read-only...
       expect(
-        find.text('Ждём до ${_pad2(chosen.day)}.${_pad2(chosen.month)}'),
+        find.textContaining('${_pad2(chosen.day)}.${_pad2(chosen.month)}'),
         findsOneWidget,
       );
 
-      await tester.tap(find.textContaining('Ждём до'));
+      // ...and the task screen is where it is changed.
+      await openTask(tester, 'Жду кабель');
+      await tester.tap(find.textContaining('Напомнить '));
       await tester.pumpAndSettle();
 
       // The picker's own header is the proof it opened on the stored day rather
@@ -172,14 +195,15 @@ void main() {
         status: 'blocked',
       );
       await pumpProject(tester);
+      await openTask(tester, 'Жду кабель');
 
-      await tester.tap(find.text('напомнить…'));
+      await tester.tap(find.text('Напомнить когда-нибудь…'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Отмена'));
       await settle(tester);
 
       expect(server.patches, isEmpty);
-      expect(find.text('напомнить…'), findsOneWidget);
+      expect(find.text('Напомнить когда-нибудь…'), findsOneWidget);
     });
   });
 
@@ -194,13 +218,14 @@ void main() {
           remindAt: storedRemindAt(3),
         );
         await pumpProject(tester);
+        await openTask(tester, 'Жду кабель');
 
         await tester.tap(find.byTooltip('Убрать дату напоминания'));
         await settle(tester);
 
         expect(server.patches.last.body.containsKey('remindAt'), isTrue);
         expect(server.patches.last.body['remindAt'], isNull);
-        expect(find.text('напомнить…'), findsOneWidget);
+        expect(find.text('Напомнить когда-нибудь…'), findsOneWidget);
       },
     );
 
@@ -215,6 +240,7 @@ void main() {
         remindAt: storedRemindAt(3),
       );
       await pumpProject(tester);
+      await openTask(tester, 'Жду кабель');
 
       await tester.tap(find.byTooltip('Убрать дату напоминания'));
       await tester.pump();
@@ -232,8 +258,11 @@ void main() {
       server.addTask(projectId: projectId, title: 'Жду кабель');
       await pumpProject(tester);
 
-      await tester.tap(find.byTooltip('Статус: Ожидает'));
-      await tester.pumpAndSettle();
+      // From the row: a long press on the status circle is the three-way
+      // choice. The chaining rule lives in `setTaskStatus`, so it applies here
+      // and on the task screen alike.
+      await tester.longPress(find.byTooltip('Отметить сделанной'));
+      await settle(tester);
       await tester.tap(find.text('Блокер').last);
       await settle(tester);
 
@@ -252,14 +281,26 @@ void main() {
       );
     });
 
+    testWidgets('the task screen chains it the same way', (tester) async {
+      // Two screens, one rule. A copy of the rule in each is a copy that drifts.
+      server.addTask(projectId: projectId, title: 'Жду кабель');
+      await pumpProject(tester);
+      await openTask(tester, 'Жду кабель');
+
+      await tester.tap(find.text('Блокер'));
+      await settle(tester);
+
+      expect(find.text('Когда напомнить'), findsOneWidget);
+    });
+
     testWidgets('cancelling leaves a legitimate dateless blocker', (
       tester,
     ) async {
       server.addTask(projectId: projectId, title: 'Жду кабель');
       await pumpProject(tester);
 
-      await tester.tap(find.byTooltip('Статус: Ожидает'));
-      await tester.pumpAndSettle();
+      await tester.longPress(find.byTooltip('Отметить сделанной'));
+      await settle(tester);
       await tester.tap(find.text('Блокер').last);
       await settle(tester);
       await tester.tap(find.text('Отмена'));
@@ -268,7 +309,7 @@ void main() {
       // "blocked, and I do not know when" is a real answer, not a mistake.
       expect(server.patches, hasLength(1));
       expect(server.patches.single.body['status'], 'blocked');
-      expect(find.text('напомнить…'), findsOneWidget);
+      expect(find.textContaining('без даты'), findsOneWidget);
     });
 
     testWidgets('a task that already has a date is not asked again', (
@@ -283,9 +324,9 @@ void main() {
       );
       await pumpProject(tester);
 
-      await tester.tap(find.byTooltip('Статус: Блокер'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Ожидает').last);
+      await tester.longPress(find.byTooltip('Блокер — снять'));
+      await settle(tester);
+      await tester.tap(find.text('В очереди').last);
       await settle(tester);
 
       expect(find.text('Когда напомнить'), findsNothing);
@@ -295,9 +336,7 @@ void main() {
   });
 
   group('a due date is visible', () {
-    testWidgets('today reads as "Напомнить", a future day as "Ждём до"', (
-      tester,
-    ) async {
+    testWidgets('today says so before it says the date', (tester) async {
       server.addTask(
         projectId: projectId,
         title: 'Жду кабель',
@@ -312,8 +351,20 @@ void main() {
       );
       await pumpProject(tester);
 
-      expect(find.textContaining('Напомнить · '), findsOneWidget);
-      expect(find.textContaining('Ждём до '), findsOneWidget);
+      final today = DateTime.now();
+      final soon = DateTime.now().add(const Duration(days: 4));
+
+      // The one row in the app that asks for action today.
+      expect(
+        find.textContaining('пора · ${_pad2(today.day)}.${_pad2(today.month)}'),
+        findsOneWidget,
+      );
+      // ...and the one that does not is just a date.
+      expect(
+        find.textContaining('${_pad2(soon.day)}.${_pad2(soon.month)}'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('пора'), findsOneWidget);
     });
 
     testWidgets('a non-blocked task has no reminder line at all', (
@@ -329,8 +380,8 @@ void main() {
       );
       await pumpProject(tester);
 
-      expect(find.text('напомнить…'), findsNothing);
-      expect(find.textContaining('Ждём до'), findsNothing);
+      expect(find.textContaining('без даты'), findsNothing);
+      expect(find.textContaining('ждёт'), findsNothing);
     });
   });
 }

@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/note.dart';
 import '../providers/project_providers.dart';
 import '../screens/note_editor_screen.dart';
-import 'dictation.dart';
+import 'dictate_into.dart';
 import 'mutation_feedback.dart';
 import 'note_markdown.dart';
 
@@ -96,24 +96,28 @@ class _NoteComposerState extends ConsumerState<_NoteComposer> {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: DictatedField(
-        onText: (text) => appendDictated(_controller, text: text),
-        field: TextField(
-          controller: _controller,
-          textInputAction: TextInputAction.done,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'Новая заметка…',
-            isDense: true,
-            border: OutlineInputBorder(),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextField(
+              controller: _controller,
+              textInputAction: TextInputAction.done,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                hintText: 'Новая заметка…',
+                isDense: true,
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (_) => _submit(),
+            ),
           ),
-          onSubmitted: (_) => _submit(),
-        ),
-        trailing: IconButton.filled(
-          tooltip: 'Создать заметку',
-          onPressed: _submit,
-          icon: const Icon(Icons.add),
-        ),
+          DictateInto(controller: _controller, label: 'в заметку'),
+          IconButton.filled(
+            tooltip: 'Создать заметку',
+            onPressed: _submit,
+            icon: const Icon(Icons.add),
+          ),
+        ],
       ),
     );
   }

@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/app.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
-import 'package:taskradar/screens/board_screen.dart';
+import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/login_screen.dart';
 import 'package:taskradar/screens/splash_screen.dart';
 
@@ -107,7 +107,7 @@ void main() {
     probe.complete(jsonResponse(<String, dynamic>{'ok': true}));
     await settle(tester);
 
-    expect(find.byType(BoardScreen), findsOneWidget);
+    expect(find.byType(ShellScreen), findsOneWidget);
   });
 
   testWidgets('no token -> login screen', (tester) async {
@@ -125,7 +125,7 @@ void main() {
     await pumpApp(tester);
     await settle(tester);
 
-    expect(find.byType(BoardScreen), findsOneWidget);
+    expect(find.byType(ShellScreen), findsOneWidget);
     expect(find.text('TaskRadar'), findsWidgets);
     expect(find.text('Каркас Flutter'), findsOneWidget, reason: 'current task');
   });
@@ -203,7 +203,7 @@ void main() {
     await tester.tap(find.text('Войти'));
     await settle(tester);
 
-    expect(find.byType(BoardScreen), findsOneWidget);
+    expect(find.byType(ShellScreen), findsOneWidget);
     expect(storage.token, 'jwt.token.value');
   });
 
@@ -215,7 +215,7 @@ void main() {
 
     await pumpApp(tester);
     await settle(tester);
-    expect(find.byType(BoardScreen), findsOneWidget);
+    expect(find.byType(ShellScreen), findsOneWidget);
 
     await signOut(tester);
 
