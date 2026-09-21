@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Десктоп — планирование</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}a:hover{color:#2C3480}
+button{font:inherit;color:inherit;cursor:pointer}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #F3F3F7; display: flex; overflow: hidden;">
+
+  <nav style="width: 76px; flex-shrink: 0; background: #1B2050; display: flex; flex-direction: column; align-items: center; padding: 18px 0 16px; gap: 10px;">
+    <span style="width: 34px; height: 34px; border-radius: 10px; background: #4A56BE; display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D6DBFF" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/><circle cx="15.6" cy="8.4" r="1.6" fill="#F0A33C" stroke="none"/></svg>
+    </span>
+    <a href="Desk-Plan.dc.html" style="width: 56px; height: 56px; border-radius: 18px; background: #333A73; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></svg>
+      <span style="font-size: 9.5px; font-weight: 700;">План</span>
+    </a>
+    <a href="Desk-Focus.dc.html" style="width: 56px; height: 56px; border-radius: 18px; color: #A7AECF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+      <span style="font-size: 9.5px; font-weight: 600;">Работа</span>
+    </a>
+    <a href="Desk-History.dc.html" style="width: 56px; height: 56px; border-radius: 18px; color: #A7AECF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></svg>
+      <span style="font-size: 9.5px; font-weight: 600;">Итоги</span>
+    </a>
+    <span style="flex-grow: 1;"></span>
+    <button style="width: 56px; height: 56px; border-radius: 18px; border: none; background: #4A56BE; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      <span style="font-size: 9.5px; font-weight: 700;">Голос</span>
+    </button>
+    <button aria-label="Настройки" style="width: 48px; height: 48px; border: none; background: transparent; color: #A7AECF; display: flex; align-items: center; justify-content: center;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/></svg>
+    </button>
+  </nav>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+
+    <header style="height: 78px; flex-shrink: 0; box-sizing: border-box; padding: 0 28px; display: flex; align-items: center; gap: 16px; background: #FFFFFF; border-bottom: 1px solid #DEDEE8;">
+      <span style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.01em;">Планирование</span>
+      <button style="height: 38px; padding: 0 14px; border-radius: 19px; border: 1px solid #DEDEE8; background: #FFFFFF; display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: #3A3C5C;">Основной
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <span style="flex-grow: 1;"></span>
+      <a href="Desk-Focus.dc.html" style="height: 44px; padding: 0 18px; border-radius: 16px; background: #E6E8F7; color: #2C3480; display: inline-flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/></svg>В работе 3
+      </a>
+      <button style="height: 44px; padding: 0 18px; border-radius: 16px; border: none; background: #1B2050; color: #FFFFFF; display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Проект
+      </button>
+    </header>
+
+    <div style="flex-grow: 1; padding: 22px 24px; display: flex; gap: 16px; align-items: stretch; overflow: hidden;">
+
+      <section style="width: 268px; flex-shrink: 0; background: #FFFFFF; border: 1.5px solid #C3C6DE; border-radius: 20px; padding: 16px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 16px; font-weight: 700;">Песочница</span>
+          <span style="flex-grow: 1;"></span>
+          <span style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 18px; color: #B3341F;">3</span>
+        </div>
+        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+          <div style="background: #F7F7FB; border-radius: 14px; padding: 12px; font-size: 14.5px; font-weight: 500; line-height: 1.35;">В проекте TaskRadar надо увеличить размер полей для ввода данных.</div>
+          <div style="background: #F7F7FB; border-radius: 14px; padding: 12px; font-size: 14.5px; font-weight: 500; line-height: 1.35;">На общем экране не работает запись с первого раза.</div>
+          <div style="background: #F7F7FB; border-radius: 14px; padding: 12px; font-size: 14.5px; font-weight: 500; line-height: 1.35;">Почему-то не работает знак, значок громкости.</div>
+        </div>
+        <span style="flex-grow: 1;"></span>
+        <div style="margin-top: 14px; font-size: 12.5px; font-weight: 500; color: #61637E; line-height: 1.35;">перетащите строку в колонку проекта</div>
+      </section>
+
+      <section style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 20px; padding: 16px 14px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">Дом</span>
+          <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 6</span>
+        </div>
+        <div style="margin-top: 8px; display: flex; gap: 4px;">
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; background: #E0A03C;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        </div>
+        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="border: 1.5px solid #1B2050; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 600; line-height: 1.32;">Вызвать курьера из Яндекс Маркета.</div>
+          <div style="border: 1px solid #EDEDF3; background: #F9F9FC; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32; display: flex; gap: 8px; align-items: baseline;"><span style="flex-grow: 1;">Купить лампочки</span><span style="flex-shrink: 0; white-space: nowrap; font-size: 11.5px; font-weight: 700; color: #8A5A0B;">5 д</span></div>
+          <div style="border: 1px solid #EDEDF3; background: #F9F9FC; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32; display: flex; gap: 8px; align-items: baseline;"><span style="flex-grow: 1;">Заказать крючки для полок в ванной</span><span style="flex-shrink: 0; white-space: nowrap; font-size: 11.5px; font-weight: 700; color: #8A5A0B;">5 д</span></div>
+          <div style="border: 1px solid #EBD5B0; background: #FDF7EE; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32; color: #5C4310;">Посмотреть, почему не работает вентилятор в туалете<span style="display: block; margin-top: 6px; font-size: 11.5px; font-weight: 700; color: #8A5A0B;">ждёт 3 д · 23.09</span></div>
+          <div style="border: 1px solid #EDEDF3; background: #F9F9FC; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32;">Обеспечить доступ к полке в кладовке.</div>
+          <div style="border: 1px solid #EDEDF3; background: #F9F9FC; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32;">Заменить болт на кухне в раковине.</div>
+        </div>
+        <span style="flex-grow: 1;"></span>
+        <button style="margin-top: 12px; height: 44px; border-radius: 14px; border: 1px dashed #C3C6DE; background: transparent; color: #61637E; font-size: 14px; font-weight: 600;">+ задача</button>
+      </section>
+
+      <section style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 20px; padding: 16px 14px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">TaskRadar</span>
+          <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 2</span>
+        </div>
+        <div style="margin-top: 8px; display: flex; gap: 4px;">
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        </div>
+        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="border: 1.5px solid #1B2050; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 600; line-height: 1.32;">Потестить диктовку на телефоне</div>
+          <div style="border: 1px solid #EDEDF3; background: #F9F9FC; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32;">Адаптировать кнопку распознавания, размер шрифта, окно, взаимное расположение</div>
+        </div>
+        <div style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #EDEDF3;">
+          <div style="font-size: 11.5px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: #61637E;">Заметки · 3</div>
+          <div style="margin-top: 8px; font-size: 13.5px; font-weight: 500; color: #3A3C5C; line-height: 1.35;">Пресеты (список активных проектов) для быстрого переключения дом/дача/офис</div>
+        </div>
+        <span style="flex-grow: 1;"></span>
+        <button style="margin-top: 12px; height: 44px; border-radius: 14px; border: 1px dashed #C3C6DE; background: transparent; color: #61637E; font-size: 14px; font-weight: 600;">+ задача</button>
+      </section>
+
+      <section style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 20px; padding: 16px 14px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">Семья</span>
+          <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 2</span>
+        </div>
+        <div style="margin-top: 8px; display: flex; gap: 4px;">
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        </div>
+        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="border: 1.5px solid #1B2050; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 600; line-height: 1.32;">Посмотреть статус Мишиной сим карточки.</div>
+          <div style="border: 1px solid #EDEDF3; background: #F9F9FC; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 500; line-height: 1.32;">Посмотреть, в каком банке выгоднее всего заказать для Миши карточку.</div>
+        </div>
+        <span style="flex-grow: 1;"></span>
+        <button style="margin-top: 12px; height: 44px; border-radius: 14px; border: 1px dashed #C3C6DE; background: transparent; color: #61637E; font-size: 14px; font-weight: 600;">+ задача</button>
+      </section>
+
+      <section style="flex-grow: 1; flex-basis: 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 20px; padding: 16px 14px; display: flex; flex-direction: column;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">Авоська</span>
+          <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 1</span>
+        </div>
+        <div style="margin-top: 8px; display: flex; gap: 4px;">
+          <span style="width: 9px; height: 9px; border-radius: 50%; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        </div>
+        <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="border: 1.5px solid #1B2050; border-radius: 14px; padding: 11px 12px; font-size: 14.5px; font-weight: 600; line-height: 1.32;">По наведению на штрих-код, выводить, что это, где ещё можно купить и по каким ценам с историей цен.</div>
+        </div>
+        <span style="flex-grow: 1;"></span>
+        <button style="margin-top: 12px; height: 44px; border-radius: 14px; border: 1px dashed #C3C6DE; background: transparent; color: #61637E; font-size: 14px; font-weight: 600;">+ задача</button>
+      </section>
+    </div>
+  </div>
+</div>
+</body>
+</html>

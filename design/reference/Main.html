@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Планирование — список проектов</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}a:hover{color:#2C3480}
+button{font:inherit;color:inherit;cursor:pointer}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F3F7; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="padding: 18px 16px 12px; display: flex; align-items: flex-start; gap: 12px;">
+    <div style="flex-grow: 1;">
+      <div style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px; letter-spacing: -0.01em;">Планирование</div>
+      <button style="margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid #DEDEE8; background: #FFFFFF; border-radius: 15px; font-size: 13px; font-weight: 600; color: #61637E;">Основной
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div>
+    <div style="display: flex; gap: 2px; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 14px; padding: 3px;">
+      <a href="Main.dc.html" aria-label="Списком" style="width: 40px; height: 38px; border-radius: 11px; background: #1B2050; color: #FFFFFF; display: flex; align-items: center; justify-content: center;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </a>
+      <a href="Main-Tiles.dc.html" aria-label="Значками" style="width: 40px; height: 38px; border-radius: 11px; display: flex; align-items: center; justify-content: center; color: #61637E;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="2"/><rect x="13" y="4" width="7" height="7" rx="2"/><rect x="4" y="13" width="7" height="7" rx="2"/><rect x="13" y="13" width="7" height="7" rx="2"/></svg>
+      </a>
+    </div>
+  </header>
+
+  <a href="Focus.dc.html" style="margin: 0 16px 10px; height: 52px; box-sizing: border-box; padding: 0 14px; border-radius: 14px; background: #1B2050; color: #FFFFFF; display: flex; align-items: center; gap: 10px;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+    <span style="font-size: 15px; font-weight: 600;">В работе</span>
+    <span style="display: flex; gap: 5px; align-items: center; flex-grow: 1;">
+      <span style="width: 9px; height: 9px; border-radius: 50%; background: #F0A33C;"></span>
+      <span style="width: 9px; height: 9px; border-radius: 50%; background: #F0A33C;"></span>
+      <span style="width: 9px; height: 9px; border-radius: 50%; background: #F0A33C;"></span>
+    </span>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+  </a>
+
+  <a href="Inbox.dc.html" style="margin: 0 16px 14px; height: 60px; box-sizing: border-box; padding: 0 14px; border-radius: 14px; background: #FFFFFF; border: 1px solid #DEDEE8; display: flex; align-items: center; gap: 12px; color: #1B2050;">
+    <span style="width: 36px; height: 36px; border-radius: 12px; background: #E6E8F7; display: flex; align-items: center; justify-content: center; color: #3F4AA8;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 13h5l1.6 3h4.8L16 13h5"/><path d="M4.4 6.2 3 13v5h18v-5l-1.4-6.8a2 2 0 0 0-2-1.6H6.4a2 2 0 0 0-2 1.6z"/></svg>
+    </span>
+    <span style="flex-grow: 1;">
+      <span style="display: block; font-size: 15px; font-weight: 600;">Песочница</span>
+      <span style="display: block; font-size: 12px; font-weight: 500; color: #61637E; margin-top: 2px;">не разобрано 3 дня</span>
+    </span>
+    <span style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 22px; color: #B3341F;">3</span>
+  </a>
+
+  <div style="flex-grow: 1; padding: 0 16px; display: flex; flex-direction: column; gap: 10px; overflow: hidden;">
+
+    <a href="Project.dc.html" style="background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 16px; padding: 14px 14px 12px; display: block; color: #1B2050;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="flex-grow: 1; font-size: 17px; font-weight: 600;">Дом</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; white-space: nowrap; height: 22px; padding: 0 8px; border-radius: 11px; background: #F3F3F7; font-size: 12px; font-weight: 600; color: #61637E;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3 1.8"/></svg>2 д</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 15px; font-weight: 500; color: #3A3C5C; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Вызвать курьера из Яндекс Маркета.</div>
+      <div style="margin-top: 12px; display: flex; align-items: center; gap: 5px;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #E0A03C;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 6</span>
+      </div>
+    </a>
+
+    <a href="Project.dc.html" style="background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 16px; padding: 14px 14px 12px; display: block; color: #1B2050;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="flex-grow: 1; font-size: 17px; font-weight: 600;">TaskRadar</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; white-space: nowrap; height: 22px; padding: 0 8px; border-radius: 11px; background: #FBEFDD; font-size: 12px; font-weight: 600; color: #8A5A0B;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3 1.8"/></svg>4 д</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 15px; font-weight: 500; color: #3A3C5C; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Потестить диктовку на телефоне</div>
+      <div style="margin-top: 12px; display: flex; align-items: center; gap: 5px;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 2</span>
+      </div>
+    </a>
+
+    <a href="Project.dc.html" style="background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 16px; padding: 14px 14px 12px; display: block; color: #1B2050;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="flex-grow: 1; font-size: 17px; font-weight: 600;">Семья</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; white-space: nowrap; height: 22px; padding: 0 8px; border-radius: 11px; background: #F3F3F7; font-size: 12px; font-weight: 600; color: #61637E;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3 1.8"/></svg>2 д</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 15px; font-weight: 500; color: #3A3C5C; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Посмотреть статус Мишиной сим карточки.</div>
+      <div style="margin-top: 12px; display: flex; align-items: center; gap: 5px;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 2</span>
+      </div>
+    </a>
+
+    <a href="Project.dc.html" style="background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 16px; padding: 14px 14px 12px; display: block; color: #1B2050;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="flex-grow: 1; font-size: 17px; font-weight: 600;">Авоська</span>
+        <span style="display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0; white-space: nowrap; height: 22px; padding: 0 8px; border-radius: 11px; background: #F3F3F7; font-size: 12px; font-weight: 600; color: #61637E;">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5.2l3 1.8"/></svg>1 д</span>
+      </div>
+      <div style="margin-top: 8px; font-size: 15px; font-weight: 500; color: #3A3C5C; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">По наведению на штрих-код, выводить, что это, где ещё можно купить…</div>
+      <div style="margin-top: 12px; display: flex; align-items: center; gap: 5px;">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #FFFFFF; border: 2px solid #C3C6DE; box-sizing: border-box;"></span>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; font-weight: 600; color: #61637E;">0 / 1</span>
+      </div>
+    </a>
+
+    <button style="height: 48px; border: 1px dashed #C3C6DE; background: transparent; border-radius: 16px; display: flex; align-items: center; justify-content: center; gap: 8px; color: #61637E; font-size: 15px; font-weight: 600;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Проект
+    </button>
+  </div>
+
+  <nav style="height: 82px; box-sizing: border-box; border-top: 1px solid #DEDEE8; background: #FFFFFF; display: flex; align-items: flex-start; padding: 8px 10px 0; gap: 6px;">
+    <a href="Main.dc.html" style="flex-grow: 1; height: 54px; border-radius: 16px; background: #E6E8F7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #2C3480;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></svg>
+      <span style="font-size: 11px; font-weight: 700;">План</span>
+    </a>
+    <a href="Focus.dc.html" style="flex-grow: 1; height: 54px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #61637E;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+      <span style="font-size: 11px; font-weight: 600;">Работа</span>
+    </a>
+    <a href="History.dc.html" style="flex-grow: 1; height: 54px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #61637E;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></svg>
+      <span style="font-size: 11px; font-weight: 600;">История</span>
+    </a>
+    <a href="Dictate.dc.html" style="width: 84px; flex-shrink: 0; height: 54px; border-radius: 16px; background: #4A56BE; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      <span style="font-size: 11px; font-weight: 700;">Голос</span>
+    </a>
+  </nav>
+</div>
+</body>
+</html>

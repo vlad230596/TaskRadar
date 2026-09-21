@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Песочница — разбор строк</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}a:hover{color:#2C3480}
+button{font:inherit;color:inherit;cursor:pointer}
+textarea{font:inherit;color:inherit}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F3F7; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="padding: 10px 12px 10px 4px; display: flex; align-items: center; gap: 8px; background: #FFFFFF; border-bottom: 1px solid #DEDEE8;">
+    <a href="Main.dc.html" aria-label="Назад" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #1B2050;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+    </a>
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 600; font-size: 18px;">Песочница</span>
+    <span style="display: inline-flex; align-items: center; gap: 6px;">
+      <span style="width: 9px; height: 9px; border-radius: 50%; background: #B3341F;"></span>
+      <span style="width: 9px; height: 9px; border-radius: 50%; background: #B3341F;"></span>
+      <span style="width: 9px; height: 9px; border-radius: 50%; background: #B3341F;"></span>
+    </span>
+  </header>
+
+  <div style="flex-grow: 1; padding: 14px 16px 0; display: flex; flex-direction: column; gap: 12px; overflow: hidden;">
+
+    <section style="background: #FFFFFF; border: 1.5px solid #3F4AA8; border-radius: 20px; padding: 14px;">
+      <label for="line-1" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);">Строка из песочницы</label>
+      <textarea id="line-1" style="width: 100%; height: 104px; box-sizing: border-box; border: none; background: transparent; padding: 0; font-size: 19px; font-weight: 500; line-height: 1.4; resize: none; outline: none;">В проекте TaskRadar надо увеличить размер полей для ввода данных.</textarea>
+
+      <div style="margin-top: 10px; display: flex; align-items: center; gap: 8px;">
+        <span style="font-size: 12px; font-weight: 600; color: #61637E;">записано 3 дня назад</span>
+        <span style="flex-grow: 1;"></span>
+        <a href="Dictate.dc.html" aria-label="Договорить голосом" style="width: 44px; height: 44px; border-radius: 14px; border: 1px solid #DEDEE8; color: #1B2050; display: flex; align-items: center; justify-content: center;">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+        </a>
+        <button aria-label="Выбросить строку" style="width: 44px; height: 44px; border-radius: 14px; border: 1px solid #DEDEE8; background: #FFFFFF; color: #B3341F; display: flex; align-items: center; justify-content: center;">
+          <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg>
+        </button>
+      </div>
+
+      <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #EDEDF3; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+        <button style="height: 44px; padding: 0 16px; border-radius: 14px; border: none; background: #1B2050; color: #FFFFFF; font-size: 15px; font-weight: 600;">TaskRadar</button>
+        <button style="height: 44px; padding: 0 16px; border-radius: 14px; border: 1px solid #DEDEE8; background: #FFFFFF; font-size: 15px; font-weight: 500;">Дом</button>
+        <button style="height: 44px; padding: 0 16px; border-radius: 14px; border: 1px solid #DEDEE8; background: #FFFFFF; font-size: 15px; font-weight: 500;">Семья</button>
+        <button aria-label="В новый проект" style="width: 44px; height: 44px; border-radius: 14px; border: 1px dashed #C3C6DE; background: transparent; color: #61637E; display: flex; align-items: center; justify-content: center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+    </section>
+
+    <button style="text-align: left; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 20px; padding: 14px; display: flex; align-items: center; gap: 12px;">
+      <span style="flex-grow: 1;">
+        <span style="display: block; font-size: 16.5px; font-weight: 500; line-height: 1.35;">На общем экране не работает запись с первого раза.</span>
+        <span style="display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: #61637E;">3 дня в песочнице</span>
+      </span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#61637E" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+
+    <button style="text-align: left; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 20px; padding: 14px; display: flex; align-items: center; gap: 12px;">
+      <span style="flex-grow: 1;">
+        <span style="display: block; font-size: 16.5px; font-weight: 500; line-height: 1.35;">Почему-то не работает знак, значок громкости.</span>
+        <span style="display: block; margin-top: 6px; font-size: 12px; font-weight: 600; color: #61637E;">3 дня в песочнице</span>
+      </span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#61637E" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+    </button>
+
+    <div style="margin-top: 4px; display: flex; align-items: center; gap: 10px; padding: 0 4px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#61637E" stroke-width="1.8" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+      <span style="font-size: 13px; font-weight: 500; color: #61637E; line-height: 1.35;">строка становится задачей одним касанием проекта</span>
+    </div>
+  </div>
+
+  <div style="padding: 12px 16px 18px; display: flex; align-items: center; gap: 12px;">
+    <span style="flex-grow: 1; font-size: 14px; font-weight: 600; color: #61637E;">записать ещё</span>
+    <a href="Dictate.dc.html" aria-label="Записать ещё" style="width: 56px; height: 56px; border-radius: 18px; background: #4A56BE; color: #FFFFFF; display: flex; align-items: center; justify-content: center;">
+      <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+    </a>
+  </div>
+</div>
+</body>
+</html>
