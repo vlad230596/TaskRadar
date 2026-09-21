@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { HISTORY_RANGES } from "./domain/history";
 
 export const taskStatusSchema = z.enum(["pending", "done", "blocked"]);
 
@@ -168,6 +169,37 @@ export const updateTaskPositionSchema = z
   .refine((body) => body.beforeTaskId !== undefined || body.afterTaskId !== undefined, {
     message: "At least one of beforeTaskId/afterTaskId must be provided (use null for 'no neighbour on that side')",
   });
+
+// ---- History (F11) ----
+
+/**
+ * Query for `GET /history` -- the whole history screen in one response.
+ *
+ * `range` is the period the two counting blocks cover. A closed set of three
+ * rather than a free number of days, because the screen offers exactly three
+ * buttons and an arbitrary window would have to define what "48 days" means for
+ * the bar chart's axis. "Висит дольше всего" ignores it entirely -- a task that
+ * has hung for two months is the answer to that question whatever window is
+ * selected -- which is stated here because the parameter's name suggests
+ * otherwise.
+ *
+ * `tzOffsetMinutes` is the client's own UTC offset, in the sign JavaScript's
+ * `Date.getTimezoneOffset()` does NOT use (this is minutes to ADD to UTC, so
+ * Moscow is +180). The server stores instants and the screen shows days, and
+ * only the client knows which days those are; the default of 0 keeps `curl
+ * /history` meaningful without it. Bounded at ±14h because that is the widest
+ * real offset, so a nonsense value is a 400 rather than a chart shifted by a
+ * year.
+ *
+ * `staleLimit` is how many of the longest-hanging tasks to return. Capped
+ * because this is the one block whose cost grows with the number of open tasks:
+ * each row replays that task's journal.
+ */
+export const historyQuerySchema = z.object({
+  range: z.enum(HISTORY_RANGES).default("30d"),
+  tzOffsetMinutes: z.coerce.number().int().min(-840).max(840).default(0),
+  staleLimit: z.coerce.number().int().min(1).max(50).default(5),
+});
 
 // ---- Inbox (F8) ----
 

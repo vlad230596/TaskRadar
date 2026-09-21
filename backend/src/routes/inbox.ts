@@ -220,16 +220,34 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     });
     const position = computeAppendPosition(last._max.position);
 
-    const [task] = await prisma.$transaction([
-      prisma.task.create({
+    /*
+     * Three writes now, not two (F11): the task, its `created` journal row, and
+     * the item's removal. The journal row is what makes the new task's clock
+     * start -- see the note on `POST /projects/:projectId/tasks` -- and it
+     * belongs in this transaction rather than after it for the reason the other
+     * two do: a task that exists with no record of when it began is a task the
+     * history mode cannot place in time.
+     *
+     * An interactive transaction rather than the array form it used to be,
+     * because the event needs the id of the task created a line above it, and
+     * the array form has no way to say that.
+     */
+    const task = await prisma.$transaction(async (tx) => {
+      const created = await tx.task.create({
         data: {
           projectId: body.projectId,
           title: item.text,
           position,
         },
-      }),
-      prisma.inboxItem.delete({ where: { id } }),
-    ]);
+      });
+
+      await tx.taskEvent.create({
+        data: { taskId: created.id, kind: "created", toStatus: created.status },
+      });
+      await tx.inboxItem.delete({ where: { id } });
+
+      return created;
+    });
 
     reply.status(201).send(task);
   });

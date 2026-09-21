@@ -8,6 +8,8 @@ import { projectRoutes } from "./routes/projects";
 import { taskRoutes } from "./routes/tasks";
 import { noteRoutes } from "./routes/notes";
 import { inboxRoutes } from "./routes/inbox";
+import { focusRoutes } from "./routes/focus";
+import { historyRoutes } from "./routes/history";
 import { boardRoutes } from "./routes/board";
 import { registerErrorHandler } from "./lib/errorHandler";
 import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfig";
@@ -66,6 +68,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(taskRoutes);
   await app.register(noteRoutes);
   await app.register(inboxRoutes);
+  await app.register(focusRoutes);
+  await app.register(historyRoutes);
   await app.register(boardRoutes);
 
   return app;

@@ -22,6 +22,7 @@ const prismaMock = vi.hoisted(() => ({
   },
   project: { findUnique: vi.fn() },
   task: { aggregate: vi.fn(), create: vi.fn() },
+  taskEvent: { create: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -53,12 +54,21 @@ interface TaskRow {
   projectId: string;
   title: string;
   position: number;
+  status: "pending" | "done" | "blocked";
+}
+
+/** A row in the task journal (F11). */
+interface EventRow {
+  taskId: string;
+  kind: string;
+  toStatus?: string | null;
 }
 
 const T0 = new Date("2026-01-01T00:00:00.000Z");
 
 let items: InboxRow[] = [];
 let tasks: TaskRow[] = [];
+let events: EventRow[] = [];
 let projects: string[] = [];
 let nextId = 0;
 
@@ -73,7 +83,8 @@ function seed(): void {
       updatedAt: T0,
     },
   ];
-  tasks = [{ id: "tsk-1", projectId: "prj-1", title: "Уже есть", position: 1000 }];
+  tasks = [{ id: "tsk-1", projectId: "prj-1", title: "Уже есть", position: 1000, status: "pending" }];
+  events = [];
   projects = ["prj-1"];
 }
 
@@ -114,6 +125,7 @@ beforeEach(() => {
   prismaMock.project.findUnique.mockReset();
   prismaMock.task.aggregate.mockReset();
   prismaMock.task.create.mockReset();
+  prismaMock.taskEvent.create.mockReset();
   prismaMock.$transaction.mockReset();
 
   prismaMock.inboxItem.findMany.mockImplementation(() =>
@@ -183,22 +195,29 @@ beforeEach(() => {
   });
   prismaMock.task.create.mockImplementation(
     (args: { data: { projectId: string; title: string; position: number } }) => {
-      const row: TaskRow = { id: `tsk-new-${++nextId}`, ...args.data };
+      const row: TaskRow = { id: `tsk-new-${++nextId}`, status: "pending", ...args.data };
       tasks.push(row);
       return { ...row };
     },
   );
+  prismaMock.taskEvent.create.mockImplementation((args: { data: EventRow }) => {
+    events.push({ ...args.data });
+    return { id: `evt-${++nextId}`, ...args.data };
+  });
   /*
-   * The fakes above apply their change when they are called, so by the time
-   * `$transaction` receives the array both halves have happened and it only has
-   * to hand the results back. That is a simplification of the real client --
-   * Prisma's operations are lazy promises and the transaction is what executes
-   * them -- and it is the right one here: what these tests can honestly check
-   * is that the route sends **both** operations in **one** transaction, which
-   * is asserted on the argument. Whether Postgres then rolls them back together
-   * is Postgres's job, not this fake's.
+   * Filing runs as an interactive transaction since F11 -- the journal row for
+   * the new task needs the id of the task created a statement earlier, which
+   * the array form cannot express -- so the fake runs the callback against
+   * itself and hands back what it returned.
+   *
+   * The fakes apply their changes as they are called, which is a simplification
+   * of the real client and the right one here: what this test can honestly
+   * check is that all three writes are issued inside **one** transaction.
+   * Whether Postgres then rolls them back together is Postgres's job, not this
+   * fake's -- the rollback itself is modelled in tasks.test.ts, where the
+   * question is whether a failed write can leave an event behind.
    */
-  prismaMock.$transaction.mockImplementation((operations: unknown[]) => operations);
+  prismaMock.$transaction.mockImplementation((run: (tx: unknown) => unknown) => run(prismaMock));
 });
 
 describe("GET /inbox", () => {
@@ -373,8 +392,18 @@ describe("POST /inbox/:id/file", () => {
     // ...and they happened together. Two requests from a phone on a train
     // produce two ways to be half-done: filed twice, or lost.
     expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
-    const operations = prismaMock.$transaction.mock.calls[0]![0] as unknown[];
-    expect(operations).toHaveLength(2);
+    expect(prismaMock.task.create).toHaveBeenCalledTimes(1);
+    expect(prismaMock.inboxItem.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the new task's journal in the same transaction (F11)", async () => {
+    await call("POST", "/inbox/inb-1/file", { projectId: "prj-1" });
+
+    const created = tasks.find((t) => t.title === "Спросить про кабель")!;
+    // A task filed from the sandbox is a task like any other, and a task with
+    // no `created` event is one the history mode cannot place in time.
+    expect(events).toEqual([{ taskId: created.id, kind: "created", toStatus: "pending" }]);
+    expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
   });
 
   it("appends the task to the end of the project", async () => {

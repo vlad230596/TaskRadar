@@ -23,6 +23,32 @@ enum TaskStatus {
   blocked
 }
 
+/// What a row in the task journal records (F11).
+///
+/// Four kinds and no more, because each one answers a question the three modes
+/// ask and `tasks` alone cannot:
+///
+/// - `created` — when the clock started. Also carries the initial status in
+///   `toStatus`, so replaying a task's journal never has to consult the task
+///   row to know where the first interval began;
+/// - `status` — the only thing that moves a task between states, and therefore
+///   the only thing that can say how long it sat in each one;
+/// - `focused` / `unfocused` — when it entered and left the working set. That
+///   is a different question from "was it pending": a task can wait for weeks
+///   in the queue and be worked on in one afternoon.
+///
+/// Edits to the title, the description or the reminder date are deliberately
+/// *not* here. They are not movement — nothing in planning, work or history
+/// changes because a wording was corrected — and recording them would turn a
+/// journal that is read on every history screen into an edit log nobody asks a
+/// question of.
+enum TaskEventKind {
+  created
+  status
+  focused
+  unfocused
+}
+
 model Scope {
   id   String @id @default(cuid())
   name String
@@ -84,11 +110,90 @@ model Task {
   position Float
   remindAt DateTime?
 
+  /// When this task was put into the working set -- the 2-5 tasks the "work"
+  /// mode shows one at a time (F11). `null` means it is not in the set.
+  ///
+  /// A timestamp rather than a boolean, because the set is ordered and the
+  /// order that makes sense is the order things were picked: the set is
+  /// assembled at a desk and worked through from a phone, so the phone must
+  /// show it in the sequence it was built in, not in whatever order the rows
+  /// come back.
+  ///
+  /// It lives on the task rather than in a table of its own for the same
+  /// reason there is no "today" list in this product (README): the set is one
+  /// person's answer to "what am I doing now", there is exactly one of it, and
+  /// a join table would be machinery for a many-to-many that cannot happen.
+  ///
+  /// The "no more than five" rule is NOT enforced here or anywhere on the
+  /// server. It is a property of the screen -- five slots is what fits and what
+  /// a person can hold -- and the server has no way to know why five. See
+  /// src/routes/focus.ts.
+  focusedAt DateTime?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  events TaskEvent[]
+
   @@index([projectId, position])
   @@map("tasks")
+}
+
+/// One row per thing that happened to a task (F11).
+///
+/// WHY A JOURNAL AT ALL
+///
+/// `createdAt` and `updatedAt` answer "how old" and "when was it last touched",
+/// and those two are what the planning mode needs. The history mode asks
+/// questions they cannot answer: how long did this hang in `blocked`, what did
+/// I actually close last week, is this project moving or only growing. Those
+/// need the transitions themselves, and a row that is overwritten in place does
+/// not have them -- the moment a task goes `blocked -> pending`, the fact that
+/// it was blocked for eleven days is gone forever.
+///
+/// WRITTEN IN THE SAME TRANSACTION AS THE CHANGE IT DESCRIBES
+///
+/// Every route that moves a task wraps the task write and the event write in
+/// one `prisma.$transaction` (see src/routes/tasks.ts and src/routes/focus.ts).
+/// A journal appended by a second query after the first one succeeded starts
+/// lying at the first error, and it lies in the worst possible direction: the
+/// task shows a state nothing in the journal explains, so the history screen
+/// draws a shape that never happened and there is no way to tell which of the
+/// two is wrong.
+///
+/// DELETING A TASK DELETES ITS EVENTS (`Cascade`)
+///
+/// This is the task's own history, not an audit trail: nobody is accountable to
+/// anyone here (README: an instrument for one person, not a team). Events that
+/// outlived their task would be rows nothing can render -- the history screen
+/// shows titles and project names -- and keeping them would quietly turn a
+/// personal tool into a thing that remembers what you deleted.
+model TaskEvent {
+  id     String @id @default(cuid())
+  taskId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  kind TaskEventKind
+
+  /// The transition, for `kind = status`. Both are nullable because the other
+  /// three kinds have no status to report: `created` fills only `toStatus` (the
+  /// status the task started in, so a replay can begin without reading the task
+  /// row), and focus events fill neither -- entering the working set is not a
+  /// change of status, and a task can be picked up while `blocked` and stay
+  /// blocked.
+  fromStatus TaskStatus?
+  toStatus   TaskStatus?
+
+  at DateTime @default(now())
+
+  /// The one access pattern that matters: a single task's journal, in order --
+  /// both for the "life of this task" section and for replaying how long it
+  /// spent in each status. The history aggregates scan by `at` across all
+  /// tasks instead, without an index of their own: the journal of a personal
+  /// tracker is thousands of rows at the outside, and an index that is never
+  /// the difference between fast and slow is a write cost paid for nothing.
+  @@index([taskId, at])
+  @@map("task_events")
 }
 
 /// The sandbox (F8): a line of text written down before deciding where it

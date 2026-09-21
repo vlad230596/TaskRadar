@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { NotFoundError, ValidationError } from "../lib/errors";
 import { annotateIsCurrent } from "../domain/isCurrent";
+import { planStatusChange } from "../domain/taskEvents";
 import {
   computeAppendPosition,
   computePositionBetween,
@@ -17,7 +18,7 @@ import {
 } from "../schemas";
 import { getProjectOrThrow } from "./projects";
 
-async function getTaskOrThrow(id: string) {
+export async function getTaskOrThrow(id: string) {
   const task = await prisma.task.findUnique({ where: { id } });
   if (!task) {
     throw new NotFoundError("Task");
@@ -37,16 +38,40 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     });
     const position = computeAppendPosition(last._max.position);
 
-    const task = await prisma.task.create({
-      data: {
-        projectId,
-        title: body.title,
-        description: body.description ?? null,
-        ...(body.status !== undefined ? { status: body.status } : {}),
-        remindAt: body.remindAt ?? null,
-        position,
-      },
+    /*
+     * The task and its first journal row, in one transaction (F11).
+     *
+     * The `created` event is what starts the clock the history mode reads --
+     * "how long has this been hanging" is measured from it, not from
+     * `createdAt`, so that one replay of the journal answers every question
+     * about the task's life. A task with no `created` event is therefore not a
+     * cosmetic gap: it is a task the history mode cannot place in time, which
+     * is why this is a transaction and not two writes.
+     *
+     * `toStatus` carries the status the task was born in. Almost always
+     * `pending`, but `POST` accepts a status, and a journal that has to consult
+     * the task row to know where its first interval began is a journal that
+     * cannot be replayed on its own.
+     */
+    const task = await prisma.$transaction(async (tx) => {
+      const created = await tx.task.create({
+        data: {
+          projectId,
+          title: body.title,
+          description: body.description ?? null,
+          ...(body.status !== undefined ? { status: body.status } : {}),
+          remindAt: body.remindAt ?? null,
+          position,
+        },
+      });
+
+      await tx.taskEvent.create({
+        data: { taskId: created.id, kind: "created", toStatus: created.status },
+      });
+
+      return created;
     });
+
     reply.status(201).send(task);
   });
 
@@ -64,20 +89,50 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.patch("/tasks/:id", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
     const body = updateTaskSchema.parse(request.body);
-    await getTaskOrThrow(id);
+    const before = await getTaskOrThrow(id);
+
+    /*
+     * What this change means for the journal and for the working set, decided
+     * before anything is written. The rules -- an unchanged status records
+     * nothing, finishing a task takes it out of the set -- live in
+     * ../domain/taskEvents.ts, next to the reasons for them.
+     */
+    const movement = planStatusChange(before, body.status);
 
     const data: {
       title?: string;
       description?: string | null;
       status?: "pending" | "done" | "blocked";
       remindAt?: Date | null;
+      focusedAt?: Date | null;
     } = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
     if (body.status !== undefined) data.status = body.status;
     if (body.remindAt !== undefined) data.remindAt = body.remindAt;
+    if (movement.leavesFocus) data.focusedAt = null;
 
-    const task = await prisma.task.update({ where: { id }, data });
+    /*
+     * One transaction, unconditionally -- even for a pure rename, which writes
+     * no events at all.
+     *
+     * The alternative is a branch that takes the plain-update path when there
+     * is nothing to journal, and it buys a `BEGIN` that Postgres was going to
+     * issue around the single statement anyway. What it costs is the one thing
+     * this table must not have: two ways for a task to be written, only one of
+     * which keeps the journal honest. Anybody adding a field here gets the
+     * guarantee without having to notice it.
+     */
+    const task = await prisma.$transaction(async (tx) => {
+      const updated = await tx.task.update({ where: { id }, data });
+
+      for (const event of movement.events) {
+        await tx.taskEvent.create({ data: { taskId: id, ...event } });
+      }
+
+      return updated;
+    });
+
     reply.send(task);
   });
 
@@ -136,6 +191,39 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     reply.send(updated);
   });
 
+  /*
+   * The life of one task, for the section of the task screen with that name
+   * (F11, `design/reference/Edit.html`).
+   *
+   * Separate from `GET /projects/:projectId/tasks` rather than an `include` on
+   * it, because the journal is read for exactly one task at a time -- the one
+   * that is open -- while the list is read for every task in a project on every
+   * visit. Attaching it to the list would multiply the heaviest table in the
+   * schema by the screen that is opened most often, to draw something no list
+   * row shows.
+   *
+   * Ascending `at`, which is both how the section reads and the order
+   * `replayStatusTime` requires; the `[taskId, at]` index serves it directly.
+   * The rows go out as they are stored: this is the one place where the raw
+   * journal is the answer, and a client that wants "3 дня в blocked" gets that
+   * from `GET /history` instead of recomputing it here.
+   */
+  app.get("/tasks/:id/events", async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params);
+    await getTaskOrThrow(id);
+
+    const events = await prisma.taskEvent.findMany({
+      where: { taskId: id },
+      orderBy: { at: "asc" },
+    });
+    reply.send(events);
+  });
+
+  /*
+   * Deleting a task takes its journal with it (`onDelete: Cascade`), so there
+   * is nothing to clean up here. That is the schema's decision and the note on
+   * the model explains it: this is the task's own history, not an audit trail.
+   */
   app.delete("/tasks/:id", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
     await getTaskOrThrow(id);
