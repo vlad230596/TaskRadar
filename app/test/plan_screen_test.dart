@@ -62,20 +62,23 @@ void main() {
   int boardReads() =>
       backend.requests.where((request) => request.path == '/board').length;
 
-  /// Holds `GET /board` open, while the other two answer immediately.
+  /// Holds `GET /board` open, while everything else answers immediately.
   ///
   /// Hanging *every* request would leave them pending at teardown, and the test
   /// would fail on a stray dio timeout timer rather than on anything it is
   /// about.
+  ///
+  /// Отсюда и форма: висит ровно `/board`, а любой другой путь получает пустой
+  /// ответ, не перечисляя их по именам. Оболочка читает уже не два чужих
+  /// эндпойнта, а больше (`/scopes`, `/inbox`, `/focus`, дальше — своё у каждого
+  /// режима), и тест про загрузку доски не должен знать их список.
   void holdBoardOpen(Completer<ResponseBody> inFlight) {
     backend.responder = (options) {
+      if (options.path.startsWith('/board')) return inFlight.future;
       if (options.path.startsWith('/scopes')) {
         return jsonResponse(defaultScopesJson());
       }
-      if (options.path.startsWith('/inbox')) {
-        return jsonResponse(const <dynamic>[]);
-      }
-      return inFlight.future;
+      return jsonResponse(const <dynamic>[]);
     };
   }
 

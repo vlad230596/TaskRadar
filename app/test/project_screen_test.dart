@@ -326,21 +326,29 @@ void main() {
       expect(find.text('Жду кабель'), findsOneWidget);
     });
 
-    testWidgets('a drag handle exists for every task and nothing else', (
+    testWidgets('справа в строке — «взять в работу», а не ручка (F13)', (
       tester,
     ) async {
       await pumpProject(tester);
-      expect(find.byIcon(Icons.drag_indicator), findsNWidgets(3));
+
+      // Две мишени по 48 px в строке высотой 56 не помещаются, и эталон
+      // (`design/reference/Project.html`) выбрал за нас: набор собирают каждый
+      // день, порядок задач меняют изредка.
+      expect(find.byIcon(Icons.drag_indicator), findsNothing);
+      expect(find.byIcon(Icons.adjust), findsNWidgets(3));
     });
 
     testWidgets('dragging a row persists the new order', (tester) async {
       await pumpProject(tester);
 
-      // The real gesture, through `ReorderableDragStartListener`: press the
-      // handle of the first row and pull it below the second.
-      final handle = find.byIcon(Icons.drag_indicator).first;
+      // Жест целиком, через `ReorderableDelayedDragStartListener`: долгое
+      // нажатие по тексту первой строки и протяжка ниже второй. Ручки больше
+      // нет — см. тест выше и заметку в `widgets/task_list.dart`.
+      final handle = find.text('Уже сделано');
       final gesture = await tester.startGesture(tester.getCenter(handle));
-      await tester.pump(const Duration(milliseconds: 200));
+      // Дольше, чем `kLongPressTimeout`: задержанный слушатель до этого момента
+      // жест не забирает, чтобы не отнимать его у прокрутки.
+      await tester.pump(const Duration(milliseconds: 700));
       // In steps, and past the whole of the next row: `ReorderableListView`
       // decides on the drop by where the pointer is relative to the item it is
       // over, and one jump can land between two frames of the animation.

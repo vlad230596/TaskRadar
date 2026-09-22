@@ -9,6 +9,7 @@ import '../models/scope.dart';
 import '../navigation/app_routes.dart';
 import '../providers/archive_providers.dart';
 import '../providers/board_providers.dart';
+import '../providers/focus_providers.dart';
 import '../providers/inbox_providers.dart';
 import '../providers/scope_providers.dart';
 import '../providers/shell_providers.dart';
@@ -385,15 +386,23 @@ class _Board extends ConsumerWidget {
 
 /// "В работе", with a dot per task in the set.
 ///
-/// A stub in F12 on purpose: the set itself is `Task.focusedAt`, which arrives
-/// with F11, and the work mode that reads it is F13. What is here is the
-/// *route* -- tapping it switches mode rather than pushing a screen, so the
-/// back button keeps meaning "out of a sub-screen" and never "back one mode".
+/// Точки — из `design/reference/Main.html`: девять пикселей янтаря на чернилах,
+/// по одной на задачу набора. Больше полоска ничего и не говорит, и это
+/// намеренно — «сколько я на себя взял» отвечается одним взглядом, а что именно
+/// взято, показывает режим работы.
+///
+/// Пустой набор рисует не пустое место, а слова: полоска без точек и без
+/// объяснения читалась бы как «не загрузилось».
+///
+/// Тап переключает режим, а не открывает экран поверх, — чтобы кнопка «назад»
+/// продолжала значить «выйти из подэкрана» и никогда «назад на один режим».
 class _FocusBar extends ConsumerWidget {
   const _FocusBar();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final taken = ref.watch(focusedTaskIdsProvider).length;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 0, Insets.gutter, 10),
       child: Material(
@@ -413,7 +422,20 @@ class _FocusBar extends ConsumerWidget {
                   'В работе',
                   style: AppText.action.copyWith(color: AppColors.onInk),
                 ),
-                const Spacer(),
+                const SizedBox(width: 10),
+                if (taken == 0)
+                  Expanded(
+                    child: Text(
+                      'пусто — наберите задач',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.caption.copyWith(
+                        color: AppColors.voiceMuted,
+                      ),
+                    ),
+                  )
+                else
+                  Expanded(child: _FocusDots(taken: taken)),
                 const Icon(
                   Icons.chevron_right,
                   size: 18,
@@ -424,6 +446,38 @@ class _FocusBar extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Точки набора внутри полоски «В работе»: 9 px янтаря на чернилах.
+///
+/// Янтарь, а не белое: белые точки на чернилах слились бы с белой же подписью
+/// рядом, и полоска перестала бы отвечать на свой единственный вопрос с одного
+/// взгляда. Тот же цвет отмечает набранное и на тёмной плитке песочницы.
+class _FocusDots extends StatelessWidget {
+  const _FocusDots({required this.taken});
+
+  final int taken;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (var i = 0; i < taken; i++)
+          Padding(
+            padding: const EdgeInsets.only(right: 5),
+            child: Container(
+              width: 9,
+              height: 9,
+              decoration: const BoxDecoration(
+                color: AppColors.waitingDotOnInk,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

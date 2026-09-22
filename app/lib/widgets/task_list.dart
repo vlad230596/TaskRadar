@@ -8,6 +8,7 @@ import '../domain/task_age.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
+import '../providers/focus_providers.dart';
 import '../providers/project_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -38,23 +39,28 @@ import 'mutation_feedback.dart';
 /// - **Edits are optimistic**, as they have been since F3: the row flips
 ///   immediately and rolls back on failure. On mobile data the wait reads as a
 ///   dead tap.
-/// - **Dragging is scoped to a handle.** A whole-row drag target fights with
-///   every tap inside the row, and on touch it also fights with scrolling.
 /// - **Changing a status into `blocked` offers the date immediately.** Left as
 ///   two gestures the app fills up with dateless blockers -- tasks that are
 ///   stuck and will never say so again.
 ///
-/// ## The one thing F13 will want back
+/// ## Что изменилось в F13: справа в строке — «взять в работу»
 ///
-/// `design/reference/Project.html` puts a "взять в работу" target on the right
-/// of each row, where the drag handle is here. It cannot be built yet:
-/// `Task.focusedAt` is F11's and the work mode that reads it is F13's, and a
-/// button that does nothing is worse than no button. When it arrives the handle
-/// has to move -- a long press on the row is the obvious home for it, which is
-/// also where `ReorderableListView` puts its default.
+/// `design/reference/Project.html` ставит на правый край строки мишень «взять в
+/// работу» — ровно туда, где до сих пор была ручка перетаскивания. Две мишени
+/// 48 px рядом в строке высотой 56 не помещаются, и выбор между ними не стоит
+/// обсуждения: набор собирают каждый день, а порядок задач внутри проекта
+/// меняют изредка.
+///
+/// Перетаскивание при этом **не потеряно**: оно переехало на долгое нажатие по
+/// тексту строки ([ReorderableDelayedDragStartListener]) — туда же, куда его по
+/// умолчанию кладёт сам `ReorderableListView` на тач-устройствах. Это и было
+/// предсказано в комментарии F12 («a long press on the row is the obvious home
+/// for it»). Долгое нажатие по кружку статуса слева по-прежнему открывает выбор
+/// статуса: две разные мишени, два разных долгих нажатия.
 class TaskListView extends ConsumerWidget {
   const TaskListView({
     required this.projectId,
+    required this.projectName,
     required this.tasks,
     this.highlightTaskId,
     this.now,
@@ -62,6 +68,10 @@ class TaskListView extends ConsumerWidget {
   });
 
   final String projectId;
+
+  /// Имя проекта — для оптимистичной строки набора: экран работы подписывает им
+  /// каждую задачу, а `GET /focus` пришлёт настоящее кругом позже.
+  final String projectName;
 
   /// In server order. Never re-sorted -- see [Task.position].
   final List<Task> tasks;
@@ -116,6 +126,7 @@ class TaskListView extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: TaskRow(
               projectId: projectId,
+              projectName: projectName,
               task: task,
               index: index,
               isHighlighted: task.id == highlightTaskId,
@@ -147,6 +158,7 @@ class TaskListView extends ConsumerWidget {
 class TaskRow extends ConsumerWidget {
   const TaskRow({
     required this.projectId,
+    required this.projectName,
     required this.task,
     required this.index,
     this.isHighlighted = false,
@@ -155,6 +167,7 @@ class TaskRow extends ConsumerWidget {
   });
 
   final String projectId;
+  final String projectName;
   final Task task;
   final int index;
   final bool isHighlighted;
@@ -206,69 +219,75 @@ class TaskRow extends ConsumerWidget {
             now: now,
           ),
           Expanded(
-            child: InkWell(
-              onTap: _unconfirmed
-                  ? null
-                  : () => AppRoutes.openTask(
-                      context,
-                      projectId: projectId,
-                      taskId: task.id,
-                    ),
-              child: Container(
-                constraints: const BoxConstraints(minHeight: Targets.row),
-                alignment: Alignment.centerLeft,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Row(
-                      children: <Widget>[
-                        Expanded(
-                          child: Text(
-                            task.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style:
-                                (current
-                                        ? AppText.taskTitleCurrent
-                                        : AppText.taskTitle)
-                                    .copyWith(
-                                      // Struck through rather than hidden: a
-                                      // done task is still part of the record
-                                      // of what happened here.
-                                      decoration: done
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                      color: done ? AppColors.muted : null,
-                                    ),
+            // Долгое нажатие по тексту — перетаскивание. Задержанный слушатель,
+            // а не обычный: обычный забирал бы жест у прокрутки списка.
+            child: ReorderableDelayedDragStartListener(
+              enabled: !_unconfirmed,
+              index: index,
+              child: InkWell(
+                onTap: _unconfirmed
+                    ? null
+                    : () => AppRoutes.openTask(
+                        context,
+                        projectId: projectId,
+                        taskId: task.id,
+                      ),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: Targets.row),
+                  alignment: Alignment.centerLeft,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              task.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style:
+                                  (current
+                                          ? AppText.taskTitleCurrent
+                                          : AppText.taskTitle)
+                                      .copyWith(
+                                        // Struck through rather than hidden: a
+                                        // done task is still part of the record
+                                        // of what happened here.
+                                        decoration: done
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        color: done ? AppColors.muted : null,
+                                      ),
+                            ),
                           ),
-                        ),
-                        // No second line to put it on, so it rides at the end
-                        // of the title -- and never wraps or shrinks. See
-                        // `widgets/glance.dart`.
-                        if (!current && !blocked) ...<Widget>[
-                          const SizedBox(width: 10),
-                          AgeChip(days: age, showIcon: false),
+                          // No second line to put it on, so it rides at the end
+                          // of the title -- and never wraps or shrinks. See
+                          // `widgets/glance.dart`.
+                          if (!current && !blocked) ...<Widget>[
+                            const SizedBox(width: 10),
+                            AgeChip(days: age, showIcon: false),
+                          ],
                         ],
+                      ),
+                      if (current) ...<Widget>[
+                        const SizedBox(height: 6),
+                        _Meta(
+                          icon: Icons.arrow_forward,
+                          text: 'следующая',
+                          colour: AppColors.indigoLink,
+                        ),
+                      ] else if (blocked) ...<Widget>[
+                        const SizedBox(height: 6),
+                        _Meta(
+                          icon: Icons.notifications_none,
+                          text: _blockedLine(task, age, now),
+                          colour: AppColors.waitingInk,
+                        ),
                       ],
-                    ),
-                    if (current) ...<Widget>[
-                      const SizedBox(height: 6),
-                      _Meta(
-                        icon: Icons.arrow_forward,
-                        text: 'следующая',
-                        colour: AppColors.indigoLink,
-                      ),
-                    ] else if (blocked) ...<Widget>[
-                      const SizedBox(height: 6),
-                      _Meta(
-                        icon: Icons.notifications_none,
-                        text: _blockedLine(task, age, now),
-                        colour: AppColors.waitingInk,
-                      ),
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -286,22 +305,59 @@ class TaskRow extends ConsumerWidget {
               ),
             )
           else
-            ReorderableDragStartListener(
-              index: index,
-              child: const Tooltip(
-                message: 'Перетащить задачу',
-                child: SizedBox(
-                  width: 48,
-                  height: Targets.row,
-                  child: Icon(
-                    Icons.drag_indicator,
-                    size: 20,
-                    color: AppColors.lineStrong,
-                  ),
-                ),
-              ),
-            ),
+            _FocusTarget(task: task, projectName: projectName),
         ],
+      ),
+    );
+  }
+}
+
+/// Мишень справа в строке: взять задачу в работу или убрать из набора.
+///
+/// Два кольца — тот же значок, которым в приложении обозначен режим работы
+/// (`Icons.adjust`, нижняя панель и левый рельс). Взятая задача рисует его
+/// чернилами, невзятая — вторым планом; отдельной галочки нет намеренно: цвет
+/// значка, который уже означает «работа», читается быстрее, чем второй символ
+/// рядом с ним.
+///
+/// Предела в пять здесь нет. Пять — правило экрана сбора, где видно весь набор
+/// сразу; здесь, внутри одного проекта, видно одну строку, и отказ «уже пять»
+/// был бы сообщением про экран, которого человек не видит. Набор из шести,
+/// собранный так, — это прокручивающийся экран работы, и он это переживёт.
+class _FocusTarget extends ConsumerWidget {
+  const _FocusTarget({required this.task, required this.projectName});
+
+  final Task task;
+  final String projectName;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final inFocus = ref.watch(focusedTaskIdsProvider).contains(task.id);
+
+    return Tooltip(
+      message: inFocus ? 'Убрать из набора' : 'Взять в работу',
+      child: InkWell(
+        onTap: () {
+          final notifier = ref.read(focusSetProvider.notifier);
+          runMutation(
+            context,
+            () => inFocus
+                ? notifier.drop(task.id)
+                : notifier.take(task, projectName: projectName),
+            failure: inFocus
+                ? 'Не удалось убрать задачу из набора.'
+                : 'Не удалось взять задачу в работу.',
+          );
+        },
+        child: SizedBox(
+          width: 48,
+          height: Targets.row,
+          child: Icon(
+            Icons.adjust,
+            size: 22,
+            color: inFocus ? AppColors.ink : AppColors.muted,
+          ),
+        ),
       ),
     );
   }
@@ -486,6 +542,10 @@ Future<void> setTaskStatus(
   final wasBlocked = task.status == TaskStatus.blocked;
   final hadDate = task.remindAt != null;
 
+  // Читаем до записи: после неё задача может уже покинуть набор, и спросить
+  // «была ли она там» будет не у кого.
+  final wasInFocus = ref.read(focusedTaskIdsProvider).contains(task.id);
+
   final ok = await runMutation(
     context,
     () => ref
@@ -493,7 +553,24 @@ Future<void> setTaskStatus(
         .setStatus(task, status),
     failure: 'Не удалось изменить статус.',
   );
-  if (!ok || !context.mounted) return;
+  if (!ok) return;
+
+  /*
+   * Набор мог измениться от этой записи, и не по своей воле: закрытая задача
+   * выходит из него **на сервере**, в той же транзакции
+   * (`backend/src/domain/taskEvents.ts` — `leavesFocus`), именно чтобы телефону
+   * не пришлось досылать второй запрос. Клиент об этом узнать может только
+   * перечитав набор; блокер из набора не выводит, но меняет то, как строка в нём
+   * выглядит, поэтому перечитываем в обоих случаях.
+   *
+   * Только для задачи, которая в наборе была: у остальных (то есть почти у всех)
+   * это стоило бы лишнего запроса на каждое «сделано».
+   */
+  if (wasInFocus) {
+    unawaited(ref.read(focusSetProvider.notifier).refresh());
+  }
+
+  if (!context.mounted) return;
   if (status != TaskStatus.blocked || wasBlocked || hadDate) return;
 
   // Read fresh: `task` is the row from before the status change, and

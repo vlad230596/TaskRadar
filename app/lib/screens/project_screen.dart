@@ -165,6 +165,9 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
 
     final taskPane = TaskListView(
       projectId: projectId,
+      // Для оптимистичной строки набора (F13): экран работы подписывает задачу
+      // именем проекта, и это имя здесь уже есть.
+      projectName: view.project.name,
       tasks: view.tasks,
       highlightTaskId: widget.highlightTaskId,
     );
