@@ -117,13 +117,29 @@ void main() {
   }
 
   testWidgets('History — неделя, долгожители, проекты', (tester) async {
-    await pump(tester, const Scaffold(body: HistoryScreen()));
+    await pump(tester, const Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HistoryHeader(),
+          Expanded(child: HistoryScreen()),
+        ],
+      ),
+    ));
     await shot(tester, 'History');
   });
 
   testWidgets('History — пусто, и это сказано словами', (tester) async {
     history.history = history.emptyWeek();
-    await pump(tester, const Scaffold(body: HistoryScreen()));
+    await pump(tester, const Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HistoryHeader(),
+          Expanded(child: HistoryScreen()),
+        ],
+      ),
+    ));
     await shot(tester, 'History-empty');
   });
 
@@ -138,7 +154,15 @@ void main() {
   testWidgets('Desk-History — широкое окно', (tester) async {
     await pump(
       tester,
-      const Scaffold(body: HistoryScreen()),
+      const Scaffold(
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          HistoryHeader(),
+          Expanded(child: HistoryScreen()),
+        ],
+      ),
+    ),
       w: 1440,
       h: 900,
     );

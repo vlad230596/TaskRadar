@@ -189,15 +189,11 @@ void main() {
     await shot(tester, 'Desk-Plan');
   });
 
-  testWidgets('Work and History — the two stubs', (tester) async {
-    await pump(tester, const ShellScreen());
-    await tester.tap(find.text('Работа'));
-    await settle(tester);
-    await shot(tester, 'Work-stub');
-    await tester.tap(find.text('История'));
-    await settle(tester);
-    await shot(tester, 'History-stub');
-  });
+  // Снимков «работы» и «истории» здесь больше нет: в F12 это были заглушки,
+  // которые нечего было сверять, а с F13 у обоих режимов свои стенды --
+  // `zz_capture_work_test.dart` и `zz_capture_history_test.dart`, каждый со
+  // своим фейком сервера. Снимать их этим, чей фейк не знает ни `/focus`, ни
+  // `/history`, значило бы фотографировать экран ошибки.
 }
 
 final GlobalKey _root = GlobalKey();

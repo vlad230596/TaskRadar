@@ -7,10 +7,13 @@ import '../models/history_snapshot.dart';
 import '../models/history_task_event.dart';
 import '../navigation/app_routes.dart';
 import '../providers/history_providers.dart';
+import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/history_charts.dart';
+import '../widgets/mode_navigation.dart';
+import 'shell_screen.dart';
 
 /// История: что закрыто и что висит (F13).
 ///
@@ -79,6 +82,38 @@ class HistoryScreen extends ConsumerWidget {
   }
 }
 
+/// Шапка режима истории: название и выбор диапазона.
+///
+/// Диапазон стоит в одной строке с названием режима — так он и нарисован на
+/// обоих эталонах. Шапку режима рисует оболочка, поэтому она приходит оттуда,
+/// как `PlanHeader` и `WorkHeader` у своих режимов.
+///
+/// Двумя разными контролами, и это тот же выбор, что на эталонных страницах:
+/// на телефоне — плашка с выпадающим списком (три подписи в строку съели бы
+/// половину узкой шапки), на широком экране — сегменты, где все три диапазона
+/// видны сразу и стоят один тап.
+class HistoryHeader extends StatelessWidget {
+  const HistoryHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
+      child: Row(
+        children: <Widget>[
+          Text(AppMode.history.title, style: AppText.mode),
+          const Spacer(),
+          if (isWideLayout(context))
+            const _RangeSegments()
+          else
+            const _RangePill(),
+          const ShellOverflowButton(),
+        ],
+      ),
+    );
+  }
+}
+
 /// Скругление карточек истории — 22 px.
 ///
 /// Своё число, а не [Radii.panel] (20): на эталоне и телефона, и десктопа у
@@ -113,11 +148,6 @@ class _PhoneBody extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 24),
       children: <Widget>[
         if (failure != null) _StaleBanner(error: failure!),
-
-        const Padding(
-          padding: EdgeInsets.fromLTRB(Insets.gutter, 0, Insets.gutter, 10),
-          child: Align(alignment: Alignment.centerRight, child: _RangePill()),
-        ),
 
         if (data.isEmpty)
           const _EmptyCard()
@@ -381,9 +411,6 @@ class _WideBody extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 18),
             child: _StaleBanner(error: failure!, margin: EdgeInsets.zero),
           ),
-
-        const Align(alignment: Alignment.centerRight, child: _RangeSegments()),
-        const SizedBox(height: 18),
 
         if (data.isEmpty)
           const _EmptyCard(margin: EdgeInsets.zero)

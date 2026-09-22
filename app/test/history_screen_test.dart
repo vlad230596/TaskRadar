@@ -50,7 +50,18 @@ void main() {
         overrides: [apiClientProvider.overrideWithValue(backend.client)],
         child: MaterialApp(
           theme: buildAppTheme(),
-          home: const Scaffold(body: HistoryScreen()),
+          // Так же, как складывает их оболочка: шапка режима сверху, экран
+          // под ней. Выбор диапазона живёт в шапке (`HistoryHeader`), потому
+          // что на обоих эталонах он стоит в строке с названием режима.
+          home: const Scaffold(
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                HistoryHeader(),
+                Expanded(child: HistoryScreen()),
+              ],
+            ),
+          ),
           onGenerateRoute: AppRoutes.onGenerateRoute,
         ),
       ),

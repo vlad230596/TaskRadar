@@ -8,11 +8,14 @@ import '../models/focus_task.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/focus_providers.dart';
+import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/mode_navigation.dart';
 import '../widgets/mutation_feedback.dart';
 import 'pick_screen.dart';
+import 'shell_screen.dart';
 
 /// Режим работы: две-пять задач, которые действительно в руках, и одна из них
 /// крупно (F13).
@@ -47,7 +50,6 @@ class WorkScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final set = ref.watch(focusSetProvider);
-    final rows = set.value ?? const <FocusTask>[];
 
     final Widget body = switch (set) {
       AsyncData(:final value) when value.isEmpty => const _NoSet(),
@@ -60,49 +62,45 @@ class WorkScreen extends ConsumerWidget {
       ),
     };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        _SetBar(tasks: rows),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: () => ref.read(focusSetProvider.notifier).refresh(),
-            child: body,
-          ),
-        ),
-      ],
+    return RefreshIndicator(
+      onRefresh: () => ref.read(focusSetProvider.notifier).refresh(),
+      child: body,
     );
   }
 }
 
-/// Точки набора и кнопка «Набор».
+/// Шапка режима работы: название, точки набора и кнопка «Набор».
 ///
-/// В эталоне это часть шапки экрана, рядом с названием режима. Шапку режима
-/// рисует оболочка (`shell_screen.dart`), и она не моя, поэтому строка живёт
-/// первой строкой тела — на десяток пикселей ниже, чем на эталонной странице.
-class _SetBar extends StatelessWidget {
-  const _SetBar({required this.tasks});
-
-  final List<FocusTask> tasks;
+/// В эталоне (`design/reference/Focus.html`) точки и кнопка стоят в одной
+/// строке с названием режима, а не отдельной полосой под ним. Шапку режима
+/// рисует оболочка, поэтому она и приходит оттуда — как `PlanHeader` у режима
+/// планирования.
+class WorkHeader extends ConsumerWidget {
+  const WorkHeader({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tasks = ref.watch(focusSetProvider).value ?? const <FocusTask>[];
     final wide = isWideLayout(context);
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(wide ? 28 : Insets.gutter, 0, wide ? 28 : Insets.gutter, 10),
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
       child: Row(
         children: <Widget>[
-          FocusSlots(
-            taken: tasks.length,
-            current: tasks.isEmpty
-                ? null
-                : tasks.indexWhere((task) => task.id == _headOf(tasks).id),
-            size: wide ? 12 : 11,
-            gap: wide ? 7 : 6,
-          ),
+          Text(AppMode.work.title, style: AppText.mode),
+          const SizedBox(width: 12),
+          // Пустой набор не рисует ряд пустых слотов: точки описывают набор,
+          // а его пока нет, и об этом говорит само тело экрана.
+          if (tasks.isNotEmpty)
+            FocusSlots(
+              taken: tasks.length,
+              current: tasks.indexWhere((task) => task.id == _headOf(tasks).id),
+              size: wide ? 12 : 11,
+              gap: wide ? 7 : 6,
+            ),
           const Spacer(),
           _PickButton(empty: tasks.isEmpty),
+          const ShellOverflowButton(),
         ],
       ),
     );

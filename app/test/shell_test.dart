@@ -192,7 +192,9 @@ void main() {
       await tester.tap(find.text('Работа'));
       await settle(tester);
 
-      expect(find.text('Набор ещё не собирается'), findsOneWidget);
+      // Режим работы с пустым набором (F13): он и есть то, что видно, когда
+      // набор ещё не собран.
+      expect(find.text('Набор пуст'), findsOneWidget);
       expect(find.text('Итогов пока нет'), findsNothing);
     });
 

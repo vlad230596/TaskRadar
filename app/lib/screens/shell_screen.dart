@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../navigation/app_routes.dart';
 import '../providers/session_provider.dart';
 import '../providers/shell_providers.dart';
-import '../theme/app_theme.dart';
-import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/mode_navigation.dart';
 import 'history_screen.dart';
@@ -55,7 +53,8 @@ class ShellScreen extends ConsumerWidget {
 
     final header = switch (mode) {
       AppMode.plan => const PlanHeader(),
-      _ => _StubHeader(mode: mode),
+      AppMode.work => const WorkHeader(),
+      AppMode.history => const HistoryHeader(),
     };
 
     if (wide) {
@@ -97,26 +96,6 @@ class ShellScreen extends ConsumerWidget {
               ref.read(shellModeProvider.notifier).select(value),
           onDictate: () => AppRoutes.openDictation(context),
         ),
-      ),
-    );
-  }
-}
-
-/// The header for a mode that has no header of its own yet.
-class _StubHeader extends StatelessWidget {
-  const _StubHeader({required this.mode});
-
-  final AppMode mode;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: Text(mode.title, style: AppText.mode)),
-          const ShellOverflowButton(),
-        ],
       ),
     );
   }
