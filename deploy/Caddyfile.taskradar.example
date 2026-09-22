@@ -88,7 +88,7 @@
 	# Neither check can see the file that actually serves traffic: this one is
 	# pasted into the shared Caddyfile on the VDS by hand, so a fix here is not
 	# live until that is done (DEPLOYMENT.md).
-	@api path /health /ready /version /auth/* /board /scopes /scopes/* /projects /projects/* /tasks/* /notes/* /inbox /inbox/*
+	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /notes/* /inbox /inbox/*
 	handle @api {
 		# Matches the alias and port from compose.prod.yaml. Resolution works only
 		# because the Caddy container is attached to the `taskradar-ingress`
