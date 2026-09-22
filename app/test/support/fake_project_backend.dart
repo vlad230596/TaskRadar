@@ -81,6 +81,17 @@ class FakeProjectBackend {
 
   String _id(String prefix) => '${prefix}_${++_nextId}';
 
+  /// Метки времени набора: фиксированные и возрастающие, по минуте на задачу.
+  ///
+  /// Не `DateTime.now()` — набор упорядочен по `focusedAt`, и две задачи,
+  /// взятые в одну миллисекунду, дали бы порядок, зависящий от скорости машины.
+  /// А заодно «в работе с 9:40» на снимке экрана всегда одно и то же.
+  static final DateTime _focusEpoch = DateTime.utc(2026, 9, 22, 9, 40);
+  int _focusTicks = 0;
+
+  String _nextFocusStamp() =>
+      _focusEpoch.add(Duration(minutes: _focusTicks++)).toIso8601String();
+
   // --- seeding ---------------------------------------------------------------
 
   String addScope({required String name, String? id, num? position}) {
@@ -137,6 +148,11 @@ class FakeProjectBackend {
     String? description,
     String? remindAt,
     double? position,
+
+    /// Задача, уже взятая в работу (F11). Null — обычная задача вне набора;
+    /// `true` ставит следующую по порядку метку, так что порядок набора в тесте
+    /// — порядок вызовов.
+    bool focused = false,
   }) {
     final taskId = id ?? _id('tsk');
     tasks.add(<String, dynamic>{
@@ -149,6 +165,7 @@ class FakeProjectBackend {
       'remindAt': remindAt,
       'createdAt': '2026-08-01T10:00:00.000Z',
       'updatedAt': '2026-08-01T10:00:00.000Z',
+      'focusedAt': focused ? _nextFocusStamp() : null,
     });
     return taskId;
   }
@@ -522,6 +539,60 @@ class FakeProjectBackend {
       return jsonResponse(row, statusCode: 201);
     });
 
+    /*
+     * --- набор «в работе» (F11) -------------------------------------------
+     *
+     * Воспроизведены ровно те свойства настоящих роутов, на которые опирается
+     * клиент, и ни одного лишнего:
+     *
+     * - порядок по `focusedAt` по возрастанию, и `project` (id и имя) внутри
+     *   каждой строки — экран работы подписывает ими задачи;
+     * - **идемпотентность обоих write-роутов**: повторный POST не меняет
+     *   `focusedAt` (иначе двойной тап переставил бы набор), повторный DELETE не
+     *   ошибка. Фейк, который отвечал бы 409, позволил бы клиенту с лишней
+     *   обработкой ошибки пройти тесты;
+     * - **предела в пять здесь нет** — он экранный. Фейк, который отказывал бы
+     *   на шестой, проверял бы правило не там, где оно живёт;
+     * - архивные проекты из набора не вычищаются — как и на сервере.
+     */
+
+    backend.on('GET', '/focus', (match) {
+      final focused = <Map<String, dynamic>>[
+        for (final task in tasks)
+          if (task['focusedAt'] != null) task,
+      ];
+      focused.sort(
+        (a, b) =>
+            (a['focusedAt'] as String).compareTo(b['focusedAt'] as String),
+      );
+
+      return jsonResponse(<dynamic>[
+        for (final task in focused)
+          <String, dynamic>{
+            ...task,
+            'project': <String, dynamic>{
+              'id': task['projectId'],
+              'name': projects[task['projectId']]?['name'],
+            },
+          },
+      ]);
+    });
+
+    // Перед '/tasks/:id', чтобы выиграл более длинный путь.
+    backend.on('POST', '/tasks/:id/focus', (match) {
+      final task = _task(match.params['id']!);
+      if (task == null) return _notFound('Task');
+      task['focusedAt'] ??= _nextFocusStamp();
+      return jsonResponse(task);
+    });
+
+    backend.on('DELETE', '/tasks/:id/focus', (match) {
+      final task = _task(match.params['id']!);
+      if (task == null) return _notFound('Task');
+      task['focusedAt'] = null;
+      return jsonResponse(task);
+    });
+
     // Registered before `/tasks/:id` so the longer path wins.
     backend.on('PATCH', '/tasks/:id/position', (match) {
       final task = _task(match.params['id']!);
@@ -571,6 +642,12 @@ class FakeProjectBackend {
 
       // The three-state copy, exactly as `routes/tasks.ts` writes it:
       // `containsKey` is "was it provided", the value is what to store.
+      // `planStatusChange` (`backend/src/domain/taskEvents.ts`) в той его части,
+      // которую видит клиент: закрытая задача выходит из набора той же записью,
+      // и именно поэтому телефон не досылает второй запрос после «Сделано».
+      // Блокер из набора не выводит — намеренно, там же.
+      if (body['status'] == 'done') task['focusedAt'] = null;
+
       for (final field in <String>['title', 'description', 'status']) {
         if (body.containsKey(field)) task[field] = body[field];
       }
