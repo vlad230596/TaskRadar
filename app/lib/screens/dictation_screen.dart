@@ -214,32 +214,50 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     final state = ref.watch(voiceDictationProvider);
     final recording = state is DictationRecording;
 
-    return Theme(
-      // The one dark surface in the app, and it is dark by construction rather
-      // than by a system setting -- see `theme/app_theme.dart`. Wrapping rather
-      // than styling each widget keeps the text selection handles, the cursor
-      // and the text field's own decoration on the same palette.
-      data: _voiceTheme,
-      child: Scaffold(
-        backgroundColor: AppColors.voiceBackground,
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _header(),
-              _stage(state),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                child: recording
-                    ? const VoiceLevelMeter()
-                    // The space is held rather than collapsed: the text below
-                    // must not jump up the screen the moment the recording
-                    // stops, while the user is reading it.
-                    : const SizedBox(height: 72),
-              ),
-              Expanded(child: _textArea(state)),
-              _buttons(state),
-            ],
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // The status bar belongs to whatever is under it, and under it is the
+      // only dark screen in the app. Every other screen is `#F3F3F7`, so the
+      // system default of dark icons is right for eight screens out of nine and
+      // wrong for this one: on a device the clock and the battery came out dark
+      // navy on `#14183C` and could not be read.
+      //
+      // `light` names the *icons*, not the background, which is the opposite of
+      // how it reads. `systemNavigationBar*` is set too because the dictation
+      // screen is the one place a gesture bar sits on the dark surface.
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        statusBarBrightness: Brightness.dark,
+        systemNavigationBarColor: AppColors.voiceBackground,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Theme(
+        // The one dark surface in the app, and it is dark by construction rather
+        // than by a system setting -- see `theme/app_theme.dart`. Wrapping rather
+        // than styling each widget keeps the text selection handles, the cursor
+        // and the text field's own decoration on the same palette.
+        data: _voiceTheme,
+        child: Scaffold(
+          backgroundColor: AppColors.voiceBackground,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _header(),
+                _stage(state),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                  child: recording
+                      ? const VoiceLevelMeter()
+                      // The space is held rather than collapsed: the text below
+                      // must not jump up the screen the moment the recording
+                      // stops, while the user is reading it.
+                      : const SizedBox(height: 72),
+                ),
+                Expanded(child: _textArea(state)),
+                _buttons(state),
+              ],
+            ),
           ),
         ),
       ),
@@ -272,11 +290,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// "Слушаю 0:12" and its three other faces.
   Widget _stage(DictationState state) {
     final (Widget leading, String label, String? clock) = switch (state) {
-      DictationStarting() => (
-        const _Spinner(),
-        'Включаю микрофон',
-        null,
-      ),
+      DictationStarting() => (const _Spinner(), 'Включаю микрофон', null),
       DictationRecording(:final elapsed) => (
         const RecordingDot(),
         'Слушаю',
@@ -288,7 +302,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         formatDictationClock(length),
       ),
       DictationFailed() => (
-        const Icon(Icons.mic_off_outlined, size: 20, color: AppColors.voiceRecordingSoft),
+        const Icon(
+          Icons.mic_off_outlined,
+          size: 20,
+          color: AppColors.voiceRecordingSoft,
+        ),
         'Не получилось',
         null,
       ),
@@ -318,6 +336,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         'модель ещё грузится — на запись это не влияет',
       DictationRecording() => 'сохранится и без сети',
       DictationFailed(:final message) => message,
+      // The reference page prints this one under the *recognised* text, not
+      // under the meter -- which is the moment it actually answers a question:
+      // the phrase is on screen, the phone is in a lift, and the thing you want
+      // to know before pressing «Готово» is whether pressing it can lose the
+      // sentence. Shown while recording as well, since the same doubt is what
+      // stops someone dictating at all.
+      DictationIdle() => 'сохранится и без сети',
       _ => null,
     };
 
@@ -325,7 +350,9 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
       // The spec's second way to finish. `opaque` so the whole half-screen is
       // the target, including the blank part under the text.
       behavior: HitTestBehavior.opaque,
-      onTap: state is DictationRecording ? () => unawaited(_stopForEditing()) : null,
+      onTap: state is DictationRecording
+          ? () => unawaited(_stopForEditing())
+          : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
         child: Column(
@@ -341,30 +368,31 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
               child: IgnorePointer(
                 ignoring: state is DictationRecording,
                 child: TextField(
-                controller: _text,
-                focusNode: _textFocus,
-                // Never focused while the microphone is open: a keyboard
-                // covering two thirds of the screen during a recording hides
-                // the level meter, the clock and "Готово" all at once.
-                readOnly: state is DictationRecording || state is DictationStarting,
-                showCursor: state is! DictationRecording,
-                maxLines: null,
-                expands: true,
-                textAlignVertical: TextAlignVertical.top,
-                textCapitalization: TextCapitalization.sentences,
-                style: AppText.dictated,
-                cursorColor: AppColors.voiceBright,
-                decoration: InputDecoration(
-                  filled: false,
-                  isCollapsed: true,
-                  border: InputBorder.none,
-                  enabledBorder: InputBorder.none,
-                  focusedBorder: InputBorder.none,
-                  hintText: state is DictationRecording ? 'Говорите…' : null,
-                  hintStyle: AppText.dictated.copyWith(
-                    color: AppColors.voiceLine,
+                  controller: _text,
+                  focusNode: _textFocus,
+                  // Never focused while the microphone is open: a keyboard
+                  // covering two thirds of the screen during a recording hides
+                  // the level meter, the clock and "Готово" all at once.
+                  readOnly:
+                      state is DictationRecording || state is DictationStarting,
+                  showCursor: state is! DictationRecording,
+                  maxLines: null,
+                  expands: true,
+                  textAlignVertical: TextAlignVertical.top,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: AppText.dictated,
+                  cursorColor: AppColors.voiceBright,
+                  decoration: InputDecoration(
+                    filled: false,
+                    isCollapsed: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    hintText: state is DictationRecording ? 'Говорите…' : null,
+                    hintStyle: AppText.dictated.copyWith(
+                      color: AppColors.voiceLine,
+                    ),
                   ),
-                ),
                 ),
               ),
             ),

@@ -82,15 +82,27 @@ class AgeChip extends StatelessWidget {
   }
 }
 
-/// A project's 40x40 badge: its first letter, on a colour hashed from its name.
+/// A project's 40x40 badge: its first letter, on a colour derived from its name.
 ///
 /// See `domain/project_badge.dart` for why the colour is computed rather than
 /// stored.
+///
+/// [color] is how a caller hands over the board-wide allocation from
+/// [assignProjectBadgeColors]. **Anywhere two badges can be on screen at once,
+/// pass it** -- the per-name hash alone puts different projects on one colour,
+/// which is the one thing the badge may not do. Left out, the badge falls back
+/// to that hash, which is right only for a project shown on its own.
 class ProjectBadge extends StatelessWidget {
-  const ProjectBadge({required this.name, this.size = 40, super.key});
+  const ProjectBadge({
+    required this.name,
+    this.size = 40,
+    this.color,
+    super.key,
+  });
 
   final String name;
   final double size;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +111,7 @@ class ProjectBadge extends StatelessWidget {
       height: size,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: projectBadgeColor(name),
+        color: color ?? projectBadgeColor(name),
         borderRadius: BorderRadius.circular(size * 0.35),
       ),
       child: Text(

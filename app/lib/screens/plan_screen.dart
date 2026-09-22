@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
+import '../domain/project_badge.dart';
 import '../domain/project_summary.dart';
 import '../domain/task_age.dart';
 import '../models/board_project.dart';
@@ -298,6 +299,12 @@ class _Board extends ConsumerWidget {
     final projects = projectsInScope(view.projects, scope);
     final hiddenElsewhere = view.projects.length - projects.length;
 
+    // Allocated over the *whole* board rather than the scope-filtered subset, so
+    // that switching scope does not repaint the tiles that stayed on screen.
+    final badgeColours = assignProjectBadgeColors(
+      view.projects.map((entry) => entry.project.name),
+    );
+
     return CustomScrollView(
       // Without this the list does not scroll when it is shorter than the
       // viewport, and pull-to-refresh on a two-project board does nothing.
@@ -315,7 +322,9 @@ class _Board extends ConsumerWidget {
         if (layout == PlanLayout.list)
           const SliverToBoxAdapter(child: _SandboxRow()),
 
-        if (projects.isEmpty && hiddenElsewhere == 0 && layout == PlanLayout.list)
+        if (projects.isEmpty &&
+            hiddenElsewhere == 0 &&
+            layout == PlanLayout.list)
           const SliverToBoxAdapter(
             child: _Filler(
               icon: Icons.folder_open,
@@ -351,7 +360,11 @@ class _Board extends ConsumerWidget {
               children: <Widget>[
                 const _SandboxTile(),
                 for (final entry in projects)
-                  _ProjectTile(key: ValueKey<String>(entry.project.id), entry: entry),
+                  _ProjectTile(
+                    key: ValueKey<String>(entry.project.id),
+                    entry: entry,
+                    badgeColor: badgeColours[entry.project.name],
+                  ),
               ],
             ),
           )
@@ -409,7 +422,8 @@ class _FocusBar extends ConsumerWidget {
         color: AppColors.ink,
         borderRadius: BorderRadius.circular(Radii.row),
         child: InkWell(
-          onTap: () => ref.read(shellModeProvider.notifier).select(AppMode.work),
+          onTap: () =>
+              ref.read(shellModeProvider.notifier).select(AppMode.work),
           borderRadius: BorderRadius.circular(Radii.row),
           child: Container(
             height: 52,
@@ -721,10 +735,7 @@ class _ProjectRow extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(child: TaskDots(tasks: entry.tasks)),
-                  TaskCount(
-                    done: summary.doneCount,
-                    total: summary.totalCount,
-                  ),
+                  TaskCount(done: summary.doneCount, total: summary.totalCount),
                 ],
               ),
             ],
@@ -738,9 +749,14 @@ class _ProjectRow extends StatelessWidget {
 /// One project, as a tile: badge, count, the newest task, the shape of the
 /// list.
 class _ProjectTile extends StatelessWidget {
-  const _ProjectTile({required this.entry, super.key});
+  const _ProjectTile({required this.entry, this.badgeColor, super.key});
 
   final BoardProject entry;
+
+  /// This project's share of the board-wide allocation. See
+  /// [assignProjectBadgeColors]: a grid of tiles is exactly where two projects
+  /// on one colour would be read as one.
+  final Color? badgeColor;
 
   @override
   Widget build(BuildContext context) {
@@ -769,7 +785,7 @@ class _ProjectTile extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: <Widget>[
-                  ProjectBadge(name: entry.project.name),
+                  ProjectBadge(name: entry.project.name, color: badgeColor),
                   const Spacer(),
                   Text('${summary.totalCount}', style: AppText.number),
                 ],
@@ -895,10 +911,11 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
 
   String? createdId;
   final ok = await runMutation(context, () async {
-    createdId = (await ref
-            .read(projectLifecycleProvider.notifier)
-            .create(name, scopeId: scopeId))
-        .id;
+    createdId =
+        (await ref
+                .read(projectLifecycleProvider.notifier)
+                .create(name, scopeId: scopeId))
+            .id;
   }, failure: 'Не удалось создать проект.');
 
   if (!ok || createdId == null || !context.mounted) return;
@@ -952,9 +969,7 @@ class _StaleBanner extends StatelessWidget {
                 child: Text(
                   failed ? 'Не удалось обновить' : 'Данные из кэша',
                   style: AppText.action.copyWith(
-                    color: failed
-                        ? AppColors.waitingInk
-                        : AppColors.indigoInk,
+                    color: failed ? AppColors.waitingInk : AppColors.indigoInk,
                   ),
                 ),
               ),

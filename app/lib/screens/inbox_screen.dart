@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
+import '../domain/project_badge.dart';
 import '../domain/task_age.dart';
 import '../models/board_project.dart';
 import '../models/inbox_item.dart';
@@ -173,12 +174,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        Insets.gutter,
-        14,
-        Insets.gutter,
-        24,
-      ),
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 14, Insets.gutter, 24),
       children: <Widget>[
         // A failed `GET /inbox` is a banner *over* the queued lines rather than
         // a screen instead of them: those lines are on this device's disk, and
@@ -238,12 +234,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
 
   Widget _footer() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Insets.gutter,
-        12,
-        Insets.gutter,
-        18,
-      ),
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 12, Insets.gutter, 18),
       child: Row(
         children: <Widget>[
           Expanded(child: Text('записать ещё', style: AppText.caption)),
@@ -383,6 +374,12 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
         ? view.projects
         : const <BoardProject>[];
     final age = daysSince(widget.item.createdAt);
+    // One colour per project across the whole board -- see
+    // `assignProjectBadgeColors`. Two project buttons wearing one colour is the
+    // failure the badge exists to prevent, and they sit side by side here.
+    final badgeColours = assignProjectBadgeColors(
+      projects.map((entry) => entry.project.name),
+    );
 
     return Container(
       decoration: BoxDecoration(
@@ -446,9 +443,9 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
               for (final entry in projects)
                 _ProjectButton(
                   name: entry.project.name,
-                  onTap: () => unawaited(
-                    _file(entry.project.id, entry.project.name),
-                  ),
+                  badgeColor: badgeColours[entry.project.name],
+                  onTap: () =>
+                      unawaited(_file(entry.project.id, entry.project.name)),
                 ),
               _SquareAction(
                 icon: Icons.add,
@@ -506,11 +503,7 @@ class _ClosedLine extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              const Icon(
-                Icons.chevron_right,
-                size: 20,
-                color: AppColors.muted,
-              ),
+              const Icon(Icons.chevron_right, size: 20, color: AppColors.muted),
             ],
           ),
         ),
@@ -598,7 +591,13 @@ class _PendingLine extends ConsumerWidget {
 
 /// One project, as a 44 px button. One tap and the line above is a task in it.
 class _ProjectButton extends StatelessWidget {
-  const _ProjectButton({required this.name, required this.onTap});
+  const _ProjectButton({
+    required this.name,
+    required this.onTap,
+    this.badgeColor,
+  });
+
+  final Color? badgeColor;
 
   final String name;
   final VoidCallback onTap;
@@ -622,7 +621,7 @@ class _ProjectButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              ProjectBadge(name: name, size: 20),
+              ProjectBadge(name: name, size: 20, color: badgeColor),
               const SizedBox(width: 8),
               Flexible(
                 child: Text(
@@ -710,11 +709,7 @@ class _OfflineBanner extends ConsumerWidget {
       ),
       child: Row(
         children: <Widget>[
-          const Icon(
-            Icons.cloud_off,
-            size: 18,
-            color: AppColors.waitingInk,
-          ),
+          const Icon(Icons.cloud_off, size: 18, color: AppColors.waitingInk),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -733,11 +728,7 @@ class _OfflineBanner extends ConsumerWidget {
 }
 
 class _Filler extends StatelessWidget {
-  const _Filler({
-    required this.icon,
-    required this.title,
-    required this.body,
-  });
+  const _Filler({required this.icon, required this.title, required this.body});
 
   final IconData icon;
   final String title;

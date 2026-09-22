@@ -208,6 +208,20 @@ class TaskRow extends ConsumerWidget {
           width: isHighlighted ? 2 : 1,
         ),
         borderRadius: BorderRadius.circular(Radii.card),
+        // `Project.html` gives the current row `0 1px 2px rgba(27,32,80,0.06)`
+        // and nothing else on the screen a shadow. The heavier border above was
+        // carrying that job alone, and against `#DEDEE8` one step of grey is
+        // not enough to find the row without reading it -- which is the whole
+        // point of marking it.
+        boxShadow: current && !blocked && !isHighlighted
+            ? const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x0F1B2050),
+                  blurRadius: 2,
+                  offset: Offset(0, 1),
+                ),
+              ]
+            : null,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -470,7 +484,13 @@ class _StatusTarget extends ConsumerWidget {
     final next = task.status == TaskStatus.done
         ? TaskStatus.pending
         : TaskStatus.done;
-    return setTaskStatus(context, ref, projectId: projectId, task: task, status: next);
+    return setTaskStatus(
+      context,
+      ref,
+      projectId: projectId,
+      task: task,
+      status: next,
+    );
   }
 
   Future<void> _choose(BuildContext context, WidgetRef ref) async {
@@ -482,13 +502,11 @@ class _StatusTarget extends ConsumerWidget {
           children: <Widget>[
             for (final status in taskStatusOrder)
               ListTile(
-                leading: Icon(
-                  switch (status) {
-                    TaskStatus.pending => Icons.circle_outlined,
-                    TaskStatus.blocked => Icons.pause_circle_outline,
-                    TaskStatus.done => Icons.check_circle_outline,
-                  },
-                ),
+                leading: Icon(switch (status) {
+                  TaskStatus.pending => Icons.circle_outlined,
+                  TaskStatus.blocked => Icons.pause_circle_outline,
+                  TaskStatus.done => Icons.check_circle_outline,
+                }),
                 title: Text(taskStatusLabel[status]!),
                 trailing: status == task.status
                     ? const Icon(Icons.check, color: AppColors.indigoLink)

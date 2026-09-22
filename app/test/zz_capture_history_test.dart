@@ -7,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
-import 'package:taskradar/screens/history_screen.dart';
+import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/task_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 
@@ -73,8 +73,9 @@ void main() {
       final image = await boundary.toImage(pixelRatio: 2);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       image.dispose();
-      File('${out.path}${Platform.pathSeparator}$name.png')
-          .writeAsBytesSync(data!.buffer.asUint8List());
+      File(
+        '${out.path}${Platform.pathSeparator}$name.png',
+      ).writeAsBytesSync(data!.buffer.asUint8List());
     });
   }
 
@@ -116,56 +117,44 @@ void main() {
     await settle(tester);
   }
 
+  /// Режим истории целиком, с оболочкой.
+  ///
+  /// Через `ShellScreen`, а не `HistoryHeader + HistoryScreen` в голом
+  /// `Scaffold`, как было: нижняя панель — часть эталона `History.html`, и без
+  /// неё снимок получал лишние 82 px высоты. Сверка именно этого экрана шла на
+  /// другой площади, чем у страницы, с которой её сравнивают, — то есть значила
+  /// не то, что должна. `Focus` снимается так с самого начала.
+  ///
+  /// Ищется по обеим подписям: на телефоне пункт зовётся «История», а на
+  /// рельсе — «Итоги» (`AppModeChrome.railLabel`: «История» не влезает в 56 px
+  /// кеглем 9.5). Один литерал здесь ронял бы ровно широкий снимок.
+  Future<void> openHistory(WidgetTester tester) async {
+    final phone = find.text('История');
+    await tester.tap(phone.evaluate().isNotEmpty ? phone : find.text('Итоги'));
+    await settle(tester);
+  }
+
   testWidgets('History — неделя, долгожители, проекты', (tester) async {
-    await pump(tester, const Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          HistoryHeader(),
-          Expanded(child: HistoryScreen()),
-        ],
-      ),
-    ));
+    await pump(tester, const ShellScreen());
+    await openHistory(tester);
     await shot(tester, 'History');
   });
 
   testWidgets('History — пусто, и это сказано словами', (tester) async {
     history.history = history.emptyWeek();
-    await pump(tester, const Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          HistoryHeader(),
-          Expanded(child: HistoryScreen()),
-        ],
-      ),
-    ));
+    await pump(tester, const ShellScreen());
+    await openHistory(tester);
     await shot(tester, 'History-empty');
   });
 
   testWidgets('Edit — задача с настоящей «жизнью задачи»', (tester) async {
-    await pump(
-      tester,
-      TaskScreen(projectId: 'prj_dom', taskId: taskId),
-    );
+    await pump(tester, TaskScreen(projectId: 'prj_dom', taskId: taskId));
     await shot(tester, 'Edit-life');
   });
 
   testWidgets('Desk-History — широкое окно', (tester) async {
-    await pump(
-      tester,
-      const Scaffold(
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          HistoryHeader(),
-          Expanded(child: HistoryScreen()),
-        ],
-      ),
-    ),
-      w: 1440,
-      h: 900,
-    );
+    await pump(tester, const ShellScreen(), w: 1440, h: 900);
+    await openHistory(tester);
     await shot(tester, 'Desk-History');
   });
 }

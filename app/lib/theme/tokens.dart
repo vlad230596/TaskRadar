@@ -146,19 +146,36 @@ abstract final class AppColors {
   /// The rail's inactive item.
   static const Color railMuted = voiceMuted;
 
-  /// Six colours for a project's badge, picked by a stable hash of its name.
+  /// The hues a project's badge may take.
   ///
-  /// Six, and these six, because the spec's answer to "which colour is this
-  /// project" is *"поля в базе нет и не будет"* -- a chosen colour would mean a
-  /// picker, a migration, and one more decision at the moment a project is
-  /// created, which is the exact mental cost the three modes exist to remove.
+  /// The spec's answer to "which colour is this project" is *"поля в базе нет и
+  /// не будет"* -- a chosen colour would mean a picker, a migration, and one
+  /// more decision at the moment a project is created, which is the exact
+  /// mental cost the three modes exist to remove. So the colour is derived; see
+  /// `domain/project_badge.dart` for how.
   ///
   /// The first four are the palette's own status colours reused as identity;
-  /// the last two are the only further hues that sit at the same lightness
-  /// without colliding with one of them. They are deliberately **not** shades
-  /// of indigo: two projects whose badges differ by 8% saturation are two
-  /// projects you cannot tell apart at 40 px on a phone, which is the entire
-  /// job of the badge.
+  /// the last three are further hues that sit at the same lightness without
+  /// colliding with one of them. They are deliberately **not** shades of
+  /// indigo: two projects whose badges differ by 8% saturation are two projects
+  /// you cannot tell apart at 40 px on a phone, which is the entire job of the
+  /// badge.
+  ///
+  /// ## Why seven and not six
+  ///
+  /// Six was the original count, and on the owner's own board it put *three* of
+  /// six projects (TaskRadar, Авоська, Сезам) on the same indigo -- the failure
+  /// the paragraph above exists to prevent. `Main-Tiles.html` settles the
+  /// question: the reference draws its five projects in five different hues,
+  /// one of which (`#6C4AB6`) was missing here. It is the seventh entry.
+  ///
+  /// The reference also uses `#333A73` as a badge, and that one is deliberately
+  /// **not** adopted: against [ink] it is two dark navies, which is the same
+  /// "cannot tell apart at 40 px" failure in a different pair. Seven hues that
+  /// are actually seven beats eight where two are one.
+  ///
+  /// Seven is a floor on distinctness, not a promise: past seven projects the
+  /// assignment in `domain/project_badge.dart` wraps and colours repeat.
   static const List<Color> projectBadges = <Color>[
     indigo,
     done,
@@ -166,6 +183,7 @@ abstract final class AppColors {
     alarm,
     ink,
     Color(0xFF1F5F73),
+    Color(0xFF6C4AB6),
   ];
 }
 
