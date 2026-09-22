@@ -5,14 +5,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../domain/reminders.dart';
 import '../domain/task_age.dart';
+import '../models/history_task_event.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
+import '../providers/history_providers.dart';
 import '../providers/project_providers.dart';
 import 'dictation_screen.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/dictation.dart';
+import '../widgets/history_charts.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mutation_feedback.dart';
 
@@ -729,47 +732,60 @@ class _StatusButton extends StatelessWidget {
   }
 }
 
-/// "Жизнь задачи": how long this has been going on.
+/// «Жизнь задачи»: куда ушло время, по настоящему журналу (F13).
 ///
-/// ## What it draws today, and the shape it is holding open
+/// ## Что изменилось против F12
 ///
-/// The spec's version of this section is a breakdown by status -- four days
-/// queued, one in progress, three waiting -- and that is **not derivable** from
-/// a row's two timestamps. It needs `task_events`, the journal F11 adds.
+/// Раньше этот блок рисовал единственные два числа, выводимые из строки задачи:
+/// «сколько живёт» и «сколько с последнего движения». Формой он был заготовкой
+/// под журнал и прямо об этом писал. Журнал приехал (`task_events`, F11), и
+/// теперь здесь то, ради чего он заводился: **четыре дня в очереди, один в
+/// работе, три в блокере** — разбивка, которую две метки строки не могут дать в
+/// принципе, потому что одиннадцать дней в блокере перестают существовать в ту
+/// секунду, когда блокер снимают.
 ///
-/// So this draws the two facts that *are* derivable, in exactly the layout the
-/// journal will use: a total, a proportional bar, and a legend of rows with a
-/// colour swatch, a phrase and a number. When the journal lands, the bar gains
-/// segments and the legend gains rows; nothing about the section's place on the
-/// screen, its heading, or its arithmetic changes.
+/// Композиция при этом ровно та же, что была и что в `design/reference/Edit.html`:
+/// заголовок с общим сроком, полоска долей, строки-легенда. Менялся источник,
+/// а не экран.
 ///
-/// The alternative was to leave it out until F11. It is here because the two
-/// facts it shows are the ones that answer "стоит ли этим ещё заниматься", and
-/// because a section that arrives empty-shaped is much easier to fill correctly
-/// than one that has to be invented under time pressure next to code that is
-/// already shipping.
-class _LifeOfTask extends StatelessWidget {
+/// ## Почему журнал грузится отдельным запросом, а не приезжает с задачей
+///
+/// Потому что он нужен одному блоку одного экрана, а задача приходит в списке
+/// проекта — вместе с двадцатью другими. Роут `GET /tasks/:id/events` стоит
+/// одного индексного чтения и не делает `GET /projects/:id/tasks` в двадцать
+/// раз толще ради секции, до которой на большинстве открытий не долистают.
+///
+/// Пока он едет и если он не доехал, блок остаётся на месте и показывает общий
+/// срок: он выводится из `createdAt` и врать не может. Разница между «считаем»
+/// и «не посчитали» подписана — экран задачи полностью рабочий в обоих случаях.
+class _LifeOfTask extends ConsumerWidget {
   const _LifeOfTask({required this.task});
 
   final Task task;
 
   @override
-  Widget build(BuildContext context) {
-    final total = daysSince(task.createdAt);
-    final sinceMove = daysSince(task.updatedAt);
-    if (total == null) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final journal = ref.watch(taskEventsProvider(task.id));
+    final totalDays = daysSince(task.createdAt);
 
-    // How much of the task's life is "before the last thing that happened to
-    // it". Clamped because a row whose `updatedAt` predates its `createdAt`
-    // (clock skew, a restored backup) must not produce a negative flex.
-    final settled = (total - (sinceMove ?? 0)).clamp(0, total);
-    final current = total - settled;
-
-    final (Color colour, String phrase) = switch (task.status) {
-      TaskStatus.done => (AppColors.done, 'закрыта'),
-      TaskStatus.blocked => (AppColors.waitingDot, 'ждёт'),
-      TaskStatus.pending => (AppColors.indigoLink, 'в очереди'),
+    final life = switch (journal.value) {
+      final List<TaskEvent> events => replayTaskLife(
+        createdAt: task.createdAt,
+        status: task.status,
+        // У клиентской модели задачи нет `focusedAt` — он есть у строки набора
+        // (`FocusTask`) и в журнале, событиями `focused`/`unfocused`. Здесь он
+        // нужен только как запасной ответ для задачи вообще без журнала, а у
+        // такой задачи и набора никакого нет.
+        focusedAt: null,
+        events: events,
+      ),
+      null => null,
     };
+
+    // Нечитаемая дата создания и пустой журнал вместе означают, что сказать
+    // нечего вообще. Показывать в этом случае заголовок с пустотой под ним
+    // хуже, чем не показывать секцию.
+    if (life == null && totalDays == null) return const SizedBox.shrink();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
@@ -789,88 +805,102 @@ class _LifeOfTask extends StatelessWidget {
               children: <Widget>[
                 Text('ЖИЗНЬ ЗАДАЧИ', style: AppText.sectionLabel),
                 const Spacer(),
-                Text(formatDays(total), style: AppText.numberSmall),
+                Text(
+                  life == null
+                      ? formatDays(totalDays!)
+                      : formatSpanLong(life.totalMs),
+                  style: AppText.numberSmall,
+                ),
               ],
             ),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: SizedBox(
-                height: 16,
-                child: Row(
-                  // `ColoredBox` sizes to its child and has none, so inside a
-                  // Row that centres its children it drew 16 px wide and 0 px
-                  // tall -- i.e. nothing. Stretching is what makes the two
-                  // segments fill the height the SizedBox reserves.
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    // `+1` on both so a task that is one day old still draws a
-                    // bar rather than two zero-width boxes.
-                    Expanded(
-                      flex: settled + 1,
-                      child: const ColoredBox(color: AppColors.lineStrong),
-                    ),
-                    Expanded(
-                      flex: current + 1,
-                      child: ColoredBox(color: colour),
-                    ),
-                  ],
-                ),
+            if (life == null) ...<Widget>[
+              const SizedBox(height: 12),
+              Text(
+                journal.hasError
+                    ? 'Журнал переходов не прочитался — разбивки по статусам '
+                          'не будет. Остальное на экране работает.'
+                    : 'Считаем по журналу переходов…',
+                style: AppText.hint.copyWith(fontSize: 12),
               ),
-            ),
-            const SizedBox(height: 12),
-            _LifeRow(
-              colour: AppColors.lineStrong,
-              label: 'до последнего движения',
-              days: settled,
-            ),
-            const SizedBox(height: 9),
-            _LifeRow(
-              colour: colour,
-              label: task.status == TaskStatus.blocked &&
-                      task.remindAt != null
-                  ? '$phrase до ${formatReminderDate(task.remindAt!)}'
-                  : phrase,
-              days: current,
-              emphasised: task.status == TaskStatus.blocked,
-            ),
-            const SizedBox(height: 10),
-            Text(
-              'Подробнее — когда появится журнал переходов задачи.',
-              style: AppText.hint.copyWith(fontSize: 12),
-            ),
+            ] else
+              ..._breakdown(life),
           ],
         ),
       ),
     );
   }
+
+  List<Widget> _breakdown(TaskLife life) {
+    // Фазы в том порядке, в каком задача их проживает, а не по величине:
+    // полоска читается слева направо как её биография, и пересортировка
+    // сегментов сделала бы две соседние задачи несравнимыми.
+    const order = <TaskLifePhase>[
+      TaskLifePhase.queued,
+      TaskLifePhase.working,
+      TaskLifePhase.blocked,
+      TaskLifePhase.done,
+    ];
+    final shown = <TaskLifePhase>[
+      for (final phase in order)
+        if (life[phase] > 0) phase,
+    ];
+
+    return <Widget>[
+      const SizedBox(height: 12),
+      SpanBar(
+        height: 16,
+        segments: <SpanSegment>[
+          for (final phase in shown) SpanSegment(life[phase], phaseColour(phase)),
+        ],
+      ),
+      const SizedBox(height: 12),
+      for (final phase in shown) ...<Widget>[
+        if (phase != shown.first) const SizedBox(height: 9),
+        _LifeRow(
+          phase: phase,
+          // Текущая фаза подписана датой, с которой она идёт, — «ждёт с 18.09».
+          // Остальные — прошедшим временем: они закончились.
+          label: phase == life.phase
+              ? '${_currentPhrase(phase)} с ${_shortDate(life.since)}'
+              : phaseLabel(phase),
+          ms: life[phase],
+          emphasised: phase == TaskLifePhase.blocked,
+        ),
+      ],
+    ];
+  }
+
+  /// Настоящее время для фазы, которая ещё идёт.
+  static String _currentPhrase(TaskLifePhase phase) => switch (phase) {
+    TaskLifePhase.queued => 'лежит в очереди',
+    TaskLifePhase.working => 'в работе',
+    TaskLifePhase.blocked => 'ждёт',
+    TaskLifePhase.done => 'закрыта',
+  };
+
+  static String _shortDate(DateTime at) =>
+      '${at.day.toString().padLeft(2, '0')}.'
+      '${at.month.toString().padLeft(2, '0')}';
 }
 
 class _LifeRow extends StatelessWidget {
   const _LifeRow({
-    required this.colour,
+    required this.phase,
     required this.label,
-    required this.days,
+    required this.ms,
     this.emphasised = false,
   });
 
-  final Color colour;
+  final TaskLifePhase phase;
   final String label;
-  final int days;
+  final int ms;
   final bool emphasised;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        Container(
-          width: 11,
-          height: 11,
-          decoration: BoxDecoration(
-            color: colour,
-            borderRadius: BorderRadius.circular(3),
-          ),
-        ),
+        PhaseDot(phase: phase),
         const SizedBox(width: 9),
         Expanded(
           child: Text(
@@ -882,7 +912,7 @@ class _LifeRow extends StatelessWidget {
         ),
         const SizedBox(width: 8),
         Text(
-          formatAgeShort(days),
+          formatSpanShort(ms),
           maxLines: 1,
           softWrap: false,
           style: AppText.chip.copyWith(

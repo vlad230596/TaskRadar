@@ -26,6 +26,16 @@ void main() {
 
   setUp(() {
     backend = FakeBackend()..alwaysRespond(<dynamic>[]);
+
+    // Режим истории (F13) читает `GET /history`, и это объект, а не массив:
+    // общий «отвечай всем пустым списком» разобрался бы там в ошибку разбора.
+    // Пустая сводка — как раз то, что оболочка показывает в этих тестах:
+    // «Итогов пока нет».
+    final canned = backend.responder!;
+    backend.responder = (options) => options.path.startsWith('/history')
+        ? jsonResponse(_emptyHistory())
+        : canned(options);
+
     settings = FakeSettingsStore();
     recorder = FakeVoiceRecorder();
     recognizer = FakeSpeechRecognizer();
@@ -273,6 +283,17 @@ void main() {
     });
   });
 }
+
+/// Ответ `GET /history`, в котором ничего не происходило.
+Map<String, dynamic> _emptyHistory() => <String, dynamic>{
+  'range': '7d',
+  'from': null,
+  'to': DateTime.now().toUtc().toIso8601String(),
+  'closedByDay': <dynamic>[],
+  'closedTotal': 0,
+  'projects': <dynamic>[],
+  'stale': <dynamic>[],
+};
 
 class _ReadyModel extends VoiceModelInstallation {
   @override
