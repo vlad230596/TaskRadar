@@ -10,8 +10,11 @@ export interface ChatMessage {
  * One chat turn that must come back as a JSON object. Returns the raw text of
  * the reply; turning it into something typed is the caller's job, because only
  * the caller knows what shape it asked for.
+ *
+ * [model] is per call rather than fixed at construction: the app can switch
+ * models (F14), and a client built once at boot must follow without a restart.
  */
-export type CompleteJson = (messages: ChatMessage[]) => Promise<string>;
+export type CompleteJson = (messages: ChatMessage[], model: string) => Promise<string>;
 
 /**
  * The model did not produce an answer we can use: unreachable, timed out, an
@@ -43,7 +46,7 @@ export function createOpenAiCompatibleClient(
   config: LlmConfig,
   fetchImpl: typeof fetch = fetch,
 ): CompleteJson {
-  return async (messages) => {
+  return async (messages, model) => {
     let response: Response;
     try {
       response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
@@ -53,7 +56,7 @@ export function createOpenAiCompatibleClient(
           ...(config.apiKey === "" ? {} : { authorization: `Bearer ${config.apiKey}` }),
         },
         body: JSON.stringify({
-          model: config.model,
+          model,
           messages,
           temperature: 0.1,
           response_format: { type: "json_object" },

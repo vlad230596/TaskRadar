@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { AuthConfig } from "../src/lib/authConfig";
 import {
@@ -10,6 +10,7 @@ import {
 } from "../src/domain/dictation";
 import { createOpenAiCompatibleClient, UpstreamModelError } from "../src/lib/llmClient";
 import { loadLlmConfig } from "../src/lib/llmConfig";
+import { resolveDictationModel } from "../src/domain/dictationModel";
 
 /*
  * Dictation -> task (F14).
@@ -20,7 +21,26 @@ import { loadLlmConfig } from "../src/lib/llmConfig";
  * the route's two ways of saying "use the raw words instead".
  */
 
-vi.mock("../src/lib/prisma", () => ({ prisma: {} }));
+/**
+ * The one table these routes touch: `app_settings`, as a map. A fake that
+ * really stores lets "save, then read back" be asserted as a sequence.
+ */
+const settings = vi.hoisted(() => new Map<string, string>());
+const prismaMock = vi.hoisted(() => ({
+  appSetting: {
+    findUnique: vi.fn(async (args: { where: { key: string } }) => {
+      const value = settings.get(args.where.key);
+      return value === undefined ? null : { key: args.where.key, value };
+    }),
+    upsert: vi.fn(async (args: { where: { key: string }; update: { value: string } }) => {
+      settings.set(args.where.key, args.update.value);
+    }),
+    deleteMany: vi.fn(async (args: { where: { key: string } }) => {
+      settings.delete(args.where.key);
+    }),
+  },
+}));
+vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
 const TEST_PASSWORD = "test-password-not-the-real-one";
@@ -138,12 +158,40 @@ describe("interpretModelReply", () => {
 
 describe("createDictationParser", () => {
   it("checks the reply against the caller's today", async () => {
-    const parse = createDictationParser(async () =>
-      JSON.stringify({ title: "Сделать", remindDate: "2026-09-23" }),
+    const parse = createDictationParser(
+      async () => JSON.stringify({ title: "Сделать", remindDate: "2026-09-23" }),
+      async () => "some-model",
     );
     // 2026-09-23 is still today in UTC but already yesterday in Moscow.
     expect((await parse({ text: "x", timeZone: "UTC", now: NOW })).remindDate).toBe("2026-09-23");
     expect((await parse({ text: "x", timeZone: "Europe/Moscow", now: NOW })).remindDate).toBeNull();
+  });
+});
+
+describe("createDictationParser's model", () => {
+  it("asks which model to use on every parse, so a change applies at once", async () => {
+    const complete = vi.fn(async () => JSON.stringify({ title: "Сделать" }));
+    let chosen = "first-model";
+    const parse = createDictationParser(complete, async () => chosen);
+
+    await parse({ text: "x", timeZone: "UTC", now: NOW });
+    chosen = "second-model";
+    await parse({ text: "x", timeZone: "UTC", now: NOW });
+
+    expect(complete.mock.calls.map((call) => (call as unknown[])[1])).toEqual([
+      "first-model",
+      "second-model",
+    ]);
+  });
+});
+
+describe("resolveDictationModel", () => {
+  it("is the .env model until one is chosen in the app", async () => {
+    settings.clear();
+    expect(await resolveDictationModel("env-model")).toBe("env-model");
+    settings.set("dictation.model", "chosen-model");
+    expect(await resolveDictationModel("env-model")).toBe("chosen-model");
+    settings.clear();
   });
 });
 
@@ -162,7 +210,9 @@ describe("createOpenAiCompatibleClient", () => {
     );
     const complete = createOpenAiCompatibleClient(config, fetchMock as unknown as typeof fetch);
 
-    await expect(complete([{ role: "user", content: "hi" }])).resolves.toBe('{"title":"X"}');
+    await expect(complete([{ role: "user", content: "hi" }], "some-model")).resolves.toBe(
+      '{"title":"X"}',
+    );
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://llm.example/v1/chat/completions");
@@ -179,7 +229,7 @@ describe("createOpenAiCompatibleClient", () => {
     await createOpenAiCompatibleClient(
       { ...config, apiKey: "" },
       fetchMock as unknown as typeof fetch,
-    )([]);
+    )([], "m");
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(init.headers).not.toHaveProperty("authorization");
   });
@@ -191,7 +241,7 @@ describe("createOpenAiCompatibleClient", () => {
     ["a reply with no content", async () => ok({ choices: [] })],
   ])("turns %s into a 502", async (_label, impl) => {
     const complete = createOpenAiCompatibleClient(config, vi.fn(impl) as unknown as typeof fetch);
-    await expect(complete([])).rejects.toBeInstanceOf(UpstreamModelError);
+    await expect(complete([], "m")).rejects.toBeInstanceOf(UpstreamModelError);
   });
 });
 
@@ -234,8 +284,12 @@ describe("POST /dictation/parse", () => {
 
   beforeAll(async () => {
     const { buildApp } = await import("../src/app");
-    app = await buildApp({ authConfig, logger: false, dictationParser: parser });
-    offApp = await buildApp({ authConfig, logger: false, dictationParser: null });
+    app = await buildApp({
+      authConfig,
+      logger: false,
+      dictation: { parser, defaultModel: "env-model" },
+    });
+    offApp = await buildApp({ authConfig, logger: false, dictation: null });
     const login = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -302,5 +356,61 @@ describe("POST /dictation/parse", () => {
   it("answers 503 when no model is configured", async () => {
     const res = await post(offApp, { text: "x", timeZone: "UTC" });
     expect(res.statusCode).toBe(503);
+  });
+
+  describe("the model, from the app", () => {
+    const model = (target: FastifyInstance, method: "GET" | "PUT", payload?: unknown) =>
+      target.inject({
+        method,
+        url: "/dictation/model",
+        headers: { authorization: `Bearer ${token}` },
+        ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+      });
+
+    beforeEach(() => settings.clear());
+
+    it("is the .env model until one is chosen", async () => {
+      const res = await model(app, "GET");
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({
+        model: "env-model",
+        defaultModel: "env-model",
+        override: null,
+      });
+    });
+
+    it("saves a choice, and reads it back", async () => {
+      const put = await model(app, "PUT", { model: "  vendor/model-name:free " });
+      expect(put.json()).toEqual({
+        model: "vendor/model-name:free",
+        defaultModel: "env-model",
+        override: "vendor/model-name:free",
+      });
+      expect((await model(app, "GET")).json()).toMatchObject({ model: "vendor/model-name:free" });
+    });
+
+    it.each([
+      ["null", null],
+      ["an empty string", "  "],
+      ["the .env model by name", "env-model"],
+    ])("goes back to the .env model for %s", async (_label, value) => {
+      await model(app, "PUT", { model: "vendor/other" });
+      const res = await model(app, "PUT", { model: value });
+      expect(res.json()).toEqual({ model: "env-model", defaultModel: "env-model", override: null });
+      expect(settings.has("dictation.model")).toBe(false);
+    });
+
+    it.each([
+      ["a sentence", "поставь самую умную"],
+      ["no key at all", undefined],
+    ])("refuses %s with a 400", async (_label, value) => {
+      const res = await model(app, "PUT", value === undefined ? {} : { model: value });
+      expect(res.statusCode).toBe(400);
+    });
+
+    it("answers 503 on both when no model is configured", async () => {
+      expect((await model(offApp, "GET")).statusCode).toBe(503);
+      expect((await model(offApp, "PUT", { model: "x" })).statusCode).toBe(503);
+    });
   });
 });

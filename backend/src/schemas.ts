@@ -261,6 +261,25 @@ export const parseDictationSchema = z.object({
   timeZone: z.string().refine(isValidTimeZone, "timeZone must be an IANA time zone"),
 });
 
+/**
+ * Body of `PUT /dictation/model` (F14): the model to parse dictation with, or
+ * `null` (or an empty string) to go back to `LLM_MODEL` from `.env`.
+ *
+ * The pattern is the alphabet provider model ids are written in --
+ * `vendor/model-name:free`, `qwen3:14b`, `stealth/space-bunny-alpha` -- and is
+ * there to refuse a pasted sentence, not to know which models exist. Whether
+ * the provider has it is found out by the next parse, which says so.
+ */
+export const setDictationModelSchema = z.object({
+  model: z
+    .string()
+    .trim()
+    .max(200, "model is too long")
+    .regex(/^([A-Za-z0-9._:/@-]+)?$/, "model must be a provider model id")
+    .nullable()
+    .transform((value) => (value === "" ? null : value)),
+});
+
 // ---- Notes ----
 
 export const createNoteSchema = z.object({

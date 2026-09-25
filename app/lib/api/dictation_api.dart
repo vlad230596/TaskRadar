@@ -35,7 +35,31 @@ class ParsedDictation {
   final String? remindTime;
 }
 
-/// `POST /dictation/parse` (F14).
+/// Which model parses dictation, as `GET/PUT /dictation/model` describe it.
+class DictationModel {
+  const DictationModel({
+    required this.model,
+    required this.defaultModel,
+    required this.override,
+  });
+
+  factory DictationModel.fromJson(Map<String, dynamic> json) => DictationModel(
+    model: json['model'] as String,
+    defaultModel: json['defaultModel'] as String,
+    override: json['override'] as String?,
+  );
+
+  /// The model in use right now.
+  final String model;
+
+  /// `LLM_MODEL` from the server's `.env`.
+  final String defaultModel;
+
+  /// The model chosen in the app, or null when [defaultModel] is in use.
+  final String? override;
+}
+
+/// `POST /dictation/parse` (F14), and the model it runs on.
 ///
 /// ## The server writes nothing
 ///
@@ -59,5 +83,25 @@ class DictationApi {
       body: <String, dynamic>{'text': text, 'timeZone': timeZone},
     );
     return ParsedDictation.fromJson(json);
+  }
+
+  /// `GET /dictation/model`. A 503 means no model is configured on the server
+  /// at all -- there is then nothing to choose between.
+  Future<DictationModel> fetchModel() async {
+    final json = await _client.get<Map<String, dynamic>>('/dictation/model');
+    return DictationModel.fromJson(json);
+  }
+
+  /// `PUT /dictation/model`. Null goes back to the server's `.env` model.
+  ///
+  /// Only the model: the API key stays on the server, in a file the app can
+  /// neither read nor write (`backend/src/domain/dictationModel.ts`).
+  Future<DictationModel> setModel(String? model) async {
+    final json = await _client.request<Map<String, dynamic>>(
+      'PUT',
+      '/dictation/model',
+      body: <String, dynamic>{'model': model},
+    );
+    return DictationModel.fromJson(json);
   }
 }

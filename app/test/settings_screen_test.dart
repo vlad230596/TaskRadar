@@ -10,6 +10,7 @@ import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
 
+import 'support/fake_backend.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_settings_store.dart';
 import 'support/fake_voice.dart';
@@ -20,8 +21,42 @@ void main() {
   late FakeNotificationGateway gateway;
   late FakeSettingsStore settings;
   late FakeVoiceModelStore voiceModels;
+  late FakeBackend backend;
+
+  /// What `GET /dictation/model` answers, and every `PUT` body received. The
+  /// fake stores like the server does: the default by name is "no choice".
+  Map<String, dynamic>? dictationModel;
+  late List<Map<String, dynamic>> modelPuts;
 
   setUp(() {
+    backend = FakeBackend();
+    dictationModel = <String, dynamic>{
+      'model': 'stealth/space-bunny-alpha',
+      'defaultModel': 'stealth/space-bunny-alpha',
+      'override': null,
+    };
+    modelPuts = <Map<String, dynamic>>[];
+    backend.on('GET', '/dictation/model', (match) {
+      final body = dictationModel;
+      return body == null
+          ? jsonResponse(<String, dynamic>{
+              'error': 'DictationUnavailableError',
+              'message': 'Dictation parsing is not configured',
+            }, statusCode: 503)
+          : jsonResponse(body);
+    });
+    backend.on('PUT', '/dictation/model', (match) {
+      modelPuts.add(match.body);
+      final chosen = match.body['model'] as String?;
+      final fallback = dictationModel!['defaultModel'] as String;
+      dictationModel = <String, dynamic>{
+        'model': chosen ?? fallback,
+        'defaultModel': fallback,
+        'override': chosen,
+      };
+      return jsonResponse(dictationModel);
+    });
+
     gateway = FakeNotificationGateway();
     settings = FakeSettingsStore();
     voiceModels = FakeVoiceModelStore();
@@ -50,6 +85,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          apiClientProvider.overrideWithValue(backend.client),
           notificationGatewayProvider.overrideWithValue(gateway),
           settingsStoreProvider.overrideWithValue(settings),
           voiceModelStoreProvider.overrideWithValue(voiceModels),
@@ -239,6 +275,83 @@ void main() {
 
       expect(voiceModels.removeCount, 1);
       expect(find.text('Голосовой ввод'), findsOneWidget);
+    });
+  });
+
+  group('the dictation model (F14)', () {
+    testWidgets('shows the model in use, and that it is the default', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+
+      expect(find.text('Модель разбора диктовки'), findsOneWidget);
+      expect(
+        find.text('stealth/space-bunny-alpha · по умолчанию с сервера'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a model typed here is saved, and said to be chosen here', (
+      tester,
+    ) async {
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Модель разбора диктовки'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), ' qwen/qwen3-14b ');
+      await tester.pump();
+      await tester.tap(find.text('Сохранить'));
+      await tester.pumpAndSettle();
+
+      expect(modelPuts, <Map<String, dynamic>>[
+        <String, dynamic>{'model': 'qwen/qwen3-14b'},
+      ]);
+      expect(
+        find.text(
+          'qwen/qwen3-14b · выбрана здесь, '
+          'по умолчанию stealth/space-bunny-alpha',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('"По умолчанию" goes back to the server\'s model', (
+      tester,
+    ) async {
+      dictationModel = <String, dynamic>{
+        'model': 'qwen/qwen3-14b',
+        'defaultModel': 'stealth/space-bunny-alpha',
+        'override': 'qwen/qwen3-14b',
+      };
+      await pumpSettings(tester);
+
+      await tester.tap(find.text('Модель разбора диктовки'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('По умолчанию'));
+      await tester.pumpAndSettle();
+
+      expect(modelPuts, <Map<String, dynamic>>[
+        <String, dynamic>{'model': null},
+      ]);
+      expect(
+        find.text('stealth/space-bunny-alpha · по умолчанию с сервера'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('no model on the server: said, with nothing to edit', (
+      tester,
+    ) async {
+      dictationModel = null;
+      await pumpSettings(tester);
+
+      expect(
+        find.text('Разбор не настроен на сервере: нет ключа модели в .env.'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Модель разбора диктовки'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsNothing);
     });
   });
 }

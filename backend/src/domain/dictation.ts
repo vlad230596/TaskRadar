@@ -296,9 +296,16 @@ export function interpretModelReply(content: string, today: string): ParsedDicta
   };
 }
 
-export function createDictationParser(complete: CompleteJson): DictationParser {
+/**
+ * [resolveModel] is asked on every parse, so a model chosen in the app takes
+ * effect on the next dictation. See `./dictationModel.ts`.
+ */
+export function createDictationParser(
+  complete: CompleteJson,
+  resolveModel: () => Promise<string>,
+): DictationParser {
   return async (input) => {
-    const content = await complete(buildDictationMessages(input));
+    const content = await complete(buildDictationMessages(input), await resolveModel());
     return interpretModelReply(content, localDate(input.now, input.timeZone));
   };
 }

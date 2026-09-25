@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_exception.dart';
+import '../api/dictation_api.dart';
 import '../domain/reminder_schedule.dart';
+import '../providers/dictation_providers.dart';
 import '../providers/reminder_providers.dart';
 import '../providers/voice_providers.dart';
 import '../voice/voice_model.dart';
@@ -33,6 +36,8 @@ class SettingsScreen extends ConsumerWidget {
           _ReminderTimeTile(),
           Divider(height: 24),
           _VoiceModelTile(),
+          Divider(height: 24),
+          _DictationModelTile(),
           Divider(height: 24),
           _PermissionsTile(),
           Divider(height: 24),
@@ -221,6 +226,162 @@ class _ReminderTimeTile extends ConsumerWidget {
           .read(reminderSettingsProvider.notifier)
           .setTime(ReminderTime(picked.hour, picked.minute)),
       failure: 'Время применено, но сохранить его не удалось.',
+    );
+  }
+}
+
+/// The model that turns a dictation into a task on "Разобрать" (F14).
+///
+/// Changeable here so that trying another model -- a free one stopped being
+/// free, a faster one appeared -- is not an SSH session. Only the model: the
+/// API key stays in the server's `.env`, which this app can neither read nor
+/// write, and that is deliberate (`backend/src/domain/dictationModel.ts`).
+class _DictationModelTile extends ConsumerWidget {
+  const _DictationModelTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final setting = ref.watch(dictationModelSettingProvider);
+    const icon = Icon(Icons.auto_awesome_outlined);
+    const title = Text('Модель разбора диктовки');
+
+    return switch (setting) {
+      AsyncData(:final value) => ListTile(
+        leading: icon,
+        title: title,
+        subtitle: Text(
+          value.override == null
+              ? '${value.model} · по умолчанию с сервера'
+              : '${value.model} · выбрана здесь, '
+                    'по умолчанию ${value.defaultModel}',
+        ),
+        trailing: const Icon(Icons.edit_outlined),
+        onTap: () => _edit(context, ref, value),
+      ),
+      AsyncError(:final error) => ListTile(
+        leading: icon,
+        title: title,
+        subtitle: Text(switch (error) {
+          NetworkException() => 'Нет связи с сервером.',
+          ApiException(statusCode: 503) =>
+            'Разбор не настроен на сервере: нет ключа модели в .env.',
+          _ => 'Не удалось узнать модель.',
+        }),
+        trailing: error is ApiException && error.statusCode == 503
+            ? null
+            : IconButton(
+                tooltip: 'Ещё раз',
+                icon: const Icon(Icons.refresh),
+                onPressed: () => ref.invalidate(dictationModelSettingProvider),
+              ),
+      ),
+      _ => const ListTile(
+        leading: icon,
+        title: title,
+        subtitle: Text('Спрашиваем сервер…'),
+      ),
+    };
+  }
+
+  Future<void> _edit(
+    BuildContext context,
+    WidgetRef ref,
+    DictationModel current,
+  ) async {
+    final choice = await showDialog<_ModelChoice>(
+      context: context,
+      builder: (_) => _DictationModelDialog(current: current),
+    );
+    if (choice == null || !context.mounted) return;
+
+    await runMutation(
+      context,
+      () =>
+          ref.read(dictationModelSettingProvider.notifier).choose(choice.model),
+      success: 'Модель сохранена — применится со следующего разбора.',
+      failure: 'Не удалось сохранить модель.',
+    );
+  }
+}
+
+/// What the dialog closed with. A class rather than a bare `String?`, because
+/// "go back to the default" (null) and "the dialog was dismissed" must not be
+/// the same value.
+class _ModelChoice {
+  const _ModelChoice(this.model);
+
+  final String? model;
+}
+
+class _DictationModelDialog extends StatefulWidget {
+  const _DictationModelDialog({required this.current});
+
+  final DictationModel current;
+
+  @override
+  State<_DictationModelDialog> createState() => _DictationModelDialogState();
+}
+
+class _DictationModelDialogState extends State<_DictationModelDialog> {
+  late final TextEditingController _model = TextEditingController(
+    text: widget.current.model,
+  );
+
+  @override
+  void dispose() {
+    _model.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Модель разбора'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          TextField(
+            controller: _model,
+            autofocus: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(
+              labelText: 'Идентификатор модели',
+              hintText: 'vendor/model-name',
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Как в каталоге провайдера, например на OpenRouter. '
+            'По умолчанию: ${widget.current.defaultModel}.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+      actions: <Widget>[
+        if (widget.current.override != null)
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(const _ModelChoice(null)),
+            child: const Text('По умолчанию'),
+          ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Отмена'),
+        ),
+        ValueListenableBuilder<TextEditingValue>(
+          valueListenable: _model,
+          builder: (context, value, _) => FilledButton(
+            onPressed: value.text.trim().isEmpty
+                ? null
+                : () => Navigator.of(
+                    context,
+                  ).pop(_ModelChoice(value.text.trim())),
+            child: const Text('Сохранить'),
+          ),
+        ),
+      ],
     );
   }
 }

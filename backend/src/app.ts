@@ -17,7 +17,9 @@ import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfi
 import { createAuthGuard } from "./lib/authGuard";
 import { loadLlmConfig } from "./lib/llmConfig";
 import { createOpenAiCompatibleClient } from "./lib/llmClient";
-import { DictationParser, createDictationParser } from "./domain/dictation";
+import { createDictationParser } from "./domain/dictation";
+import { resolveDictationModel } from "./domain/dictationModel";
+import { DictationFeature } from "./routes/dictation";
 
 export interface BuildAppOptions {
   /**
@@ -28,23 +30,28 @@ export interface BuildAppOptions {
   /** Enable request logging. Defaults to true; tests turn it off for quiet output. */
   logger?: boolean;
   /**
-   * The dictation parser (F14). Injectable so tests never call a real model;
-   * defaults to the one `LLM_*` in the environment describes, or `null` --
-   * feature off -- when none does.
+   * Dictation parsing (F14). Injectable so tests never call a real model;
+   * defaults to what `LLM_*` in the environment describes, or `null` --
+   * feature off -- when nothing does.
    */
-  dictationParser?: DictationParser | null;
+  dictation?: DictationFeature | null;
 }
 
-function defaultDictationParser(): DictationParser | null {
+function defaultDictation(): DictationFeature | null {
   const config = loadLlmConfig();
-  return config === null ? null : createDictationParser(createOpenAiCompatibleClient(config));
+  if (config === null) return null;
+  return {
+    defaultModel: config.model,
+    parser: createDictationParser(createOpenAiCompatibleClient(config), () =>
+      resolveDictationModel(config.model),
+    ),
+  };
 }
 
 /** Builds the Fastify app, wired with auth. */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const authConfig = options.authConfig ?? loadAuthConfig();
-  const dictationParser =
-    options.dictationParser !== undefined ? options.dictationParser : defaultDictationParser();
+  const dictation = options.dictation !== undefined ? options.dictation : defaultDictation();
 
   const app = Fastify({
     logger: options.logger ?? true,
@@ -88,7 +95,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(focusRoutes);
   await app.register(historyRoutes);
   await app.register(boardRoutes);
-  await app.register(dictationRoutes(dictationParser));
+  await app.register(dictationRoutes(dictation));
 
   return app;
 }

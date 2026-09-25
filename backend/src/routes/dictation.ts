@@ -2,7 +2,15 @@ import { FastifyInstance } from "fastify";
 import { HttpError } from "../lib/errors";
 import { UpstreamModelError } from "../lib/llmClient";
 import { DictationParser } from "../domain/dictation";
-import { parseDictationSchema } from "../schemas";
+import { readDictationModelOverride, writeDictationModelOverride } from "../domain/dictationModel";
+import { parseDictationSchema, setDictationModelSchema } from "../schemas";
+
+/** What the dictation routes need when a model is configured. */
+export interface DictationFeature {
+  parser: DictationParser;
+  /** `LLM_MODEL` from `.env`: what is used when the app has not chosen one. */
+  defaultModel: string;
+}
 
 /**
  * No model is configured on this server. 503, not 404: the route exists, the
@@ -29,14 +37,14 @@ class DictationUnavailableError extends HttpError {
  * It is also what makes the fallback trivial: when this answers 502 or 503 the
  * client has lost nothing, because nothing was written.
  */
-export function dictationRoutes(parser: DictationParser | null) {
+export function dictationRoutes(feature: DictationFeature | null) {
   return async function (app: FastifyInstance): Promise<void> {
     app.post("/dictation/parse", async (request, reply) => {
       const body = parseDictationSchema.parse(request.body);
-      if (parser === null) throw new DictationUnavailableError();
+      if (feature === null) throw new DictationUnavailableError();
 
       try {
-        const parsed = await parser({
+        const parsed = await feature.parser({
           text: body.text,
           timeZone: body.timeZone,
           now: new Date(),
@@ -51,6 +59,34 @@ export function dictationRoutes(parser: DictationParser | null) {
         }
         throw error;
       }
+    });
+
+    /*
+     * The model, as the settings screen shows it: what is in use, what `.env`
+     * says, and whether the app has overridden it. See
+     * `../domain/dictationModel.ts` for why the model is changeable from the
+     * app and the key is not.
+     */
+    async function describeModel(defaultModel: string) {
+      const override = await readDictationModelOverride();
+      return { model: override ?? defaultModel, defaultModel, override };
+    }
+
+    app.get("/dictation/model", async (_request, reply) => {
+      if (feature === null) throw new DictationUnavailableError();
+      reply.send(await describeModel(feature.defaultModel));
+    });
+
+    app.put("/dictation/model", async (request, reply) => {
+      const body = setDictationModelSchema.parse(request.body);
+      if (feature === null) throw new DictationUnavailableError();
+
+      // Choosing the `.env` model by name is the same as choosing nothing, and
+      // stored as nothing -- otherwise a later change of LLM_MODEL would be
+      // silently shadowed by a row that only ever meant "the default".
+      const model = body.model === feature.defaultModel ? null : body.model;
+      await writeDictationModelOverride(model);
+      reply.send(await describeModel(feature.defaultModel));
     });
   };
 }

@@ -253,3 +253,21 @@ model Note {
   @@index([projectId])
   @@map("notes")
 }
+
+/// Server-side preferences the app can change (F14): today one row, the model
+/// that parses dictation.
+///
+/// A key/value table rather than a column somewhere, because there is no row
+/// for a preference to live on -- one user, no users table -- and a one-row
+/// table with a column per setting would need a migration for every new one.
+///
+/// Secrets do not belong here. The model's API key stays in `.env`, where only
+/// root can read it; what the app may change is which model the key is spent
+/// on, and a leaked model name costs nothing.
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("app_settings")
+}
