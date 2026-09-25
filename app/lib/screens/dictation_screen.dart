@@ -225,6 +225,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             title.isEmpty ? text : title,
             description: description.isEmpty ? null : description,
             remindAt: remindDate,
+            // Only when the proposal is what is being saved: after "Как
+            // надиктовано" the task is the raw words, and labelling the sample
+            // with them would score the model against an answer it never gave.
+            dictationParseId: _parsed?.parseId,
           ),
           success: remindDate == null
               ? 'Задача добавлена в «$name».'
@@ -312,6 +316,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     String title, {
     String? description,
     String? remindAt,
+    String? dictationParseId,
   }) async {
     final provider = projectTasksProvider(projectId);
     final keepAlive = ref.listenManual(provider, (_, _) {});
@@ -319,7 +324,12 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
       await ref.read(provider.future);
       await ref
           .read(provider.notifier)
-          .create(title, description: description, remindAt: remindAt);
+          .create(
+            title,
+            description: description,
+            remindAt: remindAt,
+            dictationParseId: dictationParseId,
+          );
     } finally {
       keepAlive.close();
     }

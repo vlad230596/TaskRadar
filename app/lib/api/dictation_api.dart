@@ -10,6 +10,7 @@ class ParsedDictation {
     required this.description,
     required this.remindDate,
     required this.remindTime,
+    this.parseId,
   });
 
   factory ParsedDictation.fromJson(Map<String, dynamic> json) =>
@@ -18,6 +19,7 @@ class ParsedDictation {
         description: json['description'] as String?,
         remindDate: json['remindDate'] as String?,
         remindTime: json['remindTime'] as String?,
+        parseId: json['parseId'] as String?,
       );
 
   /// Short, starts with a verb.
@@ -33,6 +35,11 @@ class ParsedDictation {
   /// `HH:MM`, or null. Returned by the server, but not stored anywhere yet:
   /// reminders have day granularity (`domain/reminders.dart`).
   final String? remindTime;
+
+  /// The server's record of this parse in its dataset, sent back when the
+  /// task is created so the record gets linked to it and learns what was kept.
+  /// Null when the server could not keep the record.
+  final String? parseId;
 }
 
 /// Which model parses dictation, as `GET/PUT /dictation/model` describe it.

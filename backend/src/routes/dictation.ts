@@ -1,7 +1,9 @@
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyBaseLogger } from "fastify";
+import { Prisma } from "@prisma/client";
+import { prisma } from "../lib/prisma";
 import { HttpError } from "../lib/errors";
 import { UpstreamModelError } from "../lib/llmClient";
-import { DictationParser } from "../domain/dictation";
+import { DictationInput, DictationParser, DictationTrace } from "../domain/dictation";
 import { readDictationModelOverride, writeDictationModelOverride } from "../domain/dictationModel";
 import { parseDictationSchema, setDictationModelSchema } from "../schemas";
 
@@ -23,19 +25,56 @@ class DictationUnavailableError extends HttpError {
   }
 }
 
+/**
+ * Keeps one parse in the dataset (`DictationParse` in prisma/schema.prisma)
+ * and returns its id, or null when it could not be kept.
+ *
+ * A failed write is logged and swallowed: the dataset is for improving the
+ * prompt later, and losing one sample is no reason to take the proposal away
+ * from the person waiting for it now.
+ */
+async function keepSample(
+  input: DictationInput,
+  trace: DictationTrace,
+  log: FastifyBaseLogger,
+): Promise<string | null> {
+  try {
+    const row = await prisma.dictationParse.create({
+      data: {
+        inputText: input.text,
+        timeZone: input.timeZone,
+        requestedAt: input.now,
+        model: trace.model,
+        promptVersion: trace.promptVersion,
+        status: trace.result === null ? "failed" : "ok",
+        rawReply: trace.rawReply,
+        result: trace.result === null ? Prisma.JsonNull : { ...trace.result },
+        error: trace.error,
+        durationMs: trace.durationMs,
+      },
+      select: { id: true },
+    });
+    return row.id;
+  } catch (error) {
+    log.error({ err: error }, "could not keep the dictation sample");
+    return null;
+  }
+}
+
 /*
  * Dictation -> task (F14). See `../domain/dictation.ts` for what the model does.
  *
- * A PURE TRANSFORMATION, NOT A WRITE
+ * NO TASK IS WRITTEN HERE
  *
- * The route answers with a proposed task and stores nothing. The client decides
- * what to do with it -- create the task, show it for correction, or throw it
- * away and use the raw words -- through the task routes that already exist and
- * already write the journal. A second way to create a task, here, would be a
- * second place that had to remember the `created` event.
+ * The route answers with a proposed task. The client decides what to do with
+ * it -- create the task, correct it first, or throw it away and use the raw
+ * words -- through the task route that already exists and already writes the
+ * journal. A second way to create a task, here, would be a second place that
+ * had to remember the `created` event.
  *
- * It is also what makes the fallback trivial: when this answers 502 or 503 the
- * client has lost nothing, because nothing was written.
+ * What *is* written is the dataset row: input, reply, duration. Its id goes
+ * back as `parseId`, and the task route links the row to the task when the
+ * client sends it along -- see `dictationParseId` there.
  */
 export function dictationRoutes(feature: DictationFeature | null) {
   return async function (app: FastifyInstance): Promise<void> {
@@ -43,22 +82,22 @@ export function dictationRoutes(feature: DictationFeature | null) {
       const body = parseDictationSchema.parse(request.body);
       if (feature === null) throw new DictationUnavailableError();
 
-      try {
-        const parsed = await feature.parser({
-          text: body.text,
-          timeZone: body.timeZone,
-          now: new Date(),
-        });
-        reply.send(parsed);
-      } catch (error) {
-        // The reason goes to the log and not to the client: it can name the
-        // provider's status or a fragment of its reply, which is ours to debug
-        // and nobody else's to read.
-        if (error instanceof UpstreamModelError) {
-          request.log.warn({ reason: error.reason }, "dictation model failed");
-        }
-        throw error;
+      const input: DictationInput = {
+        text: body.text,
+        timeZone: body.timeZone,
+        now: new Date(),
+      };
+      const trace = await feature.parser(input);
+      const parseId = await keepSample(input, trace, request.log);
+
+      if (trace.result === null) {
+        // The reason goes to the log and the dataset, not to the client: it can
+        // name the provider's status or a fragment of its reply, which is ours
+        // to debug and nobody else's to read.
+        request.log.warn({ reason: trace.error, parseId }, "dictation model failed");
+        throw new UpstreamModelError(trace.error ?? "unknown");
       }
+      reply.send({ ...trace.result, parseId });
     });
 
     /*

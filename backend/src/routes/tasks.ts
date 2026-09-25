@@ -69,6 +69,26 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         data: { taskId: created.id, kind: "created", toStatus: created.status },
       });
 
+      /*
+       * A dictated task (F14): link the dataset row and snapshot what was kept
+       * -- the proposal after the user's corrections, the label a replay of
+       * this input is scored against. `updateMany` with `taskId: null` so that
+       * an unknown id or a row that is already linked is a no-op rather than
+       * an error: failing to label a sample must never fail creating the task.
+       */
+      if (body.dictationParseId !== undefined) {
+        await tx.dictationParse.updateMany({
+          where: { id: body.dictationParseId, taskId: null },
+          data: {
+            taskId: created.id,
+            finalTitle: created.title,
+            finalDescription: created.description,
+            finalRemindAt: created.remindAt,
+            linkedAt: new Date(),
+          },
+        });
+      }
+
       return created;
     });
 

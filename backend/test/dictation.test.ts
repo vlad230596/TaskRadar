@@ -6,6 +6,8 @@ import {
   createDictationParser,
   interpretModelReply,
   localDate,
+  DICTATION_PROMPT_VERSION,
+  type DictationTrace,
   type DictationParser,
 } from "../src/domain/dictation";
 import { createOpenAiCompatibleClient, UpstreamModelError } from "../src/lib/llmClient";
@@ -26,7 +28,15 @@ import { resolveDictationModel } from "../src/domain/dictationModel";
  * really stores lets "save, then read back" be asserted as a sequence.
  */
 const settings = vi.hoisted(() => new Map<string, string>());
+/** Rows written to `dictation_parses`, in order. */
+const samples = vi.hoisted(() => [] as Record<string, unknown>[]);
 const prismaMock = vi.hoisted(() => ({
+  dictationParse: {
+    create: vi.fn(async (args: { data: Record<string, unknown> }) => {
+      samples.push(args.data);
+      return { id: `dp-${samples.length}` };
+    }),
+  },
   appSetting: {
     findUnique: vi.fn(async (args: { where: { key: string } }) => {
       const value = settings.get(args.where.key);
@@ -163,8 +173,58 @@ describe("createDictationParser", () => {
       async () => "some-model",
     );
     // 2026-09-23 is still today in UTC but already yesterday in Moscow.
-    expect((await parse({ text: "x", timeZone: "UTC", now: NOW })).remindDate).toBe("2026-09-23");
-    expect((await parse({ text: "x", timeZone: "Europe/Moscow", now: NOW })).remindDate).toBeNull();
+    expect((await parse({ text: "x", timeZone: "UTC", now: NOW })).result?.remindDate).toBe(
+      "2026-09-23",
+    );
+    expect(
+      (await parse({ text: "x", timeZone: "Europe/Moscow", now: NOW })).result?.remindDate,
+    ).toBeNull();
+  });
+
+  it("traces a success: the raw reply, the model, the prompt and the time", async () => {
+    const reply = '{"title":"сделать."}';
+    let now = 1000;
+    const parse = createDictationParser(
+      async () => {
+        now += 1234;
+        return reply;
+      },
+      async () => "some-model",
+      () => now,
+    );
+
+    expect(await parse({ text: "x", timeZone: "UTC", now: NOW })).toEqual({
+      model: "some-model",
+      promptVersion: DICTATION_PROMPT_VERSION,
+      // As received -- the tidying happens in `result`, and a prompt is worked
+      // on by reading what the model actually said.
+      rawReply: reply,
+      result: { title: "Сделать", description: null, remindDate: null, remindTime: null },
+      error: null,
+      durationMs: 1234,
+    });
+  });
+
+  it("traces a failure instead of throwing, keeping what did arrive", async () => {
+    const unusable = createDictationParser(
+      async () => "Конечно! Вот задача",
+      async () => "m",
+    );
+    expect(await unusable({ text: "x", timeZone: "UTC", now: NOW })).toMatchObject({
+      rawReply: "Конечно! Вот задача",
+      result: null,
+      error: "reply content is not JSON",
+    });
+
+    const silent = createDictationParser(
+      async () => Promise.reject(new UpstreamModelError("status 429")),
+      async () => "m",
+    );
+    expect(await silent({ text: "x", timeZone: "UTC", now: NOW })).toMatchObject({
+      rawReply: null,
+      result: null,
+      error: "status 429",
+    });
   });
 });
 
@@ -311,22 +371,66 @@ describe("POST /dictation/parse", () => {
       payload: payload as Record<string, unknown>,
     });
 
-  it("answers with the parsed task and writes nothing", async () => {
-    const parsed = {
-      title: "Позвонить маме",
-      description: null,
-      remindDate: null,
-      remindTime: null,
-    };
-    parser.mockResolvedValueOnce(parsed);
+  const traceOf = (overrides: Partial<DictationTrace>): DictationTrace => ({
+    model: "env-model",
+    promptVersion: DICTATION_PROMPT_VERSION,
+    rawReply: '{"title":"Позвонить маме"}',
+    result: { title: "Позвонить маме", description: null, remindDate: null, remindTime: null },
+    error: null,
+    durationMs: 812,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    samples.length = 0;
+  });
+
+  it("answers with the proposal and the id of the sample it kept", async () => {
+    parser.mockResolvedValueOnce(traceOf({}));
 
     const res = await post(app, { text: "  ну позвонить маме  ", timeZone: "Europe/Moscow" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual(parsed);
+    expect(res.json()).toEqual({
+      title: "Позвонить маме",
+      description: null,
+      remindDate: null,
+      remindTime: null,
+      parseId: "dp-1",
+    });
     expect(parser).toHaveBeenLastCalledWith(
       expect.objectContaining({ text: "ну позвонить маме", timeZone: "Europe/Moscow" }),
     );
+  });
+
+  it("keeps everything a replay needs in the sample", async () => {
+    parser.mockResolvedValueOnce(traceOf({}));
+    await post(app, { text: "ну позвонить маме", timeZone: "Europe/Moscow" });
+
+    expect(samples).toHaveLength(1);
+    expect(samples[0]).toMatchObject({
+      inputText: "ну позвонить маме",
+      timeZone: "Europe/Moscow",
+      model: "env-model",
+      promptVersion: DICTATION_PROMPT_VERSION,
+      status: "ok",
+      rawReply: '{"title":"Позвонить маме"}',
+      result: { title: "Позвонить маме", description: null, remindDate: null, remindTime: null },
+      error: null,
+      durationMs: 812,
+    });
+    // The prompt's calendar is built from this moment, so a replay needs it.
+    expect(samples[0]!.requestedAt).toBeInstanceOf(Date);
+  });
+
+  it("still answers when the sample cannot be kept", async () => {
+    parser.mockResolvedValueOnce(traceOf({}));
+    prismaMock.dictationParse.create.mockRejectedValueOnce(new Error("db down"));
+
+    const res = await post(app, { text: "x", timeZone: "UTC" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ title: "Позвонить маме", parseId: null });
   });
 
   it("requires a session", async () => {
@@ -343,14 +447,20 @@ describe("POST /dictation/parse", () => {
     expect((await post(app, payload)).statusCode).toBe(400);
   });
 
-  it("answers 502 when the model fails", async () => {
-    parser.mockRejectedValueOnce(new UpstreamModelError("status 500"));
+  it("answers 502 when the model fails, and keeps the failure as a sample", async () => {
+    parser.mockResolvedValueOnce(
+      traceOf({ rawReply: null, result: null, error: "status 500", durationMs: 12000 }),
+    );
     const res = await post(app, { text: "x", timeZone: "UTC" });
+
     expect(res.statusCode).toBe(502);
     expect(res.json()).toEqual({
       error: "UpstreamModelError",
       message: "Dictation model did not answer",
     });
+    // A model that times out is exactly what a comparison between models has
+    // to count.
+    expect(samples[0]).toMatchObject({ status: "failed", error: "status 500", durationMs: 12000 });
   });
 
   it("answers 503 when no model is configured", async () => {

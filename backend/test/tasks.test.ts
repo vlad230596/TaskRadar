@@ -32,6 +32,7 @@ const prismaMock = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   taskEvent: { findMany: vi.fn(), create: vi.fn() },
+  dictationParse: { updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -366,6 +367,42 @@ beforeEach(() => {
 });
 
 describe("POST /projects/:projectId/tasks", () => {
+  it("links a dictated task to its sample, with a snapshot of what was kept (F14)", async () => {
+    prismaMock.dictationParse.updateMany.mockReset();
+    prismaMock.dictationParse.updateMany.mockResolvedValue({ count: 1 });
+
+    const res = await call("POST", "/projects/prj-1/tasks", {
+      title: "Заказать кабель USB-C",
+      description: "Два метра",
+      status: "blocked",
+      remindAt: "2026-10-02",
+      dictationParseId: "dp-7",
+    });
+
+    expect(res.statusCode).toBe(201);
+    const created = res.json() as { id: string };
+    expect(prismaMock.dictationParse.updateMany).toHaveBeenCalledTimes(1);
+    const args = prismaMock.dictationParse.updateMany.mock.calls[0]![0] as {
+      where: unknown;
+      data: Record<string, unknown>;
+    };
+    // Only a row not linked yet: a retried request must not relabel it.
+    expect(args.where).toEqual({ id: "dp-7", taskId: null });
+    expect(args.data).toMatchObject({
+      taskId: created.id,
+      finalTitle: "Заказать кабель USB-C",
+      finalDescription: "Два метра",
+    });
+    expect(args.data.finalRemindAt).toEqual(new Date("2026-10-02T00:00:00.000Z"));
+    expect(args.data.linkedAt).toBeInstanceOf(Date);
+  });
+
+  it("touches no sample for a task that was typed", async () => {
+    prismaMock.dictationParse.updateMany.mockReset();
+    await call("POST", "/projects/prj-1/tasks", { title: "Руками" });
+    expect(prismaMock.dictationParse.updateMany).not.toHaveBeenCalled();
+  });
+
   it("starts the task's journal in the same transaction", async () => {
     const res = await call("POST", "/projects/prj-1/tasks", { title: "Новая задача" });
 

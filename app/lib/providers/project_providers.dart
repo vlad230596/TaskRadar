@@ -149,7 +149,15 @@ class ProjectTasks extends _$ProjectTasks {
   /// with a reminder is created **blocked**: a reminder only fires for a
   /// blocked task (`domain/board_reminders.dart`), and "напомни в пятницу"
   /// said about a task is exactly "this waits until Friday".
-  Future<void> create(String title, {String? description, String? remindAt}) {
+  ///
+  /// [dictationParseId] links the task to the server's record of the parse
+  /// it came from -- see `ProjectApi.createTask`.
+  Future<void> create(
+    String title, {
+    String? description,
+    String? remindAt,
+    String? dictationParseId,
+  }) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return Future<void>.value();
     final status = remindAt == null ? null : TaskStatus.blocked;
@@ -173,6 +181,7 @@ class ProjectTasks extends _$ProjectTasks {
             description: description,
             status: status,
             remindAt: remindAt,
+            dictationParseId: dictationParseId,
           );
           return null; // reconcile: the new row may be the current one now
         },

@@ -135,6 +135,9 @@ model Task {
 
   events TaskEvent[]
 
+  /// The dictation parses this task was created from (F14) -- normally one.
+  dictationParses DictationParse[]
+
   @@index([projectId, position])
   @@map("tasks")
 }
@@ -270,4 +273,67 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 
   @@map("app_settings")
+}
+
+/// One press of "Разобрать" (F14): what went to the model, what came back, how
+/// long it took -- and, once the task is saved, what the user kept.
+///
+/// WHY THIS IS KEPT
+///
+/// It is the dataset the prompt and the choice of model are worked on against.
+/// A new model or a new prompt is tried by replaying these inputs and comparing
+/// the answers with what was accepted, before anything changes for the phone.
+/// So a row keeps everything a replay needs: the words, the zone and the moment
+/// they were parsed at (the prompt's calendar -- "в пятницу" -- depends on
+/// both), the model, and which version of the prompt was used.
+///
+/// Failures are kept too. A model that times out or answers something that is
+/// not JSON is exactly the kind of thing a comparison between models has to
+/// count.
+///
+/// WHAT "FINAL" MEANS
+///
+/// `final*` is a snapshot of the task as saved from the dictation screen, taken
+/// when the task is created -- i.e. the model's proposal after the user's
+/// corrections, which is the label a replay is scored against. The task itself
+/// may be edited later; `taskId` points at it for that, and is set to null
+/// rather than deleting the row when the task goes, because the pair "input,
+/// accepted answer" stays useful after the task is gone.
+model DictationParse {
+  id String @id @default(cuid())
+
+  /// The words as sent -- after any correction on the screen, before the model.
+  inputText   String
+  /// IANA zone the dates were read in.
+  timeZone    String
+  /// The "now" the prompt's calendar was built from.
+  requestedAt DateTime
+
+  model         String
+  /// `DICTATION_PROMPT_VERSION` in src/domain/dictation.ts at the time.
+  promptVersion String
+
+  /// `ok` or `failed`.
+  status     String
+  /// The model's reply exactly as received, before any tidying. Null when no
+  /// reply arrived at all.
+  rawReply   String?
+  /// What the client was sent: `{ title, description, remindDate, remindTime }`.
+  result     Json?
+  /// Why it failed, for `failed`. Never shown to the client.
+  error      String?
+  durationMs Int
+
+  taskId           String?
+  task             Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  finalTitle       String?
+  finalDescription String?
+  finalRemindAt    DateTime?
+  linkedAt         DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([taskId])
+  @@map("dictation_parses")
 }

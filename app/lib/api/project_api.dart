@@ -190,12 +190,17 @@ class ProjectApi {
   ///
   /// [remindAt] is the `YYYY-MM-DD` calendar date, for the reason given on
   /// [updateTask].
+  ///
+  /// [dictationParseId] links the server's dataset record of the parse this
+  /// task came from (F14), so the prompt can later be scored against what was
+  /// actually kept.
   Future<Task> createTask({
     required String projectId,
     required String title,
     String? description,
     TaskStatus? status,
     String? remindAt,
+    String? dictationParseId,
   }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/projects/$projectId/tasks',
@@ -204,6 +209,7 @@ class ProjectApi {
         'description': ?description,
         'status': ?status?.name,
         'remindAt': ?remindAt,
+        'dictationParseId': ?dictationParseId,
       },
     );
     return _taskFromMutation(json);

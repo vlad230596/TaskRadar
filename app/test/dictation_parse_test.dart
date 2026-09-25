@@ -99,6 +99,15 @@ void main() {
     await settle(tester);
   }
 
+  /// The body of the one `POST /projects/:id/tasks` the screen sent.
+  Map<String, dynamic> createBody() =>
+      backend.requests
+              .singleWhere(
+                (r) => r.method == 'POST' && r.path == '/projects/prj_1/tasks',
+              )
+              .data
+          as Map<String, dynamic>;
+
   Future<void> tidy(WidgetTester tester) async {
     await tester.tap(find.text('Разобрать'));
     await settle(tester);
@@ -132,6 +141,7 @@ void main() {
         'description': 'Два метра',
         'remindDate': null,
         'remindTime': null,
+        'parseId': 'dp-1',
       });
 
       await dictate(tester);
@@ -152,6 +162,10 @@ void main() {
         'Заказать кабель USB-C',
       );
       await save(tester);
+
+      // The server's record of the parse is linked to the task, so what was
+      // kept becomes the label the prompt is later scored against.
+      expect(createBody()['dictationParseId'], 'dp-1');
 
       expect(server.tasks.single, <String, dynamic>{
         ...server.tasks.single,
@@ -208,7 +222,10 @@ void main() {
     });
 
     testWidgets('"Как надиктовано" goes back to the words', (tester) async {
-      modelAnswers(<String, dynamic>{'title': 'Купить кабель USB-C'});
+      modelAnswers(<String, dynamic>{
+        'title': 'Купить кабель USB-C',
+        'parseId': 'dp-2',
+      });
 
       await dictate(tester);
       await tidy(tester);
@@ -217,6 +234,8 @@ void main() {
       await save(tester);
 
       expect(server.tasks.single['title'], 'Купить кабель');
+      // The raw words are not an answer the model gave: no label.
+      expect(createBody().containsKey('dictationParseId'), isFalse);
     });
 
     testWidgets('no model on the server: said, and the words stay', (

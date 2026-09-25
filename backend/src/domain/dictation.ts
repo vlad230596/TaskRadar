@@ -48,7 +48,32 @@ export interface DictationInput {
   now: Date;
 }
 
-export type DictationParser = (input: DictationInput) => Promise<ParsedDictation>;
+/**
+ * Everything one parse did, successful or not -- what the dataset row keeps
+ * (`DictationParse` in prisma/schema.prisma).
+ */
+export interface DictationTrace {
+  model: string;
+  promptVersion: string;
+  /** The reply as received; null when none arrived. */
+  rawReply: string | null;
+  /** Null when the parse failed. */
+  result: ParsedDictation | null;
+  /** Why it failed; null when it did not. */
+  error: string | null;
+  durationMs: number;
+}
+
+/** Never throws for a model failure: the failure is part of the trace. */
+export type DictationParser = (input: DictationInput) => Promise<DictationTrace>;
+
+/**
+ * Which prompt a dataset row was produced with. Bump it whenever
+ * [buildDictationMessages] changes what it asks -- rules, examples, calendar
+ * format -- so that rows from different prompts are never compared as if they
+ * were the same experiment.
+ */
+export const DICTATION_PROMPT_VERSION = "1";
 
 /** How far ahead the calendar in the prompt reaches. */
 const CALENDAR_DAYS = 14;
@@ -303,9 +328,36 @@ export function interpretModelReply(content: string, today: string): ParsedDicta
 export function createDictationParser(
   complete: CompleteJson,
   resolveModel: () => Promise<string>,
+  clock: () => number = Date.now,
 ): DictationParser {
   return async (input) => {
-    const content = await complete(buildDictationMessages(input), await resolveModel());
-    return interpretModelReply(content, localDate(input.now, input.timeZone));
+    const model = await resolveModel();
+    const started = clock();
+    let rawReply: string | null = null;
+    try {
+      rawReply = await complete(buildDictationMessages(input), model);
+      const result = interpretModelReply(rawReply, localDate(input.now, input.timeZone));
+      return trace(model, rawReply, result, null, clock() - started);
+    } catch (error) {
+      if (!(error instanceof UpstreamModelError)) throw error;
+      return trace(model, rawReply, null, error.reason, clock() - started);
+    }
+  };
+}
+
+function trace(
+  model: string,
+  rawReply: string | null,
+  result: ParsedDictation | null,
+  error: string | null,
+  durationMs: number,
+): DictationTrace {
+  return {
+    model,
+    promptVersion: DICTATION_PROMPT_VERSION,
+    rawReply,
+    result,
+    error,
+    durationMs,
   };
 }

@@ -149,6 +149,12 @@ export const createTaskSchema = z.object({
   description: z.string().nullable().optional(),
   status: taskStatusSchema.optional(),
   remindAt: z.coerce.date().nullable().optional(),
+  /**
+   * The dictation parse this task was made from (F14), if any: the row in
+   * `dictation_parses` gets linked to the task, with a snapshot of what was
+   * kept. See `DictationParse` in prisma/schema.prisma.
+   */
+  dictationParseId: z.string().min(1).max(100).optional(),
 });
 
 export const updateTaskSchema = z
