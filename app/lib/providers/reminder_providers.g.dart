@@ -138,6 +138,51 @@ final class NotificationTimeZoneProvider
 String _$notificationTimeZoneHash() =>
     r'709e210b9d7ca0a0bc336618ce7f06e7f6688415';
 
+/// The same zone, as the IANA name the server's dictation parser takes (F14).
+/// A provider of its own so the dictation screen can be tested without the
+/// timezone platform channel.
+
+@ProviderFor(deviceTimeZoneName)
+final deviceTimeZoneNameProvider = DeviceTimeZoneNameProvider._();
+
+/// The same zone, as the IANA name the server's dictation parser takes (F14).
+/// A provider of its own so the dictation screen can be tested without the
+/// timezone platform channel.
+
+final class DeviceTimeZoneNameProvider
+    extends $FunctionalProvider<AsyncValue<String>, String, FutureOr<String>>
+    with $FutureModifier<String>, $FutureProvider<String> {
+  /// The same zone, as the IANA name the server's dictation parser takes (F14).
+  /// A provider of its own so the dictation screen can be tested without the
+  /// timezone platform channel.
+  DeviceTimeZoneNameProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'deviceTimeZoneNameProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$deviceTimeZoneNameHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<String> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<String> create(Ref ref) {
+    return deviceTimeZoneName(ref);
+  }
+}
+
+String _$deviceTimeZoneNameHash() =>
+    r'9576fa0e157a8e0345b7c7e1e20a682bbd6896a7';
+
 /// The hour reminders fire at, persisted (F4).
 ///
 /// ## Why this became asynchronous

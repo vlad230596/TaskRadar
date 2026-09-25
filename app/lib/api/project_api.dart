@@ -182,16 +182,29 @@ class ProjectApi {
   /// list -- the server picks the position (`computeAppendPosition`), the client
   /// never proposes one.
   ///
-  /// Only `title` is sent. `description`, `status` and `remindAt` are all
-  /// optional on the server and default to null/`pending`, and inline creation
-  /// (the fast path this screen is built around) has nothing else to say yet.
+  /// Inline creation (the fast path this screen is built around) sends only
+  /// `title`; the server defaults the rest to null/`pending`. A dictated task
+  /// (F14) can arrive with a description and a reminder, and then with
+  /// `blocked` -- a reminder only fires for a blocked task
+  /// (`domain/board_reminders.dart`).
+  ///
+  /// [remindAt] is the `YYYY-MM-DD` calendar date, for the reason given on
+  /// [updateTask].
   Future<Task> createTask({
     required String projectId,
     required String title,
+    String? description,
+    TaskStatus? status,
+    String? remindAt,
   }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/projects/$projectId/tasks',
-      body: <String, dynamic>{'title': title},
+      body: <String, dynamic>{
+        'title': title,
+        'description': ?description,
+        'status': ?status?.name,
+        'remindAt': ?remindAt,
+      },
     );
     return _taskFromMutation(json);
   }

@@ -34,6 +34,24 @@ class NotificationTimeZone {
 
   String get name => location.name;
 
+  /// The zone as an IANA name any other system accepts -- the server's
+  /// dictation parser (F14) reads "завтра" in it.
+  ///
+  /// [name] is that already when the device reported its zone. The fallback's
+  /// name (`UTC+03:00`) is this file's own invention and nothing else parses
+  /// it, so a whole-hour offset becomes its `Etc/GMT` twin -- whose sign is
+  /// inverted by POSIX convention, so UTC+3 is `Etc/GMT-3`. An offset with
+  /// minutes has no such twin and falls back to `UTC`: a day off near
+  /// midnight, which beats not parsing at all.
+  String get ianaName {
+    if (source == TimeZoneSource.device) return name;
+    final offset = location.currentTimeZone.offset;
+    if (offset.inMinutes % 60 != 0) return 'UTC';
+    final hours = offset.inHours;
+    if (hours == 0) return 'UTC';
+    return 'Etc/GMT${hours > 0 ? '-' : '+'}${hours.abs()}';
+  }
+
   /// Loads the tz database and picks the local zone. Idempotent.
   ///
   /// Never throws: a device that cannot report its zone should still get

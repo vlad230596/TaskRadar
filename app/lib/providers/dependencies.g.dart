@@ -588,3 +588,49 @@ final class InboxApiProvider
 }
 
 String _$inboxApiHash() => r'5186d371cd119c20528bb433b056e668465cb4e1';
+
+/// Dictation -> task (F14). Same shape and reasoning as [projectApi].
+
+@ProviderFor(dictationApi)
+final dictationApiProvider = DictationApiProvider._();
+
+/// Dictation -> task (F14). Same shape and reasoning as [projectApi].
+
+final class DictationApiProvider
+    extends $FunctionalProvider<DictationApi, DictationApi, DictationApi>
+    with $Provider<DictationApi> {
+  /// Dictation -> task (F14). Same shape and reasoning as [projectApi].
+  DictationApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'dictationApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$dictationApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<DictationApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  DictationApi create(Ref ref) {
+    return dictationApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(DictationApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<DictationApi>(value),
+    );
+  }
+}
+
+String _$dictationApiHash() => r'cc4ec7e22eae2e4c61cc511585b99940249b4973';

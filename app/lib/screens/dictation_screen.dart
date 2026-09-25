@@ -4,10 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_exception.dart';
+import '../api/dictation_api.dart';
 import '../models/board_project.dart';
 import '../providers/board_providers.dart';
 import '../providers/capture_queue_providers.dart';
+import '../providers/dependencies.dart';
 import '../providers/project_providers.dart';
+import '../providers/reminder_providers.dart';
 import '../providers/voice_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -108,6 +112,26 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// rebuild cannot start a second save or a second recording.
   bool _leaving = false;
 
+  /// True while the server's model is turning the words into a task (F14).
+  /// Shown as its own stage, and keeps "Готово" from saving twice.
+  bool _tidying = false;
+
+  /// The model's proposal, once "Разобрать" has been pressed and answered.
+  /// Non-null means the screen shows the proposal -- title, description,
+  /// reminder -- instead of the words, and that is what "Готово" saves.
+  ParsedDictation? _parsed;
+
+  final TextEditingController _title = TextEditingController();
+  final TextEditingController _description = TextEditingController();
+
+  /// The proposed reminder, `YYYY-MM-DD`. Separate from [_parsed] because the
+  /// user can take it off without throwing the rest of the proposal away.
+  String? _remindDate;
+
+  /// Why the last "Разобрать" did not work, said under the words. Null once
+  /// anything else happens.
+  String? _tidyProblem;
+
   @override
   void initState() {
     super.initState();
@@ -121,6 +145,8 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   void dispose() {
     _text.dispose();
     _textFocus.dispose();
+    _title.dispose();
+    _description.dispose();
     super.dispose();
   }
 
@@ -184,14 +210,125 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         if (ok) await _leave(null);
 
       case ProjectDestination(:final projectId, :final name):
+        // What is on screen is what is saved: the proposal if "Разобрать" was
+        // pressed and answered, the words as they stand otherwise. Never a
+        // silent round trip to the model on the way out -- the user should
+        // not find a title in the project they did not see here.
+        final parsed = _parsed != null;
+        final title = parsed ? _title.text.trim() : '';
+        final description = parsed ? _description.text.trim() : '';
+        final remindDate = parsed ? _remindDate : null;
         final ok = await runMutation(
           context,
-          () => ref.read(projectTasksProvider(projectId).notifier).create(text),
-          success: 'Задача добавлена в «$name».',
+          () => _createTask(
+            projectId,
+            title.isEmpty ? text : title,
+            description: description.isEmpty ? null : description,
+            remindAt: remindDate,
+          ),
+          success: remindDate == null
+              ? 'Задача добавлена в «$name».'
+              : 'Задача добавлена в «$name», напомню ${_shortDate(remindDate)}.',
           failure: 'Не удалось добавить задачу.',
         );
         if (ok) await _leave(null);
     }
+  }
+
+  /// "Разобрать": the words as a task -- a verb-first title, the rest as the
+  /// description, "напомни в пятницу" as a date -- shown on this screen for
+  /// correction before anything is saved (F14).
+  ///
+  /// ## Why a button and not a step inside "Готово"
+  ///
+  /// It was a step inside "Готово" first, and it was opaque: the words on the
+  /// screen were one thing, the task that landed in the project another, and
+  /// whether the model had been reached at all was invisible. Now nothing
+  /// happens to the words unless asked, the answer is on screen before it is
+  /// saved, and a failure is said out loud instead of being swallowed.
+  ///
+  /// Only for a task going into a project. The sandbox keeps the raw words:
+  /// a line there has no description to put the rest into, and it gets its
+  /// title when it is filed.
+  Future<void> _tidy() async {
+    final text = _text.text.trim();
+    if (text.isEmpty || _tidying) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _tidying = true;
+      _tidyProblem = null;
+    });
+
+    String? problem;
+    try {
+      final zone = await ref.read(deviceTimeZoneNameProvider.future);
+      final parsed = await ref
+          .read(dictationApiProvider)
+          .parse(text: text, timeZone: zone);
+      if (!mounted) return;
+      setState(() {
+        _parsed = parsed;
+        _title.text = parsed.title;
+        _description.text = parsed.description ?? '';
+        _remindDate = parsed.remindDate;
+      });
+    } on NetworkException {
+      problem = 'Нет связи с сервером — можно сохранить как есть.';
+    } on ApiException catch (error) {
+      problem = error.statusCode == 503
+          ? 'Разбор не настроен на сервере.'
+          : 'Модель не ответила — попробуйте ещё раз.';
+    } catch (error) {
+      debugPrint('Dictation parse failed: $error');
+      problem = 'Не получилось разобрать.';
+    } finally {
+      if (mounted) {
+        setState(() {
+          _tidying = false;
+          _tidyProblem = problem;
+        });
+      }
+    }
+  }
+
+  /// Back to the words as recognised, proposal thrown away.
+  void _untidy() {
+    setState(() {
+      _parsed = null;
+      _remindDate = null;
+    });
+  }
+
+  /// Creates the task in a project whose screen is usually *not* open.
+  ///
+  /// `ProjectTasks` is an auto-disposing provider whose writes are no-ops
+  /// until its list has loaded -- the optimistic row has nothing to be appended
+  /// to. Read cold from here, it was still loading when `create` ran, so the
+  /// task was silently dropped while the snackbar said "Задача добавлена". The
+  /// subscription keeps the provider alive for the length of the write, and
+  /// the `future` is the load it has to wait for.
+  Future<void> _createTask(
+    String projectId,
+    String title, {
+    String? description,
+    String? remindAt,
+  }) async {
+    final provider = projectTasksProvider(projectId);
+    final keepAlive = ref.listenManual(provider, (_, _) {});
+    try {
+      await ref.read(provider.future);
+      await ref
+          .read(provider.notifier)
+          .create(title, description: description, remindAt: remindAt);
+    } finally {
+      keepAlive.close();
+    }
+  }
+
+  /// `2026-09-25` as `25.09`.
+  static String _shortDate(String date) {
+    final parts = date.split('-');
+    return parts.length == 3 ? '${parts[2]}.${parts[1]}' : date;
   }
 
   Future<void> _leave(String? result) async {
@@ -213,6 +350,8 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(voiceDictationProvider);
     final recording = state is DictationRecording;
+    // Read here, above the Scaffold, which strips the inset from its body.
+    final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       // The status bar belongs to whatever is under it, and under it is the
@@ -245,17 +384,26 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
               children: <Widget>[
                 _header(),
                 _stage(state),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                  child: recording
-                      ? const VoiceLevelMeter()
-                      // The space is held rather than collapsed: the text below
-                      // must not jump up the screen the moment the recording
-                      // stops, while the user is reading it.
-                      : const SizedBox(height: 72),
+                // The space is held rather than collapsed when the recording
+                // stops: the text below must not jump up the screen while the
+                // user is reading it. The proposal is a different view, with
+                // nothing to jump. With the keyboard up it is collapsed
+                // after all -- the user is typing into the text by then, and on
+                // a phone those 90 px were most of what the keyboard left of
+                // it (the words shrank to two lines and scrolled out of sight).
+                if (recording || (!keyboard && _parsed == null))
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                    child: recording
+                        ? const VoiceLevelMeter()
+                        : const SizedBox(height: 72),
+                  ),
+                Expanded(
+                  child: _parsed != null
+                      ? _proposal()
+                      : _textArea(state, compact: keyboard),
                 ),
-                Expanded(child: _textArea(state)),
-                _buttons(state),
+                _buttons(state, compact: keyboard),
               ],
             ),
           ),
@@ -280,7 +428,15 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             destination: _destination,
             onChanged: _destination is FieldDestination
                 ? null
-                : (value) => setState(() => _destination = value),
+                : (value) => setState(() {
+                    _destination = value;
+                    // A proposal is a task's shape; anywhere else the words go
+                    // as they are, and keeping it on screen would say otherwise.
+                    if (value is! ProjectDestination) {
+                      _parsed = null;
+                      _tidyProblem = null;
+                    }
+                  }),
           ),
         ],
       ),
@@ -289,33 +445,49 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
   /// "Слушаю 0:12" and its three other faces.
   Widget _stage(DictationState state) {
-    final (Widget leading, String label, String? clock) = switch (state) {
-      DictationStarting() => (const _Spinner(), 'Включаю микрофон', null),
-      DictationRecording(:final elapsed) => (
-        const RecordingDot(),
-        'Слушаю',
-        formatDictationClock(elapsed),
-      ),
-      DictationRecognising(:final length) => (
-        const _Spinner(),
-        'Распознаю',
-        formatDictationClock(length),
-      ),
-      DictationFailed() => (
-        const Icon(
-          Icons.mic_off_outlined,
-          size: 20,
-          color: AppColors.voiceRecordingSoft,
-        ),
-        'Не получилось',
-        null,
-      ),
-      DictationIdle() => (
-        const Icon(Icons.edit_outlined, size: 20, color: AppColors.voiceMuted),
-        'Можно править',
-        null,
-      ),
-    };
+    final (Widget leading, String label, String? clock) = _tidying
+        ? (const _Spinner(), 'Разбираю', null)
+        : _parsed != null
+        ? (
+            const Icon(
+              Icons.auto_awesome_outlined,
+              size: 20,
+              color: AppColors.voiceBright,
+            ),
+            'Разобрано — можно править',
+            null,
+          )
+        : switch (state) {
+            DictationStarting() => (const _Spinner(), 'Включаю микрофон', null),
+            DictationRecording(:final elapsed) => (
+              const RecordingDot(),
+              'Слушаю',
+              formatDictationClock(elapsed),
+            ),
+            DictationRecognising(:final length) => (
+              const _Spinner(),
+              'Распознаю',
+              formatDictationClock(length),
+            ),
+            DictationFailed() => (
+              const Icon(
+                Icons.mic_off_outlined,
+                size: 20,
+                color: AppColors.voiceRecordingSoft,
+              ),
+              'Не получилось',
+              null,
+            ),
+            DictationIdle() => (
+              const Icon(
+                Icons.edit_outlined,
+                size: 20,
+                color: AppColors.voiceMuted,
+              ),
+              'Можно править',
+              null,
+            ),
+          };
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
@@ -330,7 +502,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     );
   }
 
-  Widget _textArea(DictationState state) {
+  Widget _textArea(DictationState state, {required bool compact}) {
     final note = switch (state) {
       DictationRecording(modelLoading: true) =>
         'модель ещё грузится — на запись это не влияет',
@@ -342,9 +514,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
       // to know before pressing «Готово» is whether pressing it can lose the
       // sentence. Shown while recording as well, since the same doubt is what
       // stops someone dictating at all.
-      DictationIdle() => 'сохранится и без сети',
+      DictationIdle() => _tidyProblem ?? 'сохранится и без сети',
       _ => null,
     };
+    final canTidy =
+        state is DictationIdle && _destination is ProjectDestination;
 
     return GestureDetector(
       // The spec's second way to finish. `opaque` so the whole half-screen is
@@ -354,7 +528,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
           ? () => unawaited(_stopForEditing())
           : null,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+        padding: EdgeInsets.fromLTRB(20, compact ? 12 : 20, 20, 0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -396,10 +570,37 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                 ),
               ),
             ),
-            if (note != null)
+            if (note != null || canTidy)
               Padding(
-                padding: const EdgeInsets.only(top: 14, bottom: 4),
-                child: Text(note, style: AppText.voiceNote),
+                padding: EdgeInsets.only(top: compact ? 6 : 14, bottom: 4),
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: note == null
+                          ? const SizedBox.shrink()
+                          : Text(note, style: AppText.voiceNote),
+                    ),
+                    if (canTidy)
+                      ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _text,
+                        builder: (context, value, _) => TextButton.icon(
+                          style: TextButton.styleFrom(
+                            foregroundColor: AppColors.voiceBright,
+                            disabledForegroundColor: AppColors.voiceLine,
+                            minimumSize: const Size(0, Targets.minimum),
+                          ),
+                          onPressed: value.text.trim().isEmpty
+                              ? null
+                              : () => unawaited(_tidy()),
+                          icon: const Icon(
+                            Icons.auto_awesome_outlined,
+                            size: 18,
+                          ),
+                          label: const Text('Разобрать'),
+                        ),
+                      ),
+                  ],
+                ),
               ),
           ],
         ),
@@ -407,12 +608,126 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     );
   }
 
-  Widget _buttons(DictationState state) {
+  /// The model's proposal, editable: what "Готово" will save.
+  ///
+  /// A list rather than a column, so a focused field is scrolled into what the
+  /// keyboard leaves of the screen instead of being covered by it.
+  Widget _proposal() {
+    const label = TextStyle(
+      fontWeight: FontWeight.w600,
+      fontSize: 13,
+      letterSpacing: 0.4,
+      color: AppColors.voiceMuted,
+    );
+    final remindDate = _remindDate;
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+      children: <Widget>[
+        const Text('НАЗВАНИЕ', style: label),
+        const SizedBox(height: 6),
+        _proposalField(
+          _title,
+          style: AppText.dictated.copyWith(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+          ),
+          hint: 'Что сделать',
+        ),
+        const SizedBox(height: 20),
+        const Text('ОПИСАНИЕ', style: label),
+        const SizedBox(height: 6),
+        _proposalField(
+          _description,
+          style: AppText.dictated.copyWith(fontSize: 17),
+          hint: 'Нет описания',
+        ),
+        if (remindDate != null) ...<Widget>[
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.fromLTRB(14, 4, 4, 4),
+            decoration: BoxDecoration(
+              border: Border.all(color: AppColors.voiceLine),
+              borderRadius: BorderRadius.circular(Radii.row),
+            ),
+            child: Row(
+              children: <Widget>[
+                const Icon(Icons.alarm, size: 18, color: AppColors.voiceBright),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    // Said plainly, because it changes the task: a reminder
+                    // only fires for a blocked one.
+                    'Напомнить ${_shortDate(remindDate)} · задача будет ждать',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w500,
+                      fontSize: 15,
+                      color: AppColors.voiceInk,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Без напоминания',
+                  onPressed: () => setState(() => _remindDate = null),
+                  icon: const Icon(Icons.close, size: 18),
+                  color: AppColors.voiceMuted,
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(
+              foregroundColor: AppColors.voiceMuted,
+              padding: EdgeInsets.zero,
+            ),
+            onPressed: _untidy,
+            icon: const Icon(Icons.undo, size: 18),
+            label: const Text('Как надиктовано'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _proposalField(
+    TextEditingController controller, {
+    required TextStyle style,
+    required String hint,
+  }) {
+    return TextField(
+      controller: controller,
+      maxLines: null,
+      textCapitalization: TextCapitalization.sentences,
+      style: style,
+      cursorColor: AppColors.voiceBright,
+      decoration: InputDecoration(
+        filled: false,
+        isCollapsed: true,
+        border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        // Flush with the labels above: the theme's inset is for a boxed
+        // field, and these have no box.
+        contentPadding: EdgeInsets.zero,
+        hintText: hint,
+        hintStyle: style.copyWith(color: AppColors.voiceLine),
+      ),
+    );
+  }
+
+  /// [compact] is the keyboard being up: "Отменить" goes (the cross in the
+  /// header does the same), so what the keyboard leaves goes to the words.
+  Widget _buttons(DictationState state, {required bool compact}) {
     final failed = state is DictationFailed;
-    final busy = state is DictationRecognising || state is DictationStarting;
+    final busy =
+        _tidying || state is DictationRecognising || state is DictationStarting;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 22),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, compact ? 12 : 22),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         // "Отменить" is the full width of the screen, like "Готово" above it.
@@ -431,22 +746,24 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
               icon: Icons.check,
               onPressed: busy ? null : () => unawaited(_done()),
             ),
-          const SizedBox(height: 12),
-          SizedBox(
-            height: 52,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                backgroundColor: Colors.transparent,
-                foregroundColor: AppColors.voiceBright,
-                side: const BorderSide(color: AppColors.voiceLine),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(Radii.stub),
+          if (!compact) ...<Widget>[
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 52,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
+                  foregroundColor: AppColors.voiceBright,
+                  side: const BorderSide(color: AppColors.voiceLine),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(Radii.stub),
+                  ),
                 ),
+                onPressed: () => unawaited(_abandon()),
+                child: const Text('Отменить'),
               ),
-              onPressed: () => unawaited(_abandon()),
-              child: const Text('Отменить'),
             ),
-          ),
+          ],
         ],
       ),
     );

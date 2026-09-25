@@ -11,9 +11,13 @@ import { inboxRoutes } from "./routes/inbox";
 import { focusRoutes } from "./routes/focus";
 import { historyRoutes } from "./routes/history";
 import { boardRoutes } from "./routes/board";
+import { dictationRoutes } from "./routes/dictation";
 import { registerErrorHandler } from "./lib/errorHandler";
 import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfig";
 import { createAuthGuard } from "./lib/authGuard";
+import { loadLlmConfig } from "./lib/llmConfig";
+import { createOpenAiCompatibleClient } from "./lib/llmClient";
+import { DictationParser, createDictationParser } from "./domain/dictation";
 
 export interface BuildAppOptions {
   /**
@@ -23,11 +27,24 @@ export interface BuildAppOptions {
   authConfig?: AuthConfig;
   /** Enable request logging. Defaults to true; tests turn it off for quiet output. */
   logger?: boolean;
+  /**
+   * The dictation parser (F14). Injectable so tests never call a real model;
+   * defaults to the one `LLM_*` in the environment describes, or `null` --
+   * feature off -- when none does.
+   */
+  dictationParser?: DictationParser | null;
+}
+
+function defaultDictationParser(): DictationParser | null {
+  const config = loadLlmConfig();
+  return config === null ? null : createDictationParser(createOpenAiCompatibleClient(config));
 }
 
 /** Builds the Fastify app, wired with auth. */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const authConfig = options.authConfig ?? loadAuthConfig();
+  const dictationParser =
+    options.dictationParser !== undefined ? options.dictationParser : defaultDictationParser();
 
   const app = Fastify({
     logger: options.logger ?? true,
@@ -71,6 +88,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(focusRoutes);
   await app.register(historyRoutes);
   await app.register(boardRoutes);
+  await app.register(dictationRoutes(dictationParser));
 
   return app;
 }

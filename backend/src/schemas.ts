@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HISTORY_RANGES } from "./domain/history";
+import { isValidTimeZone } from "./domain/dictation";
 
 export const taskStatusSchema = z.enum(["pending", "done", "blocked"]);
 
@@ -240,6 +241,24 @@ export const updateInboxItemSchema = z.object({
 /** Body of `POST /inbox/:id/file`: which project the item becomes a task in. */
 export const fileInboxItemSchema = z.object({
   projectId: z.string().min(1, "projectId is required"),
+});
+
+// ---- Dictation ----
+
+/**
+ * Body of `POST /dictation/parse` (F14).
+ *
+ * The cap on `text` is generous for its purpose -- a minute of speech is a few
+ * hundred characters -- and exists because every character goes to a paid
+ * model: a pasted essay should be a 400, not a bill.
+ *
+ * `timeZone` is required rather than defaulted. "Завтра" is a different day in
+ * Vladivostok and in Kaliningrad, and a server that guessed would put the
+ * reminder on the wrong date with nothing to show it had guessed.
+ */
+export const parseDictationSchema = z.object({
+  text: z.string().trim().min(1, "text is required").max(4000, "text is too long"),
+  timeZone: z.string().refine(isValidTimeZone, "timeZone must be an IANA time zone"),
 });
 
 // ---- Notes ----

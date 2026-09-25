@@ -144,15 +144,36 @@ class ProjectTasks extends _$ProjectTasks {
   /// ahead of it is `pending`), and that is the server's call, so the row shows
   /// as not-current for one round trip rather than flickering the highlight onto
   /// the wrong row.
-  Future<void> create(String title) {
+  ///
+  /// [description] and [remindAt] come from dictation (F14). A task created
+  /// with a reminder is created **blocked**: a reminder only fires for a
+  /// blocked task (`domain/board_reminders.dart`), and "напомни в пятницу"
+  /// said about a task is exactly "this waits until Friday".
+  Future<void> create(String title, {String? description, String? remindAt}) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return Future<void>.value();
+    final status = remindAt == null ? null : TaskStatus.blocked;
 
     return _mutate((rows) {
       return _MutationPlan(
-        optimistic: <Task>[...rows, _optimisticTask(trimmed, rows)],
+        optimistic: <Task>[
+          ...rows,
+          _optimisticTask(
+            trimmed,
+            rows,
+            description: description,
+            status: status,
+            remindAt: remindAt,
+          ),
+        ],
         send: () async {
-          await _api.createTask(projectId: projectId, title: trimmed);
+          await _api.createTask(
+            projectId: projectId,
+            title: trimmed,
+            description: description,
+            status: status,
+            remindAt: remindAt,
+          );
           return null; // reconcile: the new row may be the current one now
         },
       );
@@ -450,19 +471,25 @@ class ProjectTasks extends _$ProjectTasks {
   /// A stand-in row for the one frame between "typed a title" and "the server
   /// answered". Its id is namespaced so it can never be mistaken for a cuid, and
   /// so a `ValueKey` on it stays unique while it exists.
-  Task _optimisticTask(String title, List<Task> rows) {
+  Task _optimisticTask(
+    String title,
+    List<Task> rows, {
+    String? description,
+    TaskStatus? status,
+    String? remindAt,
+  }) {
     final now = DateTime.now().toUtc().toIso8601String();
 
     return Task(
       id: 'local:${now}_${rows.length}',
       projectId: projectId,
       title: title,
-      description: null,
-      status: TaskStatus.pending,
+      description: description,
+      status: status ?? TaskStatus.pending,
       // Mirrors `computeAppendPosition`, purely so the row sorts last if anyone
       // ever does sort. It is discarded by the reconcile a moment later.
       position: rows.isEmpty ? 1000 : rows.last.position + 1000,
-      remindAt: null,
+      remindAt: remindAt,
       createdAt: now,
       updatedAt: now,
       isCurrent: false,

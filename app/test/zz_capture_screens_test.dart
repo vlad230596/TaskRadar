@@ -127,6 +127,9 @@ void main() {
             ),
             speechRecognizerProvider.overrideWithValue(FakeSpeechRecognizer()),
             voiceModelInstallationProvider.overrideWith(_ReadyModel.new),
+            deviceTimeZoneNameProvider.overrideWith(
+              (ref) async => 'Europe/Moscow',
+            ),
           ],
           child: MaterialApp(
             debugShowCheckedModeBanner: false,
@@ -182,6 +185,39 @@ void main() {
     await tester.tap(find.text('Готово'));
     await settle(tester);
     await shot(tester, 'Dictate-Text');
+  });
+
+  // F14: into a project, "Разобрать" is offered under the words; pressed, the
+  // proposal replaces them for correction; and with the keyboard up the words
+  // keep most of what is left of the screen. The keyboard itself is not drawn
+  // -- the bottom 330 px are simply what it would cover.
+  const dom = ProjectDestination(projectId: 'prj_dom', name: 'Дом');
+
+  testWidgets('Dictate-Project — "Разобрать" offered', (tester) async {
+    await pump(tester, const DictationScreen(destination: dom));
+    await tester.tap(find.text('Готово'));
+    await settle(tester);
+    await shot(tester, 'Dictate-Project');
+  });
+
+  testWidgets('Dictate-Proposal — the proposal, editable', (
+    tester,
+  ) async {
+    await pump(tester, const DictationScreen(destination: dom));
+    await tester.tap(find.text('Готово'));
+    await settle(tester);
+    await tester.tap(find.text('Разобрать'));
+    await settle(tester);
+    await shot(tester, 'Dictate-Proposal');
+  });
+
+  testWidgets('Dictate-Keyboard — editing on a phone', (tester) async {
+    await pump(tester, const DictationScreen(destination: dom));
+    await tester.tap(find.text('Готово'));
+    await settle(tester);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 330);
+    await settle(tester);
+    await shot(tester, 'Dictate-Keyboard');
   });
 
   testWidgets('Desk-Plan — the wide window', (tester) async {
@@ -436,6 +472,13 @@ ResponseBody _respond(RequestOptions options) {
     ];
   } else if (path == '/inbox') {
     body = _inbox;
+  } else if (path == '/dictation/parse') {
+    body = <String, dynamic>{
+      'title': 'Купить кабель USB-C для монитора',
+      'description': 'Длина около двух метров. Проверить, пришёл ли.',
+      'remindDate': '2026-09-25',
+      'remindTime': null,
+    };
   } else if (path.endsWith('/notes')) {
     body = <dynamic>[];
   } else if (path.endsWith('/tasks')) {

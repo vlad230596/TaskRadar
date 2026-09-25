@@ -120,6 +120,12 @@ services:
       # deploy/production.env.example. Only "true"/"false" parse; anything else
       # (TRUE, 1, yes) fails validation and the container will not start.
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      # Dictation parsing (F14). Optional: all empty switches the feature off,
+      # and POST /dictation/parse answers 503 so the client keeps the raw words.
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-12000}
     depends_on:
       postgres:
         condition: service_healthy

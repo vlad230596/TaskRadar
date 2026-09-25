@@ -4,6 +4,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/api_client.dart';
 import '../api/auth_api.dart';
 import '../api/board_api.dart';
+import '../api/dictation_api.dart';
 import '../api/project_api.dart';
 import '../api/inbox_api.dart';
 import '../api/scope_api.dart';
@@ -95,3 +96,8 @@ ScopeApi scopeApi(Ref ref) => ScopeApi(ref.watch(apiClientProvider));
 /// The sandbox endpoints (F8). Same shape and reasoning as [projectApi].
 @Riverpod(keepAlive: true)
 InboxApi inboxApi(Ref ref) => InboxApi(ref.watch(apiClientProvider));
+
+/// Dictation -> task (F14). Same shape and reasoning as [projectApi].
+@Riverpod(keepAlive: true)
+DictationApi dictationApi(Ref ref) =>
+    DictationApi(ref.watch(apiClientProvider));

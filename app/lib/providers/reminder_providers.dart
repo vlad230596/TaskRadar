@@ -29,6 +29,13 @@ NotificationGateway notificationGateway(Ref ref) => LocalNotificationGateway();
 Future<NotificationTimeZone> notificationTimeZone(Ref ref) =>
     NotificationTimeZone.resolve();
 
+/// The same zone, as the IANA name the server's dictation parser takes (F14).
+/// A provider of its own so the dictation screen can be tested without the
+/// timezone platform channel.
+@Riverpod(keepAlive: true)
+Future<String> deviceTimeZoneName(Ref ref) async =>
+    (await ref.watch(notificationTimeZoneProvider.future)).ianaName;
+
 /// The hour reminders fire at, persisted (F4).
 ///
 /// ## Why this became asynchronous
