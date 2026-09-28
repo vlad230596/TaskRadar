@@ -125,9 +125,21 @@ FROM ${NODE_IMAGE} AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-audit --no-fund \
+# `--omit=optional` is what actually keeps the CLI out; `--omit=dev` alone does
+# not. @prisma/client declares `prisma` and `typescript` as optional peers, so
+# the lockfile marks them -- and ~40 packages under them, `effect` included --
+# `devOptional`, and npm only drops a devOptional package when both dev and
+# optional are omitted. With `--omit=dev` alone the 0.10.1 image still carried
+# the whole CLI. The app has no optional production dependencies today; if one
+# is ever added (a platform-specific prebuild, say), it has to be handled here.
+#
+# The `test` makes that regression fail the build instead of silently doubling
+# the image again.
+RUN npm ci --omit=dev --omit=optional --no-audit --no-fund \
  && npm cache clean --force \
- && rm -rf node_modules/.prisma
+ && rm -rf node_modules/.prisma \
+ && test ! -e node_modules/prisma \
+ && test ! -e node_modules/typescript
 
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
