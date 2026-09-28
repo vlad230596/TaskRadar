@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -95,6 +96,7 @@ void main() {
     Widget home, {
     double w = width,
     double h = height,
+    FakeSpeechRecognizer? recognizer,
   }) async {
     tester.view.physicalSize = Size(w, h);
     tester.view.devicePixelRatio = 1;
@@ -125,7 +127,9 @@ void main() {
                   0.07,
                 ],
             ),
-            speechRecognizerProvider.overrideWithValue(FakeSpeechRecognizer()),
+            speechRecognizerProvider.overrideWithValue(
+              recognizer ?? FakeSpeechRecognizer(),
+            ),
             voiceModelInstallationProvider.overrideWith(_ReadyModel.new),
             deviceTimeZoneNameProvider.overrideWith(
               (ref) async => 'Europe/Moscow',
@@ -218,6 +222,38 @@ void main() {
     tester.view.viewInsets = const FakeViewPadding(bottom: 330);
     await settle(tester);
     await shot(tester, 'Dictate-Keyboard');
+  });
+
+  // A long dictation: half a minute before the ceiling, and then the pieces
+  // being recognised one by one -- the top card of the progress reference.
+  testWidgets('Dictate-Ceiling — the countdown', (tester) async {
+    await pump(tester, const DictationScreen());
+    await tester.pump(VoiceDictation.ceiling - const Duration(seconds: 24));
+    await shot(tester, 'Dictate-Ceiling');
+  });
+
+  testWidgets('Dictate-Progress — recognising in pieces', (tester) async {
+    final gate = Completer<void>();
+    final recognizer = FakeSpeechRecognizer()
+      ..chunks = const <String>[
+        'Надо в выходные разобраться с вентилятором в туалете, он опять не '
+            'включается.',
+        'Сначала посмотреть автомат в щитке, второй слева.',
+        'Если дело не в нём, то снять решётку.',
+        'И проверить, крутится ли он от руки.',
+        'Потом уже звонить мастеру.',
+        'Или заказать новый.',
+        'Модель посмотреть на старом.',
+        'Всё.',
+      ]
+      ..beforeChunk = (i) => i == 2 ? gate.future : Future<void>.value();
+    await pump(tester, const DictationScreen(), recognizer: recognizer);
+    await tester.pump(const Duration(minutes: 4, seconds: 12));
+    await tester.tap(find.text('Готово'));
+    await settle(tester);
+    await shot(tester, 'Dictate-Progress');
+    gate.complete();
+    await settle(tester);
   });
 
   testWidgets('Desk-Plan — the wide window', (tester) async {
