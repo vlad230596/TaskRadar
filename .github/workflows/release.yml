@@ -188,7 +188,13 @@ jobs:
           target: migrate
           platforms: linux/amd64
           push: true
-          cache-from: type=gha,scope=taskradar-backend
+          # A scope of its own: two builds exporting to one scope overwrite each
+          # other's cache index, and the backend's `mode=max` export only covers
+          # the stages its own target needs, which does not include this one.
+          # Without the export the npm layer here was rebuilt on every release,
+          # so each release left another ~250 MB copy of the same CLI on the VDS.
+          cache-from: type=gha,scope=taskradar-migrate
+          cache-to: type=gha,mode=max,scope=taskradar-migrate
           build-args: |
             APP_VERSION=${{ env.VERSION }}
             BUILD_DATE=${{ env.BUILD_DATE }}
