@@ -120,8 +120,14 @@ const TASKS: TaskRow[] = [
 interface FindManyArgs {
   where?: { archivedAt?: null | { not: null } };
   orderBy?: { createdAt?: "asc" | "desc" };
-  include?: { tasks?: { orderBy?: { position?: "asc" | "desc" } } };
+  include?: {
+    tasks?: { orderBy?: { position?: "asc" | "desc" } };
+    _count?: { select?: { notes?: boolean } };
+  };
 }
+
+/** How many notes each fixture project has; absent means none. */
+const NOTE_COUNTS: Record<string, number> = { "p-first": 3, "p-archived": 1 };
 
 function fakeFindMany(args: FindManyArgs = {}): unknown[] {
   const wantsArchived = args.where?.archivedAt !== null && args.where?.archivedAt !== undefined;
@@ -146,7 +152,12 @@ function fakeFindMany(args: FindManyArgs = {}): unknown[] {
     if (includeTasks.orderBy?.position === "asc") {
       tasks = [...tasks].sort((a, b) => a.position - b.position);
     }
-    return { ...project, tasks };
+    const countNotes = args.include?._count?.select?.notes === true;
+    return {
+      ...project,
+      tasks,
+      ...(countNotes ? { _count: { notes: NOTE_COUNTS[project.id] ?? 0 } } : {}),
+    };
   });
 }
 
@@ -185,6 +196,7 @@ interface BoardProject {
   id: string;
   name: string;
   archivedAt: string | null;
+  noteCount: number;
   tasks: BoardTask[];
 }
 
@@ -261,7 +273,15 @@ describe("GET /board -- response shape", () => {
   it("gives each project exactly the fields GET /projects gives, plus tasks", async () => {
     const { body } = await getBoard();
     const project = body[0]!;
-    expect(Object.keys(project).sort()).toEqual(["archivedAt", "createdAt", "id", "name", "tasks", "updatedAt"]);
+    expect(Object.keys(project).sort()).toEqual([
+      "archivedAt",
+      "createdAt",
+      "id",
+      "name",
+      "noteCount",
+      "tasks",
+      "updatedAt",
+    ]);
   });
 
   it("gives each task exactly the fields the tasks route gives, isCurrent included", async () => {
@@ -300,10 +320,30 @@ describe("GET /board -- response shape", () => {
 
   it("returns a project with no tasks as an empty array, not a missing key", async () => {
     prismaMock.project.findMany.mockImplementation(() => [
-      { id: "p-empty", name: "Empty", archivedAt: null, createdAt: T0, updatedAt: T0, tasks: [] },
+      { id: "p-empty", name: "Empty", archivedAt: null, createdAt: T0, updatedAt: T0, tasks: [], _count: { notes: 0 } },
     ]);
     const { body } = await getBoard();
     expect(body[0]!.tasks).toEqual([]);
+  });
+
+  it("carries each project's note count as a plain noteCount, zero included", async () => {
+    const { body } = await getBoard();
+    expect(body.map((p) => [p.id, p.noteCount])).toEqual([
+      ["p-first", 3],
+      ["p-second", 0],
+    ]);
+    // Prisma's own naming stays on the server.
+    expect(body.every((p) => !("_count" in p))).toBe(true);
+  });
+
+  it("counts the notes inside the same query, without loading them", async () => {
+    // One grouped COUNT alongside the include, not a findMany per project and
+    // not the note rows themselves.
+    await getBoard();
+    expect(prismaMock.project.findMany).toHaveBeenCalledTimes(1);
+    const args = prismaMock.project.findMany.mock.calls[0]![0] as FindManyArgs;
+    expect(args.include?._count).toEqual({ select: { notes: true } });
+    expect(args.include).not.toHaveProperty("notes");
   });
 });
 

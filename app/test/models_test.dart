@@ -179,6 +179,40 @@ void main() {
       expect(original.toJson()['name'], 'TaskRadar');
       expect(original.toJson().containsKey('project'), isFalse);
     });
+
+    test('noteCount is read tolerantly and survives the snapshot', () {
+      final json = projectWithTasksJson();
+
+      // Absent (an older server or snapshot) and malformed are both "unknown".
+      expect(BoardProject.fromJson(json).noteCount, isNull);
+      expect(
+        BoardProject.fromJson(<String, dynamic>{
+          ...json,
+          'noteCount': 'x',
+        }).noteCount,
+        isNull,
+      );
+      // A double is what a JSON number can decode to on the web.
+      expect(
+        BoardProject.fromJson(<String, dynamic>{
+          ...json,
+          'noteCount': 4.0,
+        }).noteCount,
+        4,
+      );
+
+      final withNotes = BoardProject.fromJson(<String, dynamic>{
+        ...json,
+        'noteCount': 2,
+      });
+      expect(withNotes.noteCount, 2);
+      expect(BoardProject.fromJson(withNotes.toJson()), withNotes);
+      // And an unknown count is not written as a null key.
+      expect(
+        BoardProject.fromJson(json).toJson().containsKey('noteCount'),
+        isFalse,
+      );
+    });
   });
 
   group('LoginResult', () {

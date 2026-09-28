@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { NotFoundError } from "../lib/errors";
 import { computeAppendPosition } from "../domain/position";
+import { splitInboxText } from "../domain/inboxSplit";
 import {
   createInboxItemSchema,
   updateInboxItemSchema,
@@ -221,6 +222,18 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     const position = computeAppendPosition(last._max.position);
 
     /*
+     * A long line is no longer the title whole: its first sentence is, and the
+     * rest becomes the description (see ../domain/inboxSplit.ts for the rule
+     * and why it lives here rather than in a client). A client that shaped the
+     * text itself -- the "Причесать" step -- sends `title` and is taken at its
+     * word; an empty description from it means "none", like everywhere else.
+     */
+    const parts =
+      body.title !== undefined
+        ? { title: body.title, description: body.description || null }
+        : splitInboxText(item.text);
+
+    /*
      * Three writes now, not two (F11): the task, its `created` journal row, and
      * the item's removal. The journal row is what makes the new task's clock
      * start -- see the note on `POST /projects/:projectId/tasks` -- and it
@@ -236,7 +249,8 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       const created = await tx.task.create({
         data: {
           projectId: body.projectId,
-          title: item.text,
+          title: parts.title,
+          description: parts.description,
           position,
         },
       });

@@ -129,8 +129,9 @@ class PlanHeader extends ConsumerWidget {
                 // Only with something to switch between. One scope is the
                 // ordinary case and a picker offering a single option that is
                 // already chosen is furniture -- the same rule the old
-                // `ScopeSwitcher` followed, kept.
-                if (scopes.length > 1 && active != null) ...<Widget>[
+                // `ScopeSwitcher` followed, kept. `active` is null for "Все
+                // пространства", which is a choice like any other here.
+                if (scopes.length > 1) ...<Widget>[
                   const SizedBox(height: 6),
                   _ScopePill(scopes: scopes, active: active),
                 ],
@@ -149,24 +150,44 @@ class PlanHeader extends ConsumerWidget {
   }
 }
 
+/// What the scope pill says for "every scope at once".
+const String allScopesLabel = 'Все пространства';
+
 class _ScopePill extends ConsumerWidget {
   const _ScopePill({required this.scopes, required this.active});
 
   final List<Scope> scopes;
-  final Scope active;
+
+  /// Null is "Все пространства".
+  final Scope? active;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<Scope>(
+    // Menu values are ids, with [allScopesSelection] for "all": a
+    // `PopupMenuItem` whose value is null reads as a cancelled menu, so "all"
+    // cannot be spelled as a null scope here.
+    final activeId = active?.id ?? allScopesSelection;
+
+    return PopupMenuButton<String>(
       tooltip: 'Какой экран проектов',
       position: PopupMenuPosition.under,
-      onSelected: (scope) {
-        if (scope.id == active.id) return;
-        ref.read(selectedScopeIdProvider.notifier).select(scope.id);
+      onSelected: (id) {
+        if (id == activeId) return;
+        final notifier = ref.read(selectedScopeIdProvider.notifier);
+        if (id == allScopesSelection) {
+          notifier.selectAll();
+        } else {
+          notifier.select(id);
+        }
       },
-      itemBuilder: (_) => <PopupMenuEntry<Scope>>[
+      itemBuilder: (_) => <PopupMenuEntry<String>>[
+        const PopupMenuItem<String>(
+          value: allScopesSelection,
+          child: Text(allScopesLabel),
+        ),
+        const PopupMenuDivider(),
         for (final scope in scopes)
-          PopupMenuItem<Scope>(value: scope, child: Text(scope.name)),
+          PopupMenuItem<String>(value: scope.id, child: Text(scope.name)),
       ],
       child: Container(
         height: 30,
@@ -181,7 +202,7 @@ class _ScopePill extends ConsumerWidget {
           children: <Widget>[
             Flexible(
               child: Text(
-                active.name,
+                active?.name ?? allScopesLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.chip.copyWith(fontSize: 13),
@@ -300,11 +321,60 @@ class _Board extends ConsumerWidget {
     final projects = projectsInScope(view.projects, scope);
     final hiddenElsewhere = view.projects.length - projects.length;
 
+    // "Все пространства" with more than one scope to tell apart: the projects
+    // are drawn under small-caps scope headings, in scope order. With a single
+    // scope a heading would only repeat the one name there is, so the board
+    // stays exactly as it was.
+    final scopes = ref.watch(scopesProvider).value ?? const <Scope>[];
+    final groups = scope == null && scopes.length > 1
+        ? groupProjectsByScope(projects, scopes)
+        : null;
+
     // Allocated over the *whole* board rather than the scope-filtered subset, so
     // that switching scope does not repaint the tiles that stayed on screen.
     final badgeColours = assignProjectBadgeColors(
       view.projects.map((entry) => entry.project.name),
     );
+
+    Widget grid(List<BoardProject> rows, {required bool withSandbox}) =>
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
+          sliver: SliverGrid.count(
+            crossAxisCount: isWideLayout(context) ? 4 : 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            // 168 px tall at 179 px wide on a 390 px phone, which is what the
+            // reference specifies as `grid-auto-rows: 168px`.
+            childAspectRatio: 179 / 168,
+            children: <Widget>[
+              if (withSandbox) const _SandboxTile(),
+              for (final entry in rows)
+                _ProjectTile(
+                  key: ValueKey<String>(entry.project.id),
+                  entry: entry,
+                  badgeColor: badgeColours[entry.project.name],
+                ),
+            ],
+          ),
+        );
+
+    Widget list(List<BoardProject> rows) => SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
+      sliver: SliverList.separated(
+        itemCount: rows.length,
+        separatorBuilder: (_, _) => const SizedBox(height: Insets.gap),
+        itemBuilder: (context, index) => _ProjectRow(
+          key: ValueKey<String>(rows[index].project.id),
+          entry: rows[index],
+        ),
+      ),
+    );
+
+    // The tiles fold the sandbox into the grid as its first tile -- but a
+    // grouped board has no grid that is not some scope's, and a sandbox tile
+    // under the "ОСНОВНОЙ" heading would claim the sandbox belongs to it. So a
+    // grouped tile board draws the sandbox as the same row the list does.
+    final sandboxAsRow = layout == PlanLayout.list || groups != null;
 
     return CustomScrollView(
       // Without this the list does not scroll when it is shorter than the
@@ -320,12 +390,9 @@ class _Board extends ConsumerWidget {
         // folds the sandbox into the grid as its first tile, which is what the
         // reference does and what keeps the grid from starting with a hole.
         const SliverToBoxAdapter(child: _FocusBar()),
-        if (layout == PlanLayout.list)
-          const SliverToBoxAdapter(child: _SandboxRow()),
+        if (sandboxAsRow) const SliverToBoxAdapter(child: _SandboxRow()),
 
-        if (projects.isEmpty &&
-            hiddenElsewhere == 0 &&
-            layout == PlanLayout.list)
+        if (projects.isEmpty && hiddenElsewhere == 0 && sandboxAsRow)
           const SliverToBoxAdapter(
             child: _Filler(
               icon: Icons.folder_open,
@@ -348,39 +415,20 @@ class _Board extends ConsumerWidget {
               scrollable: false,
             ),
           )
+        else if (groups != null)
+          for (final (index, group) in groups.indexed) ...<Widget>[
+            SliverToBoxAdapter(
+              child: _ScopeHeading(scope: group.scope, first: index == 0),
+            ),
+            if (layout == PlanLayout.tiles)
+              grid(group.projects, withSandbox: false)
+            else
+              list(group.projects),
+          ]
         else if (layout == PlanLayout.tiles)
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-            sliver: SliverGrid.count(
-              crossAxisCount: isWideLayout(context) ? 4 : 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              // 168 px tall at 179 px wide on a 390 px phone, which is what the
-              // reference specifies as `grid-auto-rows: 168px`.
-              childAspectRatio: 179 / 168,
-              children: <Widget>[
-                const _SandboxTile(),
-                for (final entry in projects)
-                  _ProjectTile(
-                    key: ValueKey<String>(entry.project.id),
-                    entry: entry,
-                    badgeColor: badgeColours[entry.project.name],
-                  ),
-              ],
-            ),
-          )
+          grid(projects, withSandbox: true)
         else
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-            sliver: SliverList.separated(
-              itemCount: projects.length,
-              separatorBuilder: (_, _) => const SizedBox(height: Insets.gap),
-              itemBuilder: (context, index) => _ProjectRow(
-                key: ValueKey<String>(projects[index].project.id),
-                entry: projects[index],
-              ),
-            ),
-          ),
+          list(projects),
 
         SliverToBoxAdapter(
           child: Padding(
@@ -394,6 +442,48 @@ class _Board extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A scope's name over its projects on the "all spaces" board: 11 px small
+/// caps, as the reference draws it.
+///
+/// Upper-cased here rather than with a font feature: the text face has no
+/// `smcp`, and faked small caps at 11 px read the same as capitals anyway.
+/// Deliberately quiet -- it labels a group, it is not something to tap.
+class _ScopeHeading extends StatelessWidget {
+  const _ScopeHeading({required this.scope, required this.first});
+
+  /// Null for the projects whose scope is not in the list yet; see
+  /// [ScopeGroup]. They get a gap but no name.
+  final Scope? scope;
+  final bool first;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = scope?.name;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        Insets.gutter + 2,
+        first ? 0 : 18,
+        Insets.gutter,
+        name == null ? 0 : 8,
+      ),
+      child: name == null
+          ? const SizedBox.shrink()
+          : Semantics(
+              header: true,
+              child: Text(
+                name.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.caption.copyWith(
+                  fontSize: 11,
+                  letterSpacing: 0.9,
+                ),
+              ),
+            ),
     );
   }
 }
@@ -726,9 +816,12 @@ class _ProjectRow extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              // Two lines, not one: a dictated task title is a sentence, and
+              // one line of it was usually the half that did not say what the
+              // task was.
               Text(
                 _currentLine(summary),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: AppText.body,
               ),
@@ -737,6 +830,7 @@ class _ProjectRow extends StatelessWidget {
                 children: <Widget>[
                   Expanded(child: TaskDots(tasks: entry.tasks)),
                   TaskCount(done: summary.doneCount, total: summary.totalCount),
+                  _NoteCount(count: entry.noteCount, gap: 12),
                 ],
               ),
             ],
@@ -788,6 +882,14 @@ class _ProjectTile extends StatelessWidget {
                 children: <Widget>[
                   ProjectBadge(name: entry.project.name, color: badgeColor),
                   const Spacer(),
+                  // Beside the task count, small and muted: the badge row is
+                  // the one place on a 168 px tile with room to spare, and the
+                  // 22 px number stays the tile's only loud figure.
+                  Padding(
+                    padding: const EdgeInsets.only(top: 5),
+                    child: _NoteCount(count: entry.noteCount, gap: 0),
+                  ),
+                  const SizedBox(width: 8),
                   Text('${summary.totalCount}', style: AppText.number),
                 ],
               ),
@@ -855,6 +957,47 @@ class _ProjectTile extends StatelessWidget {
   }
 }
 
+/// A note icon and how many notes the project has, beside its task counter.
+///
+/// Nothing at all for zero -- and for null, which is a board from an older
+/// server or snapshot that did not say. A "0" next to every project that has no
+/// notes, which is most of them, would be a column of noise; the icon is worth
+/// its space only where there is something behind it.
+class _NoteCount extends StatelessWidget {
+  const _NoteCount({required this.count, required this.gap});
+
+  final int? count;
+
+  /// Space before the counter, drawn only when the counter is.
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    final count = this.count;
+    if (count == null || count <= 0) return const SizedBox.shrink();
+
+    return Padding(
+      padding: EdgeInsets.only(left: gap),
+      child: Semantics(
+        label: 'заметок: $count',
+        excludeSemantics: true,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.sticky_note_2_outlined,
+              size: 14,
+              color: AppColors.muted,
+            ),
+            const SizedBox(width: 3),
+            Text('$count', maxLines: 1, softWrap: false, style: AppText.chip),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// The sentence under a project's name.
 ///
 /// The three empty cases read very differently to a human and only one of them
@@ -907,7 +1050,9 @@ Future<void> _createProject(BuildContext context, WidgetRef ref) async {
 
   // Into the scope currently on screen (F7). A project that landed somewhere
   // the user is not looking would be the worst possible answer to "where did it
-  // go".
+  // go". On "Все пространства" there is no one scope on screen, and null lets
+  // the server put it in its default -- the first scope, which is also the
+  // first heading on the grouped board.
   final scopeId = ref.read(activeScopeProvider)?.id;
 
   String? createdId;

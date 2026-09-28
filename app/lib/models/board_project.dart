@@ -29,6 +29,17 @@ abstract class BoardProject with _$BoardProject {
   const factory BoardProject({
     required Project project,
     required List<Task> tasks,
+
+    /// How many notes the project has, for the counter on the planning board.
+    ///
+    /// On the board row, not on [Project]: only `GET /board` sends it
+    /// (`backend/src/routes/board.ts`), and a [Project] also comes from
+    /// `GET /projects` and from every project mutation, none of which do.
+    /// Nullable and parsed tolerantly for the same reason -- a snapshot cached
+    /// by an older build, or an older server, has no such key, and that must
+    /// read as "unknown" (the counter is not drawn), never as a parse failure
+    /// that costs the whole board.
+    int? noteCount,
   }) = _BoardProject;
 
   const BoardProject._();
@@ -47,12 +58,16 @@ abstract class BoardProject with _$BoardProject {
     // board that renders one project without its tasks beats a board that
     // throws and shows nothing.
     final rawTasks = json['tasks'] as List<dynamic>? ?? const <dynamic>[];
+    final rawNoteCount = json['noteCount'];
 
     return BoardProject(
       project: Project.fromJson(json),
       tasks: List<Task>.unmodifiable(
         rawTasks.map((dynamic e) => Task.fromJson(e as Map<String, dynamic>)),
       ),
+      // `num`, not `int`: a JSON number decoded on the web is a double, and a
+      // counter is not worth a type error. Anything else is "unknown".
+      noteCount: rawNoteCount is num ? rawNoteCount.toInt() : null,
     );
   }
 
@@ -68,6 +83,7 @@ abstract class BoardProject with _$BoardProject {
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     ...project.toJson(),
+    'noteCount': ?noteCount,
     'tasks': tasks.map((task) => task.toJson()).toList(growable: false),
   };
 

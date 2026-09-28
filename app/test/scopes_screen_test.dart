@@ -189,7 +189,35 @@ void main() {
       expect(find.text('Дача'), findsOneWidget);
     });
 
-    testWidgets('two scopes draw a chip each, and the board shows one of them', (
+    testWidgets(
+      'two scopes draw a chip each, and the board shows one of them',
+      (tester) async {
+        final dacha = server.addScope(name: 'Дача');
+        server.addProject(name: 'Крыша', scopeId: dacha);
+        server.addProject(name: 'Бэкенд');
+
+        await pump(tester, home: const ShellScreen());
+
+        // F12: one pill in the planning header rather than a row of chips over
+        // the board -- see `PlanHeader`. It names the scope that is showing and
+        // opens the rest.
+        expect(find.byTooltip('Какой экран проектов'), findsOneWidget);
+        // "Все пространства" is the default: every project, under its scope's
+        // heading, the scopes in position order.
+        expect(find.text('Все пространства'), findsOneWidget);
+        expect(find.text('Бэкенд'), findsOneWidget);
+        expect(find.text('Крыша'), findsOneWidget);
+        final main = tester.getTopLeft(find.text('ОСНОВНОЙ')).dy;
+        final backend = tester.getTopLeft(find.text('Бэкенд')).dy;
+        final dachaHeading = tester.getTopLeft(find.text('ДАЧА')).dy;
+        final roof = tester.getTopLeft(find.text('Крыша')).dy;
+        expect(main, lessThan(backend));
+        expect(backend, lessThan(dachaHeading));
+        expect(dachaHeading, lessThan(roof));
+      },
+    );
+
+    testWidgets('one scope chosen drops the headings; "all" brings them back', (
       tester,
     ) async {
       final dacha = server.addScope(name: 'Дача');
@@ -197,15 +225,17 @@ void main() {
       server.addProject(name: 'Бэкенд');
 
       await pump(tester, home: const ShellScreen());
+      await chooseScope(tester, 'Основной');
 
-      // F12: one pill in the planning header rather than a row of chips over
-      // the board -- see `PlanHeader`. It names the scope that is showing and
-      // opens the rest.
-      expect(find.byTooltip('Какой экран проектов'), findsOneWidget);
-      // The first scope by position is the default, and the board shows only
-      // its projects.
       expect(find.text('Бэкенд'), findsOneWidget);
       expect(find.text('Крыша'), findsNothing);
+      expect(find.text('ОСНОВНОЙ'), findsNothing);
+
+      await chooseScope(tester, 'Все пространства');
+
+      expect(find.text('Крыша'), findsOneWidget);
+      expect(find.text('ДАЧА'), findsOneWidget);
+      expect(settings.scopeWrites, <String>['scope_main', '*']);
     });
 
     testWidgets('tapping a chip switches the board and remembers the choice', (

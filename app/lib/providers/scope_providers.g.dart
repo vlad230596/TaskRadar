@@ -38,8 +38,18 @@ part of 'scope_providers.dart';
 /// The stored value is a string from a previous run, and the scope it names can
 /// be gone -- deleted on another device, or this database restored from a
 /// backup. Every read therefore resolves it ([activeScope]) and falls back to
-/// the first scope rather than trusting it, which makes "the selected scope was
+/// "all spaces" rather than trusting it, which makes "the selected scope was
 /// deleted" an ordinary state instead of an empty board with no explanation.
+///
+/// ## "Все пространства" is the default
+///
+/// The board opens on every scope at once, grouped under the scope names
+/// ([groupProjectsByScope]). A single scope turned out to be the wrong default:
+/// the morning question is "what is waiting anywhere", and a board that shows
+/// one part of life hides the others behind a switcher nobody remembers to
+/// flip. Choosing one scope is still a remembered preference; "all" is simply
+/// what nothing chosen means, and what [allScopesSelection] records when it is
+/// chosen explicitly.
 /// `GET /scopes`, in server (position) order.
 ///
 /// `keepAlive`, like the board: the switcher is on the app's home screen and
@@ -82,8 +92,18 @@ final scopesProvider = ScopesProvider._();
 /// The stored value is a string from a previous run, and the scope it names can
 /// be gone -- deleted on another device, or this database restored from a
 /// backup. Every read therefore resolves it ([activeScope]) and falls back to
-/// the first scope rather than trusting it, which makes "the selected scope was
+/// "all spaces" rather than trusting it, which makes "the selected scope was
 /// deleted" an ordinary state instead of an empty board with no explanation.
+///
+/// ## "Все пространства" is the default
+///
+/// The board opens on every scope at once, grouped under the scope names
+/// ([groupProjectsByScope]). A single scope turned out to be the wrong default:
+/// the morning question is "what is waiting anywhere", and a board that shows
+/// one part of life hides the others behind a switcher nobody remembers to
+/// flip. Choosing one scope is still a remembered preference; "all" is simply
+/// what nothing chosen means, and what [allScopesSelection] records when it is
+/// chosen explicitly.
 /// `GET /scopes`, in server (position) order.
 ///
 /// `keepAlive`, like the board: the switcher is on the app's home screen and
@@ -123,8 +143,18 @@ final class ScopesProvider extends $AsyncNotifierProvider<Scopes, List<Scope>> {
   /// The stored value is a string from a previous run, and the scope it names can
   /// be gone -- deleted on another device, or this database restored from a
   /// backup. Every read therefore resolves it ([activeScope]) and falls back to
-  /// the first scope rather than trusting it, which makes "the selected scope was
+  /// "all spaces" rather than trusting it, which makes "the selected scope was
   /// deleted" an ordinary state instead of an empty board with no explanation.
+  ///
+  /// ## "Все пространства" is the default
+  ///
+  /// The board opens on every scope at once, grouped under the scope names
+  /// ([groupProjectsByScope]). A single scope turned out to be the wrong default:
+  /// the morning question is "what is waiting anywhere", and a board that shows
+  /// one part of life hides the others behind a switcher nobody remembers to
+  /// flip. Choosing one scope is still a remembered preference; "all" is simply
+  /// what nothing chosen means, and what [allScopesSelection] records when it is
+  /// chosen explicitly.
   /// `GET /scopes`, in server (position) order.
   ///
   /// `keepAlive`, like the board: the switcher is on the app's home screen and
@@ -184,8 +214,18 @@ String _$scopesHash() => r'4823788260b13a3c44e940bcc69a21e2832c97a1';
 /// The stored value is a string from a previous run, and the scope it names can
 /// be gone -- deleted on another device, or this database restored from a
 /// backup. Every read therefore resolves it ([activeScope]) and falls back to
-/// the first scope rather than trusting it, which makes "the selected scope was
+/// "all spaces" rather than trusting it, which makes "the selected scope was
 /// deleted" an ordinary state instead of an empty board with no explanation.
+///
+/// ## "Все пространства" is the default
+///
+/// The board opens on every scope at once, grouped under the scope names
+/// ([groupProjectsByScope]). A single scope turned out to be the wrong default:
+/// the morning question is "what is waiting anywhere", and a board that shows
+/// one part of life hides the others behind a switcher nobody remembers to
+/// flip. Choosing one scope is still a remembered preference; "all" is simply
+/// what nothing chosen means, and what [allScopesSelection] records when it is
+/// chosen explicitly.
 /// `GET /scopes`, in server (position) order.
 ///
 /// `keepAlive`, like the board: the switcher is on the app's home screen and
@@ -216,8 +256,8 @@ abstract class _$Scopes extends $AsyncNotifier<List<Scope>> {
 /// Which scope the board is showing, as stored on disk (F7).
 ///
 /// The raw id, resolved by [activeScope]. Null means "nothing was ever chosen",
-/// which is the ordinary state on a fresh install and reads as "the first
-/// scope".
+/// which is the ordinary state on a fresh install and reads as "all spaces" --
+/// as does [allScopesSelection].
 
 @ProviderFor(SelectedScopeId)
 final selectedScopeIdProvider = SelectedScopeIdProvider._();
@@ -225,15 +265,15 @@ final selectedScopeIdProvider = SelectedScopeIdProvider._();
 /// Which scope the board is showing, as stored on disk (F7).
 ///
 /// The raw id, resolved by [activeScope]. Null means "nothing was ever chosen",
-/// which is the ordinary state on a fresh install and reads as "the first
-/// scope".
+/// which is the ordinary state on a fresh install and reads as "all spaces" --
+/// as does [allScopesSelection].
 final class SelectedScopeIdProvider
     extends $AsyncNotifierProvider<SelectedScopeId, String?> {
   /// Which scope the board is showing, as stored on disk (F7).
   ///
   /// The raw id, resolved by [activeScope]. Null means "nothing was ever chosen",
-  /// which is the ordinary state on a fresh install and reads as "the first
-  /// scope".
+  /// which is the ordinary state on a fresh install and reads as "all spaces" --
+  /// as does [allScopesSelection].
   SelectedScopeIdProvider._()
     : super(
         from: null,
@@ -253,13 +293,13 @@ final class SelectedScopeIdProvider
   SelectedScopeId create() => SelectedScopeId();
 }
 
-String _$selectedScopeIdHash() => r'0a5ac6df0317f86bd5fa8ea6d7251770685acbc4';
+String _$selectedScopeIdHash() => r'516565476a3b6cb8022e622de2e3b20364856b31';
 
 /// Which scope the board is showing, as stored on disk (F7).
 ///
 /// The raw id, resolved by [activeScope]. Null means "nothing was ever chosen",
-/// which is the ordinary state on a fresh install and reads as "the first
-/// scope".
+/// which is the ordinary state on a fresh install and reads as "all spaces" --
+/// as does [allScopesSelection].
 
 abstract class _$SelectedScopeId extends $AsyncNotifier<String?> {
   FutureOr<String?> build();
@@ -279,47 +319,50 @@ abstract class _$SelectedScopeId extends $AsyncNotifier<String?> {
   }
 }
 
-/// The scope the board is actually showing, or null while the list is still
-/// loading (or if there are somehow none).
+/// The one scope the board is narrowed to, or **null for "all spaces"**.
 ///
-/// Resolution order, and each step is load-bearing:
+/// Null covers three states that all mean "show everything": nothing was
+/// chosen (the default), "Все пространства" was chosen, or the stored id no
+/// longer names a scope. It is also the answer while the list is loading, when
+/// "all of them" is the honest thing to draw. Only a stored id that names a
+/// scope that exists narrows the board.
 ///
-/// 1. the stored id, **if it still names a scope that exists**;
-/// 2. otherwise the first scope in server order -- which is also what the
-///    backend uses as the default for a project created without one, so the
-///    client and the server agree on what "the default scope" means;
-/// 3. null only when there are no scopes at all, which the migration makes
-///    impossible but which a test can produce.
+/// Anything that needs *a* scope rather than a filter -- creating a project --
+/// passes this through as-is: null there means "let the server choose", and
+/// the server's default is the first scope in position order, the same one the
+/// grouped board lists first.
 
 @ProviderFor(activeScope)
 final activeScopeProvider = ActiveScopeProvider._();
 
-/// The scope the board is actually showing, or null while the list is still
-/// loading (or if there are somehow none).
+/// The one scope the board is narrowed to, or **null for "all spaces"**.
 ///
-/// Resolution order, and each step is load-bearing:
+/// Null covers three states that all mean "show everything": nothing was
+/// chosen (the default), "Все пространства" was chosen, or the stored id no
+/// longer names a scope. It is also the answer while the list is loading, when
+/// "all of them" is the honest thing to draw. Only a stored id that names a
+/// scope that exists narrows the board.
 ///
-/// 1. the stored id, **if it still names a scope that exists**;
-/// 2. otherwise the first scope in server order -- which is also what the
-///    backend uses as the default for a project created without one, so the
-///    client and the server agree on what "the default scope" means;
-/// 3. null only when there are no scopes at all, which the migration makes
-///    impossible but which a test can produce.
+/// Anything that needs *a* scope rather than a filter -- creating a project --
+/// passes this through as-is: null there means "let the server choose", and
+/// the server's default is the first scope in position order, the same one the
+/// grouped board lists first.
 
 final class ActiveScopeProvider
     extends $FunctionalProvider<Scope?, Scope?, Scope?>
     with $Provider<Scope?> {
-  /// The scope the board is actually showing, or null while the list is still
-  /// loading (or if there are somehow none).
+  /// The one scope the board is narrowed to, or **null for "all spaces"**.
   ///
-  /// Resolution order, and each step is load-bearing:
+  /// Null covers three states that all mean "show everything": nothing was
+  /// chosen (the default), "Все пространства" was chosen, or the stored id no
+  /// longer names a scope. It is also the answer while the list is loading, when
+  /// "all of them" is the honest thing to draw. Only a stored id that names a
+  /// scope that exists narrows the board.
   ///
-  /// 1. the stored id, **if it still names a scope that exists**;
-  /// 2. otherwise the first scope in server order -- which is also what the
-  ///    backend uses as the default for a project created without one, so the
-  ///    client and the server agree on what "the default scope" means;
-  /// 3. null only when there are no scopes at all, which the migration makes
-  ///    impossible but which a test can produce.
+  /// Anything that needs *a* scope rather than a filter -- creating a project --
+  /// passes this through as-is: null there means "let the server choose", and
+  /// the server's default is the first scope in position order, the same one the
+  /// grouped board lists first.
   ActiveScopeProvider._()
     : super(
         from: null,
@@ -353,7 +396,7 @@ final class ActiveScopeProvider
   }
 }
 
-String _$activeScopeHash() => r'00c81df52ac982193a8b306feb00a81f650a30fc';
+String _$activeScopeHash() => r'f5b753dbf8c770e164253d405f9311e8ca241116';
 
 /// True when the switcher is worth drawing at all.
 ///

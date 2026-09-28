@@ -37,8 +37,18 @@ part 'scope_providers.g.dart';
 /// The stored value is a string from a previous run, and the scope it names can
 /// be gone -- deleted on another device, or this database restored from a
 /// backup. Every read therefore resolves it ([activeScope]) and falls back to
-/// the first scope rather than trusting it, which makes "the selected scope was
+/// "all spaces" rather than trusting it, which makes "the selected scope was
 /// deleted" an ordinary state instead of an empty board with no explanation.
+///
+/// ## "Все пространства" is the default
+///
+/// The board opens on every scope at once, grouped under the scope names
+/// ([groupProjectsByScope]). A single scope turned out to be the wrong default:
+/// the morning question is "what is waiting anywhere", and a board that shows
+/// one part of life hides the others behind a switcher nobody remembers to
+/// flip. Choosing one scope is still a remembered preference; "all" is simply
+/// what nothing chosen means, and what [allScopesSelection] records when it is
+/// chosen explicitly.
 
 /// `GET /scopes`, in server (position) order.
 ///
@@ -182,17 +192,27 @@ class Scopes extends _$Scopes {
   }
 }
 
+/// What [SelectedScopeId] stores for "Все пространства".
+///
+/// A value no scope id can be (ids are cuids), so it can never resolve to a
+/// real scope by accident. Resolving it goes through the same "not a known id"
+/// branch as a deleted scope, which is exactly the right answer for both.
+const String allScopesSelection = '*';
+
 /// Which scope the board is showing, as stored on disk (F7).
 ///
 /// The raw id, resolved by [activeScope]. Null means "nothing was ever chosen",
-/// which is the ordinary state on a fresh install and reads as "the first
-/// scope".
+/// which is the ordinary state on a fresh install and reads as "all spaces" --
+/// as does [allScopesSelection].
 @Riverpod(keepAlive: true)
 class SelectedScopeId extends _$SelectedScopeId {
   @override
   Future<String?> build() {
     return ref.read(settingsStoreProvider).readSelectedScopeId();
   }
+
+  /// "Все пространства", remembered like any other choice.
+  Future<void> selectAll() => select(allScopesSelection);
 
   /// Remembers the choice, showing it immediately.
   ///
@@ -211,29 +231,29 @@ class SelectedScopeId extends _$SelectedScopeId {
   }
 }
 
-/// The scope the board is actually showing, or null while the list is still
-/// loading (or if there are somehow none).
+/// The one scope the board is narrowed to, or **null for "all spaces"**.
 ///
-/// Resolution order, and each step is load-bearing:
+/// Null covers three states that all mean "show everything": nothing was
+/// chosen (the default), "Все пространства" was chosen, or the stored id no
+/// longer names a scope. It is also the answer while the list is loading, when
+/// "all of them" is the honest thing to draw. Only a stored id that names a
+/// scope that exists narrows the board.
 ///
-/// 1. the stored id, **if it still names a scope that exists**;
-/// 2. otherwise the first scope in server order -- which is also what the
-///    backend uses as the default for a project created without one, so the
-///    client and the server agree on what "the default scope" means;
-/// 3. null only when there are no scopes at all, which the migration makes
-///    impossible but which a test can produce.
+/// Anything that needs *a* scope rather than a filter -- creating a project --
+/// passes this through as-is: null there means "let the server choose", and
+/// the server's default is the first scope in position order, the same one the
+/// grouped board lists first.
 @Riverpod(keepAlive: true)
 Scope? activeScope(Ref ref) {
   final scopes = ref.watch(scopesProvider).value;
   if (scopes == null || scopes.isEmpty) return null;
 
   final storedId = ref.watch(selectedScopeIdProvider).value;
-  if (storedId != null) {
-    for (final scope in scopes) {
-      if (scope.id == storedId) return scope;
-    }
+  if (storedId == null || storedId == allScopesSelection) return null;
+  for (final scope in scopes) {
+    if (scope.id == storedId) return scope;
   }
-  return scopes.first;
+  return null;
 }
 
 /// True when the switcher is worth drawing at all.
@@ -252,14 +272,50 @@ bool hasMultipleScopes(Ref ref) {
 /// The board rows that belong to [scope].
 ///
 /// A free function rather than a provider so the same rule serves the board and
-/// the archive, and so it can be tested without a container. Null [scope] means
-/// "not resolved yet" and shows everything -- during that one frame the honest
-/// answer is "all of them", not "none".
+/// the archive, and so it can be tested without a container. Null [scope] is
+/// "all spaces" (see [activeScope]) and shows everything -- which is also the
+/// honest answer during the frame before the scope list lands.
 List<BoardProject> projectsInScope(List<BoardProject> projects, Scope? scope) {
   if (scope == null) return projects;
   return projects
       .where((entry) => entry.project.scopeId == scope.id)
       .toList(growable: false);
+}
+
+/// One heading of the "all spaces" board: a scope and its projects.
+///
+/// [scope] is null only for the trailing group of projects whose scope is not
+/// in the list -- a scope created on another device a moment ago, before the
+/// scope list here was re-read. They are drawn under no heading rather than
+/// dropped: a project that vanished from the board would be the worse lie.
+typedef ScopeGroup = ({Scope? scope, List<BoardProject> projects});
+
+/// The board's projects grouped by scope, in scope (position) order, each group
+/// in the board's own order. Scopes with no projects get no group -- a heading
+/// over nothing is noise on the one screen that has to be read at a glance.
+List<ScopeGroup> groupProjectsByScope(
+  List<BoardProject> projects,
+  List<Scope> scopes,
+) {
+  final byScope = <String, List<BoardProject>>{};
+  for (final entry in projects) {
+    byScope
+        .putIfAbsent(entry.project.scopeId, () => <BoardProject>[])
+        .add(entry);
+  }
+
+  final groups = <ScopeGroup>[];
+  for (final scope in scopes) {
+    final rows = byScope.remove(scope.id);
+    if (rows != null) groups.add((scope: scope, projects: rows));
+  }
+  final orphans = byScope.values.expand((rows) => rows).toList();
+  if (orphans.isNotEmpty) {
+    // Back in board order: the map above interleaved them by scope id.
+    orphans.sort((a, b) => projects.indexOf(a) - projects.indexOf(b));
+    groups.add((scope: null, projects: orphans));
+  }
+  return groups;
 }
 
 /// How many **active** projects sit in one scope, or null while the board has

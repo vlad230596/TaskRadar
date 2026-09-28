@@ -14,7 +14,16 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$BoardProject {
 
- Project get project; List<Task> get tasks;
+ Project get project; List<Task> get tasks;/// How many notes the project has, for the counter on the planning board.
+///
+/// On the board row, not on [Project]: only `GET /board` sends it
+/// (`backend/src/routes/board.ts`), and a [Project] also comes from
+/// `GET /projects` and from every project mutation, none of which do.
+/// Nullable and parsed tolerantly for the same reason -- a snapshot cached
+/// by an older build, or an older server, has no such key, and that must
+/// read as "unknown" (the counter is not drawn), never as a parse failure
+/// that costs the whole board.
+ int? get noteCount;
 /// Create a copy of BoardProject
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +34,16 @@ $BoardProjectCopyWith<BoardProject> get copyWith => _$BoardProjectCopyWithImpl<B
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is BoardProject&&(identical(other.project, project) || other.project == project)&&const DeepCollectionEquality().equals(other.tasks, tasks));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is BoardProject&&(identical(other.project, project) || other.project == project)&&const DeepCollectionEquality().equals(other.tasks, tasks)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,project,const DeepCollectionEquality().hash(tasks));
+int get hashCode => Object.hash(runtimeType,project,const DeepCollectionEquality().hash(tasks),noteCount);
 
 @override
 String toString() {
-  return 'BoardProject(project: $project, tasks: $tasks)';
+  return 'BoardProject(project: $project, tasks: $tasks, noteCount: $noteCount)';
 }
 
 
@@ -45,7 +54,7 @@ abstract mixin class $BoardProjectCopyWith<$Res>  {
   factory $BoardProjectCopyWith(BoardProject value, $Res Function(BoardProject) _then) = _$BoardProjectCopyWithImpl;
 @useResult
 $Res call({
- Project project, List<Task> tasks
+ Project project, List<Task> tasks, int? noteCount
 });
 
 
@@ -62,11 +71,12 @@ class _$BoardProjectCopyWithImpl<$Res>
 
 /// Create a copy of BoardProject
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? project = null,Object? tasks = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? project = null,Object? tasks = null,Object? noteCount = freezed,}) {
   return _then(_self.copyWith(
 project: null == project ? _self.project : project // ignore: cast_nullable_to_non_nullable
 as Project,tasks: null == tasks ? _self.tasks : tasks // ignore: cast_nullable_to_non_nullable
-as List<Task>,
+as List<Task>,noteCount: freezed == noteCount ? _self.noteCount : noteCount // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 /// Create a copy of BoardProject
@@ -160,10 +170,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Project project,  List<Task> tasks)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Project project,  List<Task> tasks,  int? noteCount)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _BoardProject() when $default != null:
-return $default(_that.project,_that.tasks);case _:
+return $default(_that.project,_that.tasks,_that.noteCount);case _:
   return orElse();
 
 }
@@ -181,10 +191,10 @@ return $default(_that.project,_that.tasks);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Project project,  List<Task> tasks)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Project project,  List<Task> tasks,  int? noteCount)  $default,) {final _that = this;
 switch (_that) {
 case _BoardProject():
-return $default(_that.project,_that.tasks);case _:
+return $default(_that.project,_that.tasks,_that.noteCount);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -201,10 +211,10 @@ return $default(_that.project,_that.tasks);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Project project,  List<Task> tasks)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Project project,  List<Task> tasks,  int? noteCount)?  $default,) {final _that = this;
 switch (_that) {
 case _BoardProject() when $default != null:
-return $default(_that.project,_that.tasks);case _:
+return $default(_that.project,_that.tasks,_that.noteCount);case _:
   return null;
 
 }
@@ -216,7 +226,7 @@ return $default(_that.project,_that.tasks);case _:
 
 
 class _BoardProject extends BoardProject {
-  const _BoardProject({required this.project, required final  List<Task> tasks}): _tasks = tasks,super._();
+  const _BoardProject({required this.project, required final  List<Task> tasks, this.noteCount}): _tasks = tasks,super._();
   
 
 @override final  Project project;
@@ -227,6 +237,16 @@ class _BoardProject extends BoardProject {
   return EqualUnmodifiableListView(_tasks);
 }
 
+/// How many notes the project has, for the counter on the planning board.
+///
+/// On the board row, not on [Project]: only `GET /board` sends it
+/// (`backend/src/routes/board.ts`), and a [Project] also comes from
+/// `GET /projects` and from every project mutation, none of which do.
+/// Nullable and parsed tolerantly for the same reason -- a snapshot cached
+/// by an older build, or an older server, has no such key, and that must
+/// read as "unknown" (the counter is not drawn), never as a parse failure
+/// that costs the whole board.
+@override final  int? noteCount;
 
 /// Create a copy of BoardProject
 /// with the given fields replaced by the non-null parameter values.
@@ -238,16 +258,16 @@ _$BoardProjectCopyWith<_BoardProject> get copyWith => __$BoardProjectCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BoardProject&&(identical(other.project, project) || other.project == project)&&const DeepCollectionEquality().equals(other._tasks, _tasks));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _BoardProject&&(identical(other.project, project) || other.project == project)&&const DeepCollectionEquality().equals(other._tasks, _tasks)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,project,const DeepCollectionEquality().hash(_tasks));
+int get hashCode => Object.hash(runtimeType,project,const DeepCollectionEquality().hash(_tasks),noteCount);
 
 @override
 String toString() {
-  return 'BoardProject(project: $project, tasks: $tasks)';
+  return 'BoardProject(project: $project, tasks: $tasks, noteCount: $noteCount)';
 }
 
 
@@ -258,7 +278,7 @@ abstract mixin class _$BoardProjectCopyWith<$Res> implements $BoardProjectCopyWi
   factory _$BoardProjectCopyWith(_BoardProject value, $Res Function(_BoardProject) _then) = __$BoardProjectCopyWithImpl;
 @override @useResult
 $Res call({
- Project project, List<Task> tasks
+ Project project, List<Task> tasks, int? noteCount
 });
 
 
@@ -275,11 +295,12 @@ class __$BoardProjectCopyWithImpl<$Res>
 
 /// Create a copy of BoardProject
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? project = null,Object? tasks = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? project = null,Object? tasks = null,Object? noteCount = freezed,}) {
   return _then(_BoardProject(
 project: null == project ? _self.project : project // ignore: cast_nullable_to_non_nullable
 as Project,tasks: null == tasks ? _self._tasks : tasks // ignore: cast_nullable_to_non_nullable
-as List<Task>,
+as List<Task>,noteCount: freezed == noteCount ? _self.noteCount : noteCount // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

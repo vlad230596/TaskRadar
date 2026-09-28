@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:taskradar/api/api_exception.dart';
 import 'package:taskradar/models/board_project.dart';
 import 'package:taskradar/models/scope.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/scope_providers.dart';
+import 'package:taskradar/storage/settings_store.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_project_backend.dart';
@@ -51,21 +53,26 @@ void main() {
       expect(backend.requests.single.path, '/scopes');
     });
 
-    test('creating one appends it, and it comes back with a position', () async {
-      final container = makeContainer();
-      await container.read(scopesProvider.future);
+    test(
+      'creating one appends it, and it comes back with a position',
+      () async {
+        final container = makeContainer();
+        await container.read(scopesProvider.future);
 
-      final created = await container.read(scopesProvider.notifier).create('  Дача  ');
+        final created = await container
+            .read(scopesProvider.notifier)
+            .create('  Дача  ');
 
-      // Trimmed by the client before the server ever sees it, exactly as a
-      // project name is.
-      expect(created.name, 'Дача');
-      expect(created.position, greaterThan(1000));
-      expect(
-        container.read(scopesProvider).requireValue.map((s) => s.name),
-        <String>['Основной', 'Дача'],
-      );
-    });
+        // Trimmed by the client before the server ever sees it, exactly as a
+        // project name is.
+        expect(created.name, 'Дача');
+        expect(created.position, greaterThan(1000));
+        expect(
+          container.read(scopesProvider).requireValue.map((s) => s.name),
+          <String>['Основной', 'Дача'],
+        );
+      },
+    );
 
     test('an empty name never reaches the server', () async {
       final container = makeContainer();
@@ -79,15 +86,23 @@ void main() {
       expect(backend.requests, hasLength(before));
     });
 
-    test('renaming shows the new name immediately and keeps the server row', () async {
-      final container = makeContainer();
-      final scopes = await container.read(scopesProvider.future);
+    test(
+      'renaming shows the new name immediately and keeps the server row',
+      () async {
+        final container = makeContainer();
+        final scopes = await container.read(scopesProvider.future);
 
-      await container.read(scopesProvider.notifier).rename(scopes.first, 'Работа');
+        await container
+            .read(scopesProvider.notifier)
+            .rename(scopes.first, 'Работа');
 
-      expect(container.read(scopesProvider).requireValue.first.name, 'Работа');
-      expect(server.scopes.first['name'], 'Работа');
-    });
+        expect(
+          container.read(scopesProvider).requireValue.first.name,
+          'Работа',
+        );
+        expect(server.scopes.first['name'], 'Работа');
+      },
+    );
 
     test('a failed rename is rolled back', () async {
       final container = makeContainer();
@@ -101,7 +116,10 @@ void main() {
 
       // Back to what the server still has, not left showing a name that was
       // never saved.
-      expect(container.read(scopesProvider).requireValue.first.name, 'Основной');
+      expect(
+        container.read(scopesProvider).requireValue.first.name,
+        'Основной',
+      );
     });
   });
 
@@ -177,24 +195,27 @@ void main() {
       );
     });
 
-    test('a scope holding a project is refused by the server, with its reason', () async {
-      server.addScope(name: 'Дача', id: 's-dacha');
-      server.addProject(name: 'Забор', scopeId: 's-dacha');
-      final container = makeContainer();
-      final scopes = await container.read(scopesProvider.future);
+    test(
+      'a scope holding a project is refused by the server, with its reason',
+      () async {
+        server.addScope(name: 'Дача', id: 's-dacha');
+        server.addProject(name: 'Забор', scopeId: 's-dacha');
+        final container = makeContainer();
+        final scopes = await container.read(scopesProvider.future);
 
-      await expectLater(
-        container.read(scopesProvider.notifier).delete(scopes.last),
-        throwsA(
-          isA<ApiException>()
-              .having((e) => e.statusCode, 'statusCode', 409)
-              .having((e) => e.message, 'message', contains('projects')),
-        ),
-      );
+        await expectLater(
+          container.read(scopesProvider.notifier).delete(scopes.last),
+          throwsA(
+            isA<ApiException>()
+                .having((e) => e.statusCode, 'statusCode', 409)
+                .having((e) => e.message, 'message', contains('projects')),
+          ),
+        );
 
-      // And nothing was removed locally on the way to the refusal.
-      expect(container.read(scopesProvider).requireValue, hasLength(2));
-    });
+        // And nothing was removed locally on the way to the refusal.
+        expect(container.read(scopesProvider).requireValue, hasLength(2));
+      },
+    );
 
     test('the last scope is refused too, with a different reason', () async {
       final container = makeContainer();
@@ -214,13 +235,27 @@ void main() {
   });
 
   group('which scope the board shows', () {
-    test('with nothing stored it is the first one', () async {
+    test('with nothing stored it is "all spaces" (null)', () async {
       server.addScope(name: 'Дача', id: 's-dacha');
       final container = makeContainer();
       await container.read(scopesProvider.future);
       await container.read(selectedScopeIdProvider.future);
 
-      expect(container.read(activeScopeProvider)?.id, 'scope_main');
+      expect(container.read(activeScopeProvider), isNull);
+    });
+
+    test('choosing "all" explicitly is remembered as the sentinel', () async {
+      server.addScope(name: 'Дача', id: 's-dacha');
+      settings.selectedScopeId = 's-dacha';
+      final container = makeContainer();
+      await container.read(scopesProvider.future);
+      await container.read(selectedScopeIdProvider.future);
+      expect(container.read(activeScopeProvider)?.id, 's-dacha');
+
+      await container.read(selectedScopeIdProvider.notifier).selectAll();
+
+      expect(container.read(activeScopeProvider), isNull);
+      expect(settings.scopeWrites, <String>[allScopesSelection]);
     });
 
     test('a stored id wins, and survives as the list reloads', () async {
@@ -233,17 +268,20 @@ void main() {
       expect(container.read(activeScopeProvider)?.id, 's-dacha');
     });
 
-    test('a stored id that no longer names a scope falls back to the first', () async {
-      // The scope was deleted on another device, or this database came back
-      // from a backup. An empty board with no explanation would be the wrong
-      // answer; the first scope is the same default the server uses.
-      settings.selectedScopeId = 's-gone';
-      final container = makeContainer();
-      await container.read(scopesProvider.future);
-      await container.read(selectedScopeIdProvider.future);
+    test(
+      'a stored id that no longer names a scope falls back to "all"',
+      () async {
+        // The scope was deleted on another device, or this database came back
+        // from a backup. An empty board with no explanation would be the wrong
+        // answer; every scope is the same default a fresh install gets.
+        settings.selectedScopeId = 's-gone';
+        final container = makeContainer();
+        await container.read(scopesProvider.future);
+        await container.read(selectedScopeIdProvider.future);
 
-      expect(container.read(activeScopeProvider)?.id, 'scope_main');
-    });
+        expect(container.read(activeScopeProvider), isNull);
+      },
+    );
 
     test('selecting one shows it at once and persists it', () async {
       server.addScope(name: 'Дача', id: 's-dacha');
@@ -302,10 +340,10 @@ void main() {
         row('c', 's-dacha'),
       ];
 
-      expect(
-        projectsInScope(rows, scope).map((e) => e.project.id),
-        <String>['b', 'c'],
-      );
+      expect(projectsInScope(rows, scope).map((e) => e.project.id), <String>[
+        'b',
+        'c',
+      ]);
     });
 
     test('an unresolved scope shows everything rather than nothing', () {
@@ -313,6 +351,80 @@ void main() {
       // answer there; an empty board would read as "you have no projects".
       final rows = <BoardProject>[row('a', 'scope_main'), row('b', 's-dacha')];
       expect(projectsInScope(rows, null), hasLength(2));
+    });
+  });
+
+  group('groupProjectsByScope', () {
+    BoardProject row(String id, String scopeId) => BoardProject.fromJson(
+      boardProjectJson(id: id, name: id, scopeId: scopeId),
+    );
+
+    Scope scope(String id, double position) => Scope(
+      id: id,
+      name: id,
+      position: position,
+      createdAt: '2026-08-01T09:00:00.000Z',
+      updatedAt: '2026-08-01T09:00:00.000Z',
+    );
+
+    test(
+      'groups in scope order, each group in board order, empty ones skipped',
+      () {
+        final rows = <BoardProject>[
+          row('a', 's-dacha'),
+          row('b', 'scope_main'),
+          row('c', 's-dacha'),
+        ];
+        final scopes = <Scope>[
+          scope('scope_main', 1000),
+          scope('s-empty', 1500),
+          scope('s-dacha', 2000),
+        ];
+
+        final groups = groupProjectsByScope(rows, scopes);
+
+        expect(groups.map((g) => g.scope?.id), <String>[
+          'scope_main',
+          's-dacha',
+        ]);
+        expect(
+          groups.map((g) => g.projects.map((e) => e.project.id).toList()),
+          <List<String>>[
+            <String>['b'],
+            <String>['a', 'c'],
+          ],
+        );
+      },
+    );
+
+    test(
+      'a project whose scope is not in the list yet is kept, last, unnamed',
+      () {
+        final rows = <BoardProject>[row('x', 's-new'), row('b', 'scope_main')];
+        final groups = groupProjectsByScope(rows, <Scope>[
+          scope('scope_main', 1),
+        ]);
+
+        expect(groups, hasLength(2));
+        expect(groups.last.scope, isNull);
+        expect(groups.last.projects.single.project.id, 'x');
+      },
+    );
+  });
+
+  group('the "all spaces" migration, against the real preferences', () {
+    test('a scope stored before "all" existed is ignored once', () async {
+      // An existing user had the board on one scope. Honouring that key would
+      // keep them there without ever showing the new default.
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        PreferencesSettingsStore.legacySelectedScopeKey: 's-dacha',
+      });
+      final store = PreferencesSettingsStore();
+      expect(await store.readSelectedScopeId(), isNull);
+
+      // A choice made after that is remembered as before.
+      await store.writeSelectedScopeId('s-dacha');
+      expect(await store.readSelectedScopeId(), 's-dacha');
     });
   });
 }

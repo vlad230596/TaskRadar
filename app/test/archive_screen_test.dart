@@ -42,7 +42,11 @@ void main() {
     }
   }
 
-  Future<void> pump(WidgetTester tester, {Widget? home}) async {
+  Future<void> pump(
+    WidgetTester tester, {
+    Widget? home,
+    String? selectedScopeId,
+  }) async {
     tester.view.physicalSize = const Size(1000, 1200);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -53,7 +57,9 @@ void main() {
           apiClientProvider.overrideWithValue(backend.client),
           boardSnapshotStoreProvider.overrideWithValue(snapshots),
           notificationGatewayProvider.overrideWithValue(gateway),
-          settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
+          settingsStoreProvider.overrideWithValue(
+            FakeSettingsStore()..selectedScopeId = selectedScopeId,
+          ),
         ],
         child: MaterialApp(
           home: home ?? const ArchiveScreen(),
@@ -79,13 +85,34 @@ void main() {
         archivedAt: '2026-01-01T00:00:00.000Z',
       );
 
-      await pump(tester);
+      await pump(tester, selectedScopeId: 'scope_main');
 
       // Otherwise the archive would be the one screen in the app where the
       // switcher above the board does not apply.
       expect(find.text('Старый бэкенд'), findsOneWidget);
       expect(find.text('Старый забор'), findsNothing);
       expect(find.text('Архив · Основной'), findsOneWidget);
+    });
+
+    testWidgets('on "Все пространства", the default, it shows every scope', (
+      tester,
+    ) async {
+      final dacha = server.addScope(name: 'Дача');
+      server.addProject(
+        name: 'Старый забор',
+        scopeId: dacha,
+        archivedAt: '2026-01-01T00:00:00.000Z',
+      );
+      server.addProject(
+        name: 'Старый бэкенд',
+        archivedAt: '2026-01-01T00:00:00.000Z',
+      );
+
+      await pump(tester);
+
+      expect(find.text('Старый бэкенд'), findsOneWidget);
+      expect(find.text('Старый забор'), findsOneWidget);
+      expect(find.text('Архив'), findsOneWidget);
     });
 
     testWidgets('an archive that is empty only in this scope says which', (
@@ -98,7 +125,7 @@ void main() {
         archivedAt: '2026-01-01T00:00:00.000Z',
       );
 
-      await pump(tester);
+      await pump(tester, selectedScopeId: 'scope_main');
 
       expect(find.text('В этом скоупе архив пуст'), findsOneWidget);
       expect(find.text('Архив пуст'), findsNothing);
@@ -306,7 +333,6 @@ void main() {
         FakeProjectBackend.archivedAtStamp,
       );
     });
-
   });
 
   /// The counterpart of F4's "there is no rename" marker test, which was true
@@ -353,10 +379,7 @@ void main() {
 
       // Pre-filled and selected: the common gesture is replacing the name, and
       // the second most common is correcting one character in it.
-      expect(
-        tester.widget<TextField>(dialogField()).controller!.text,
-        'Дача',
-      );
+      expect(tester.widget<TextField>(dialogField()).controller!.text, 'Дача');
 
       await renameTo(tester, '  Дача и баня  ');
 

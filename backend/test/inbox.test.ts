@@ -53,6 +53,7 @@ interface TaskRow {
   id: string;
   projectId: string;
   title: string;
+  description?: string | null;
   position: number;
   status: "pending" | "done" | "blocked";
 }
@@ -420,6 +421,50 @@ describe("POST /inbox/:id/file", () => {
     // the project's whole ordered list, and this response carries one row.
     const res = await call("POST", "/inbox/inb-1/file", { projectId: "prj-1" });
     expect(Object.keys(res.json() as object)).not.toContain("isCurrent");
+  });
+
+  it("files a short line whole, as the title, with no description", async () => {
+    await call("POST", "/inbox/inb-1/file", { projectId: "prj-1" });
+    const args = prismaMock.task.create.mock.calls[0]![0] as { data: TaskRow };
+    expect(args.data.title).toBe("Спросить про кабель");
+    expect(args.data.description).toBeNull();
+  });
+
+  it("splits a long line: first sentence to the title, the rest to the description", async () => {
+    items[0]!.text =
+      "Позвонить в управляющую компанию про протечку. Сказать, что течёт уже третью неделю, " +
+      "что мастер приходил и ничего не сделал, и попросить письменный ответ до пятницы.";
+
+    const res = await call("POST", "/inbox/inb-1/file", { projectId: "prj-1" });
+
+    expect(res.statusCode).toBe(201);
+    const task = res.json() as TaskRow;
+    expect(task.title).toBe("Позвонить в управляющую компанию про протечку");
+    expect(task.description).toBe(
+      "Сказать, что течёт уже третью неделю, что мастер приходил и ничего не сделал, " +
+        "и попросить письменный ответ до пятницы.",
+    );
+  });
+
+  it("takes a client-shaped title and description as sent (the «Причесать» hook)", async () => {
+    items[0]!.text = "длинная сырая диктовка ".repeat(10);
+
+    const res = await call("POST", "/inbox/inb-1/file", {
+      projectId: "prj-1",
+      title: "  Разобрать диктовку  ",
+      description: "Причёсанный текст",
+    });
+
+    expect(res.statusCode).toBe(201);
+    const task = res.json() as TaskRow;
+    expect(task.title).toBe("Разобрать диктовку");
+    expect(task.description).toBe("Причёсанный текст");
+  });
+
+  it("refuses a description override without a title, and files nothing", async () => {
+    const res = await call("POST", "/inbox/inb-1/file", { projectId: "prj-1", description: "x" });
+    expect(res.statusCode).toBe(400);
+    expect(items).toHaveLength(2);
   });
 
   it("404s for an unknown project, and files nothing", async () => {
