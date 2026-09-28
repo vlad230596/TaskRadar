@@ -36,9 +36,9 @@ import 'dictation_screen.dart';
 ///
 /// Now:
 ///
-/// - **The line being worked on is a text area, open and editable**, 19 px and
-///   104 px tall. Correcting a misheard word is typing, not "Поправить текст…"
-///   in a menu.
+/// - **The line being worked on is a text area, open and editable**, 19 px,
+///   at least 104 px tall and growing with its text (see [_GrowingField]).
+///   Correcting a misheard word is typing, not "Поправить текст…" in a menu.
 /// - **The projects are buttons under it.** One tap and the line is a task.
 ///   That is the whole screen: the pile is worked by reading a line and
 ///   pressing a name.
@@ -290,11 +290,16 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   Future<void> _file(String projectId, String projectName) async {
     if (!await _commitEdit() || !mounted) return;
 
+    // Null today: the server splits a long line into title and description
+    // itself. This is where "Причесать" will hand over its tidied version --
+    // see [shapeLineForFiling].
+    final shaped = shapeLineForFiling(_text.text.trim());
+
     final ok = await runMutation(
       context,
       () => ref
           .read(inboxProvider.notifier)
-          .file(widget.item, projectId: projectId),
+          .file(widget.item, projectId: projectId, shaped: shaped),
       success: 'Задача добавлена в «$projectName».',
       failure: 'Не удалось перенести в проект.',
     );
@@ -391,25 +396,7 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          SizedBox(
-            height: 104,
-            child: TextField(
-              controller: _text,
-              maxLines: null,
-              expands: true,
-              textAlignVertical: TextAlignVertical.top,
-              textCapitalization: TextCapitalization.sentences,
-              style: AppText.sandboxField,
-              decoration: const InputDecoration(
-                filled: false,
-                isCollapsed: true,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                hintText: 'Что не забыть…',
-              ),
-            ),
-          ),
+          _GrowingField(controller: _text),
           const SizedBox(height: 10),
           Row(
             children: <Widget>[
@@ -461,6 +448,236 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   }
 }
 
+/// The open line's text field: as tall as its text, up to 40 % of the screen,
+/// and past that a scrolling field that *says* it scrolls.
+///
+/// It used to be a fixed 104 px box. A long dictated line then scrolled inside
+/// it with nothing to show there was more -- no scrollbar, no cut-off edge --
+/// and the user read the first four lines, took them for the whole thought and
+/// lost the rest of it on filing. So the field now grows with the text, and
+/// once it hits its ceiling it grows a visible scrollbar and a fade at the
+/// bottom edge for as long as there is text below.
+///
+/// 40 % rather than "all of it": the project buttons under the field are the
+/// other half of this screen, and a field that pushed them off the bottom
+/// would trade one hidden thing for another.
+class _GrowingField extends StatefulWidget {
+  const _GrowingField({required this.controller});
+
+  final TextEditingController controller;
+
+  /// The height the field never shrinks below: four lines of
+  /// [AppText.sandboxField], which is what the old fixed box held.
+  static const double minHeight = 104;
+
+  /// The share of the screen the field may grow to before it scrolls.
+  static const double maxScreenShare = 0.4;
+
+  @override
+  State<_GrowingField> createState() => _GrowingFieldState();
+}
+
+class _GrowingFieldState extends State<_GrowingField> {
+  final ScrollController _scroll = ScrollController();
+
+  /// Whether text continues below the visible part -- what the fade shows.
+  bool _moreBelow = false;
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  /// Both kinds of notification matter: a scroll moves the visible part, and a
+  /// metrics change is the text itself growing (typing, dictation appending)
+  /// with no scroll at all.
+  bool _onScroll(Notification notification) {
+    final metrics = switch (notification) {
+      ScrollMetricsNotification(:final metrics) => metrics,
+      ScrollNotification(:final metrics) => metrics,
+      _ => null,
+    };
+    if (metrics == null || metrics.axis != Axis.vertical) return false;
+
+    final moreBelow = metrics.extentAfter > 0.5;
+    if (moreBelow != _moreBelow) setState(() => _moreBelow = moreBelow);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screen = MediaQuery.sizeOf(context).height;
+    final maxHeight = (screen * _GrowingField.maxScreenShare).clamp(
+      _GrowingField.minHeight,
+      double.infinity,
+    );
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minHeight: _GrowingField.minHeight,
+        maxHeight: maxHeight,
+      ),
+      child: NotificationListener<Notification>(
+        onNotification: _onScroll,
+        child: Stack(
+          children: <Widget>[
+            Scrollbar(
+              controller: _scroll,
+              // Always drawn while there is somewhere to scroll: the whole
+              // point is that the overflow is visible without touching it.
+              thumbVisibility: true,
+              child: Padding(
+                // Keeps the text clear of the scrollbar thumb.
+                padding: const EdgeInsets.only(right: 10),
+                child: TextField(
+                  key: const ValueKey<String>('sandbox-open-field'),
+                  controller: widget.controller,
+                  scrollController: _scroll,
+                  minLines: 4,
+                  maxLines: null,
+                  keyboardType: TextInputType.multiline,
+                  textCapitalization: TextCapitalization.sentences,
+                  style: AppText.sandboxField,
+                  decoration: const InputDecoration(
+                    filled: false,
+                    isCollapsed: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    hintText: 'Что не забыть…',
+                  ),
+                ),
+              ),
+            ),
+            if (_moreBelow)
+              const Positioned(
+                left: 0,
+                right: 10,
+                bottom: 0,
+                child: _FadeInto(
+                  key: ValueKey<String>('sandbox-field-fade'),
+                  colour: AppColors.card,
+                  height: 28,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A sandbox line in the list, capped at [maxLines] with a fade and a
+/// "ещё N строк" note when it is longer.
+///
+/// Capped because a dictated paragraph drawn whole makes the pile unreadable --
+/// three long lines fill the screen and the list stops being a list. Marked,
+/// not merely ellipsised, because the complaint this answers is text that was
+/// silently not there: the count says how much is behind the fade, and the
+/// full line is one tap away in the open field.
+class _ClampedLine extends StatelessWidget {
+  const _ClampedLine({
+    required this.text,
+    required this.style,
+    this.background = AppColors.card,
+  });
+
+  /// Four, the height of the open field at its smallest: a closed line never
+  /// looks longer than the line would be once opened.
+  static const int maxLines = 4;
+
+  final String text;
+  final TextStyle style;
+
+  /// What the fade fades into -- the colour of the card the line sits on.
+  final Color background;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final painter = TextPainter(
+          text: TextSpan(text: text, style: style),
+          textDirection: Directionality.of(context),
+          textScaler: MediaQuery.textScalerOf(context),
+        )..layout(maxWidth: constraints.maxWidth);
+        final lines = painter.computeLineMetrics().length;
+        painter.dispose();
+
+        if (lines <= maxLines) return Text(text, style: style);
+
+        final hidden = lines - maxLines;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Stack(
+              children: <Widget>[
+                Text(
+                  text,
+                  style: style,
+                  maxLines: maxLines,
+                  overflow: TextOverflow.clip,
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: _FadeInto(colour: background),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'ещё ${formatLines(hidden)}',
+              style: AppText.caption.copyWith(color: AppColors.indigoLink),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// A fade from transparent to [colour]: "the text goes on under here". Ignores
+/// touches, so it never steals a tap meant for the text under it.
+///
+/// Private to this screen for now; `widgets/overflow_fade_text.dart` is being
+/// introduced separately, and this should fold into it once both have landed.
+class _FadeInto extends StatelessWidget {
+  const _FadeInto({required this.colour, this.height = 22, super.key});
+
+  final Color colour;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[colour.withValues(alpha: 0), colour],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// "1 строка" / "3 строки" / "5 строк", by the same rule as `formatDays`.
+String formatLines(int count) {
+  final lastTwo = count % 100;
+  final last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return '$count строк';
+  if (last == 1) return '$count строка';
+  if (last >= 2 && last <= 4) return '$count строки';
+  return '$count строк';
+}
+
 /// A line waiting its turn: tap it to work on it.
 class _ClosedLine extends StatelessWidget {
   const _ClosedLine({required this.item, required this.onTap, super.key});
@@ -491,7 +708,7 @@ class _ClosedLine extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
-                    Text(item.text, style: AppText.sandboxLine),
+                    _ClampedLine(text: item.text, style: AppText.sandboxLine),
                     if (age != null) ...<Widget>[
                       const SizedBox(height: 6),
                       Text(
@@ -547,7 +764,11 @@ class _PendingLine extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(entry.text, style: AppText.sandboxLine),
+                _ClampedLine(
+                  text: entry.text,
+                  style: AppText.sandboxLine,
+                  background: AppColors.background,
+                ),
                 const SizedBox(height: 6),
                 Text(
                   failed

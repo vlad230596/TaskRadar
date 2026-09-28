@@ -342,6 +342,87 @@ void main() {
     });
   });
 
+  group('notes and the preview line', () {
+    const longTitle =
+        'Посмотреть статус Мишиной сим-карты и перевести её на семейный '
+        'тариф, пока не кончился пробный месяц у оператора';
+
+    List<dynamic> board() => <dynamic>[
+      boardProjectJson(
+        id: 'prj_n',
+        name: 'Дом',
+        noteCount: 3,
+        tasks: <Map<String, dynamic>>[
+          taskJson(id: 'n1', title: longTitle, isCurrent: true),
+        ],
+      ),
+      boardProjectJson(id: 'prj_z', name: 'Семья', noteCount: 0),
+      // An older server: no key at all.
+      boardProjectJson(id: 'prj_o', name: 'Старое'),
+    ];
+
+    testWidgets(
+      'a note count sits by the task counter, and only when non-zero',
+      (tester) async {
+        backend.alwaysRespond(board());
+        await pumpShell(tester);
+
+        // One icon: "Семья" has 0 and "Старое" did not say, and neither draws.
+        expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
+        expect(find.text('3'), findsOneWidget);
+        // Beside "0 / 1", on the same line.
+        final counter = tester.getCenter(find.text('0 / 1'));
+        final notes = tester.getCenter(
+          find.byIcon(Icons.sticky_note_2_outlined),
+        );
+        expect((counter.dy - notes.dy).abs(), lessThan(4));
+        expect(notes.dx, greaterThan(counter.dx));
+      },
+    );
+
+    testWidgets('the tiles show it too', (tester) async {
+      backend.alwaysRespond(board());
+      await pumpShell(tester);
+      await tester.tap(find.byTooltip('Значками'));
+      await settle(tester);
+
+      expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a row previews its task on two lines, not one', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      backend.alwaysRespond(board());
+      await pumpShell(tester);
+
+      final preview = tester.widget<Text>(find.text(longTitle));
+      expect(preview.maxLines, 2);
+      expect(preview.overflow, TextOverflow.ellipsis);
+      // And it really wraps at phone width, rather than fitting on one.
+      final height = tester.getSize(find.text(longTitle)).height;
+      expect(height, greaterThan(AppText.body.fontSize! * 1.9));
+    });
+
+    testWidgets('a tile at phone width does not overflow with a long preview', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      backend.alwaysRespond(board());
+      await pumpShell(tester);
+      await tester.tap(find.byTooltip('Значками'));
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(longTitle), findsOneWidget);
+    });
+  });
+
   group('list or tiles', () {
     setUp(() => backend.alwaysRespond(sampleBoard()));
 
@@ -378,10 +459,9 @@ void main() {
 
       Color colourOf(String letter) {
         final badge = tester.widget<Container>(
-          find.ancestor(
-            of: find.text(letter),
-            matching: find.byType(Container),
-          ).first,
+          find
+              .ancestor(of: find.text(letter), matching: find.byType(Container))
+              .first,
         );
         return (badge.decoration! as BoxDecoration).color!;
       }

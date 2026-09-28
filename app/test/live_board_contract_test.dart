@@ -76,6 +76,15 @@ void main() {
       // Exactly the two derived values the board screen draws.
       expect(entry.tasks.where((task) => task.isCurrent).length, lessThan(2));
       expect(() => ProjectSummary.of(entry), returnsNormally);
+
+      // The note counter. Optional in the model so an older server still
+      // parses, but a current one must send it on every row.
+      expect(
+        entry.noteCount,
+        isNotNull,
+        reason: 'GET /board carries noteCount on every project',
+      );
+      expect(entry.noteCount, greaterThanOrEqualTo(0));
     }
 
     // And the value the whole native client exists for: every reminder date

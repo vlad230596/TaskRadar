@@ -73,7 +73,10 @@ Map<String, dynamic> emptyProjectJson() => <String, dynamic>{
 
 /// The whole `GET /board?archived=false` body: a bare array, projects in
 /// `createdAt` ascending order.
-List<dynamic> boardJson() => <dynamic>[projectWithTasksJson(), emptyProjectJson()];
+List<dynamic> boardJson() => <dynamic>[
+  projectWithTasksJson(),
+  emptyProjectJson(),
+];
 
 // --- builders -------------------------------------------------------------
 //
@@ -120,6 +123,9 @@ Map<String, dynamic> boardProjectJson({
   String scopeId = defaultScopeId,
   String createdAt = '2026-08-01T09:00:00.000Z',
   String updatedAt = '2026-08-01T09:00:00.000Z',
+
+  /// Left out of the row when null, which is what an older server sends.
+  int? noteCount,
 }) => <String, dynamic>{
   'id': id,
   'name': name,
@@ -127,6 +133,7 @@ Map<String, dynamic> boardProjectJson({
   'archivedAt': archivedAt,
   'createdAt': createdAt,
   'updatedAt': updatedAt,
+  'noteCount': ?noteCount,
   'tasks': tasks,
 };
 

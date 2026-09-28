@@ -345,7 +345,14 @@ class FakeProjectBackend {
 
       // Both halves, like the server's transaction: the task appears at the end
       // of the project and the item stops existing.
-      final taskId = addTask(projectId: projectId, title: item['text'] as String);
+      // A client-shaped title/description is taken as sent, like the server
+      // does. The server's own split of a long line is not mirrored here: it is
+      // the server's rule and is tested there (backend/test/inboxSplit.test.ts).
+      final taskId = addTask(
+        projectId: projectId,
+        title: (match.body['title'] as String?) ?? item['text'] as String,
+        description: match.body['description'] as String?,
+      );
       inbox.removeWhere((row) => row['id'] == item['id']);
 
       // The raw row, with no `isCurrent` -- exactly what the real route answers.

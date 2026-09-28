@@ -44,10 +44,7 @@ class InboxApi {
   Future<InboxItem> capture({required String text, String? captureKey}) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/inbox',
-      body: <String, dynamic>{
-        'text': text,
-        'captureKey': ?captureKey,
-      },
+      body: <String, dynamic>{'text': text, 'captureKey': ?captureKey},
     );
     return InboxItem.fromJson(json);
   }
@@ -75,10 +72,30 @@ class InboxApi {
   /// phone, two requests have two ways to be half-done -- the same thing filed
   /// twice, or the thought gone entirely -- and the server does both halves in
   /// one transaction.
-  Future<Task> fileItem(String itemId, {required String projectId}) async {
+  ///
+  /// Without [title] the server shapes the task itself: a line over 120
+  /// characters is split into its first sentence (the title) and the rest (the
+  /// description) -- `backend/src/domain/inboxSplit.ts`. [title] and
+  /// [description] override that, for a client that already shaped the text
+  /// (the planned "Причесать" step); they are sent only when given, so the
+  /// ordinary request is byte-for-byte what it always was.
+  Future<Task> fileItem(
+    String itemId, {
+    required String projectId,
+    String? title,
+    String? description,
+  }) async {
+    assert(
+      description == null || title != null,
+      'the server refuses a description override without a title',
+    );
     final json = await _client.post<Map<String, dynamic>>(
       '/inbox/$itemId/file',
-      body: <String, dynamic>{'projectId': projectId},
+      body: <String, dynamic>{
+        'projectId': projectId,
+        'title': ?title,
+        'description': ?description,
+      },
     );
     // The response has no `isCurrent`; `Task.fromJson` requires one. Filling it
     // in as false here is safe and deliberate -- the row is only ever used to

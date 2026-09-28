@@ -46,8 +46,8 @@ abstract interface class SettingsStore {
   /// An **id**, not a `Scope`: this file must not know what a scope is, and the
   /// id is the only part of it that is stable. The scope it names can also be
   /// gone by the time it is read -- deleted, or renamed beyond recognition --
-  /// so the reader resolves it against the real list and falls back to the
-  /// first scope. See `../providers/scope_providers.dart`.
+  /// so the reader resolves it against the real list and falls back to "all
+  /// spaces". See `../providers/scope_providers.dart`.
   Future<String?> readSelectedScopeId();
 
   /// Remembers which scope the board is showing. May throw.
@@ -91,7 +91,18 @@ class PreferencesSettingsStore implements SettingsStore {
 
   /// F7. A plain string; an unknown or deleted id reads as "nothing saved"
   /// wherever it is resolved, which is the same answer a missing key gives.
-  static const String selectedScopeKey = 'board.scopeId';
+  ///
+  /// `.v2` since "Все пространства" became the default. The old key
+  /// ([legacySelectedScopeKey]) held whichever scope the board was last on,
+  /// and honouring it would keep every existing user on one scope without
+  /// ever showing them the new default. So it is read by nobody: each
+  /// installation lands on "all" once, and a scope chosen after that is
+  /// remembered under this key as before.
+  static const String selectedScopeKey = 'board.scopeId.v2';
+
+  /// The pre-"all spaces" key, left in place and unread. Named only so the
+  /// reason it is ignored has somewhere to live.
+  static const String legacySelectedScopeKey = 'board.scopeId';
 
   /// F12. The three-mode shell's last mode and the planning layout. Both are
   /// wire names rather than enum indices -- see the interface.
@@ -160,7 +171,7 @@ class PreferencesSettingsStore implements SettingsStore {
 
   /// An empty string is not an id, and treating it as one would send the board
   /// looking for a scope that cannot exist. A missing platform channel costs
-  /// the default (the first scope), not a crash -- same contract as the
+  /// the default ("all spaces"), not a crash -- same contract as the
   /// reminder hour.
   @override
   Future<String?> readSelectedScopeId() => _readString(selectedScopeKey);

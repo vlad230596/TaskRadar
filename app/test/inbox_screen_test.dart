@@ -167,6 +167,111 @@ void main() {
     });
   });
 
+  group('long lines', () {
+    // Enough dictation to outgrow any field on any screen used here.
+    final longLine = List<String>.generate(80, (i) => 'слово$i').join(' ');
+
+    testWidgets('the open field grows with its text, up to 40% of the screen', (
+      tester,
+    ) async {
+      server.addInboxItem(text: 'Коротко');
+      await pump(tester);
+      final short = tester.getSize(find.byType(TextField)).height;
+      // The old box's height, and no more, for a short line.
+      expect(short, lessThan(140));
+      expect(
+        find.byKey(const ValueKey<String>('sandbox-field-fade')),
+        findsNothing,
+      );
+
+      await tester.enterText(find.byType(TextField), longLine);
+      await settle(tester);
+
+      final grown = tester.getSize(find.byType(TextField)).height;
+      expect(grown, greaterThan(short));
+      // 1400 px tall test window: the ceiling is 560 px.
+      expect(grown, lessThanOrEqualTo(1400 * 0.4 + 0.5));
+    });
+
+    testWidgets(
+      'past its ceiling it scrolls, with a scrollbar and a bottom fade',
+      (tester) async {
+        server.addInboxItem(text: '$longLine $longLine $longLine');
+        await pump(tester);
+
+        expect(
+          tester.getSize(find.byType(TextField)).height,
+          closeTo(1400 * 0.4, 1),
+        );
+        final scrollbar = tester.widget<Scrollbar>(
+          find.ancestor(
+            of: find.byType(TextField),
+            matching: find.byType(Scrollbar),
+          ),
+        );
+        expect(scrollbar.thumbVisibility, isTrue);
+        expect(
+          find.byKey(const ValueKey<String>('sandbox-field-fade')),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'a long closed line is cut at four lines, with how many are left',
+      (tester) async {
+        server.addInboxItem(text: 'Открытая строчка');
+        server.addInboxItem(text: longLine);
+        await pump(tester);
+
+        final closed = tester.widget<Text>(find.text(longLine));
+        expect(closed.maxLines, 4);
+        expect(find.textContaining(RegExp(r'^ещё \d+ строк')), findsOneWidget);
+
+        // Opening it shows all of it in the field.
+        await tester.tap(find.text(longLine));
+        await settle(tester);
+        expect(openLineText(tester), longLine);
+      },
+    );
+
+    testWidgets('a short closed line gets no cut and no note', (tester) async {
+      server.addInboxItem(text: 'Открытая строчка');
+      server.addInboxItem(text: 'Посмотреть налоги');
+      await pump(tester);
+
+      expect(
+        tester.widget<Text>(find.text('Посмотреть налоги')).maxLines,
+        isNull,
+      );
+      expect(find.textContaining('ещё '), findsNothing);
+    });
+
+    testWidgets('filing sends only the project: the server splits long lines', (
+      tester,
+    ) async {
+      server.addProject(name: 'Дача');
+      server.addInboxItem(text: longLine);
+      await pump(tester);
+
+      await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
+      await settle(tester);
+
+      final filed = backend.requests.lastWhere(
+        (request) => request.path.endsWith('/file'),
+      );
+      expect((filed.data as Map<String, dynamic>).keys, <String>['projectId']);
+    });
+  });
+
+  test('"ещё N строк" is declined the Russian way', () {
+    expect(formatLines(1), '1 строка');
+    expect(formatLines(3), '3 строки');
+    expect(formatLines(5), '5 строк');
+    expect(formatLines(11), '11 строк');
+    expect(formatLines(22), '22 строки');
+  });
+
   group('sorting', () {
     testWidgets('one tap on a project turns the line into a task', (
       tester,
@@ -246,10 +351,9 @@ void main() {
       final created = server.projects.values.firstWhere(
         (project) => project['name'] == 'Ремонт балкона',
       );
-      expect(
-        server.titlesInOrder(created['id'] as String),
-        <String>['Ремонт балкона'],
-      );
+      expect(server.titlesInOrder(created['id'] as String), <String>[
+        'Ремонт балкона',
+      ]);
       expect(server.inbox, isEmpty);
     });
 

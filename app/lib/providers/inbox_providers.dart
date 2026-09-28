@@ -118,10 +118,23 @@ class Inbox extends _$Inbox {
   /// for an action performed a handful of times a day, and it also re-arms the
   /// reminder queue for free -- the filed task carries no date yet, but the
   /// board it lands on is the one the alarms are built from.
-  Future<Task> file(InboxItem item, {required String projectId}) async {
+  ///
+  /// [shaped] is the text already split into a title and a description by the
+  /// client. Null -- the ordinary case -- leaves it to the server, which splits
+  /// a long line itself (see `InboxApi.fileItem`).
+  Future<Task> file(
+    InboxItem item, {
+    required String projectId,
+    FilingText? shaped,
+  }) async {
     final task = await ref
         .read(inboxApiProvider)
-        .fileItem(item.id, projectId: projectId);
+        .fileItem(
+          item.id,
+          projectId: projectId,
+          title: shaped?.title,
+          description: shaped?.description,
+        );
 
     _publish(
       (state.value ?? const <InboxItem>[])
@@ -133,7 +146,9 @@ class Inbox extends _$Inbox {
   }
 
   void _publish(List<InboxItem> items) {
-    state = AsyncValue<List<InboxItem>>.data(List<InboxItem>.unmodifiable(items));
+    state = AsyncValue<List<InboxItem>>.data(
+      List<InboxItem>.unmodifiable(items),
+    );
   }
 }
 
@@ -156,3 +171,21 @@ int? inboxCount(Ref ref) {
   if (filed == null) return pending == 0 ? null : pending;
   return filed + pending;
 }
+
+/// A sandbox line already shaped into a task by the client: what
+/// `POST /inbox/:id/file` takes as its optional `title` / `description`.
+typedef FilingText = ({String title, String? description});
+
+/// The hook between "the user pressed a project" and "the line is filed": how
+/// the client wants [text] to become a task, or null to let the server decide.
+///
+/// Today it always answers null. The server splits a long line itself (first
+/// sentence to the title, the rest to the description --
+/// `backend/src/domain/inboxSplit.ts`), which is what every client should get
+/// by default, so the rule is not repeated here.
+///
+/// It exists as a named step so that the planned "Причесать" -- a model tidying
+/// a dictated line before it is filed -- has one obvious place to plug in: it
+/// returns the tidied title and description, and `Inbox.file` sends them as the
+/// override.
+FilingText? shapeLineForFiling(String text) => null;
