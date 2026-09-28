@@ -66,7 +66,13 @@ class CaptureQueue extends _$CaptureQueue {
   ///
   /// Throws only if the disk write failed -- the one failure the user has to
   /// know about, because then the line exists nowhere.
-  Future<PendingCapture> capture(String text) async {
+  ///
+  /// [dictationParseId]: the line is a `sandbox` answer of the server's model
+  /// (F15), and travels with it -- see [PendingCapture.dictationParseId].
+  Future<PendingCapture> capture(
+    String text, {
+    String? dictationParseId,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError.value(text, 'text', 'an inbox item needs text');
@@ -76,6 +82,7 @@ class CaptureQueue extends _$CaptureQueue {
       key: PendingCapture.newKey(),
       text: trimmed,
       capturedAt: DateTime.now(),
+      dictationParseId: dictationParseId,
     );
 
     // Appended: the queue drains oldest first, in the order things were thought
@@ -138,7 +145,11 @@ class CaptureQueue extends _$CaptureQueue {
 
     for (final entry in queue) {
       try {
-        final item = await api.capture(text: entry.text, captureKey: entry.key);
+        final item = await api.capture(
+          text: entry.text,
+          captureKey: entry.key,
+          dictationParseId: entry.dictationParseId,
+        );
         sentKeys.add(entry.key);
         sent.add(item);
       } on NetworkException {

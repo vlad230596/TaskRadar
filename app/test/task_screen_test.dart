@@ -4,15 +4,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
+import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/task_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
+import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/widgets/ai_tidy.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
+import 'support/fake_capture_queue_store.dart';
 import 'support/fake_history_backend.dart';
 import 'support/fake_project_backend.dart';
+import 'support/fake_voice.dart';
 
 /// The task screen as variant A draws it: a field that sizes to its text, the
 /// chips under it, one "Взять в работу" button, a 38 px status control and a
@@ -43,6 +47,7 @@ void main() {
     WidgetTester tester,
     String taskId, {
     TidyText? onTidy,
+    bool voice = false,
   }) async {
     tester.view.physicalSize = const Size(375, 812);
     tester.view.devicePixelRatio = 1;
@@ -58,6 +63,16 @@ void main() {
           deviceTimeZoneNameProvider.overrideWith(
             (ref) async => 'Europe/Moscow',
           ),
+          if (voice) ...[
+            voiceRecorderProvider.overrideWithValue(FakeVoiceRecorder()),
+            speechRecognizerProvider.overrideWithValue(
+              FakeSpeechRecognizer()..text = 'и переходник',
+            ),
+            voiceModelInstallationProvider.overrideWith(_ReadyModel.new),
+            captureQueueStoreProvider.overrideWithValue(
+              FakeCaptureQueueStore(),
+            ),
+          ],
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
@@ -182,6 +197,139 @@ void main() {
     },
   );
 
+  testWidgets(
+    '"Причесать", saved: one PATCH of both fields, with the record (F15)',
+    (tester) async {
+      final id = server.addTask(
+        projectId: projectId,
+        title: 'ну купить кабель',
+      );
+      backend.on('POST', '/dictation/parse', (match) {
+        return sseResponse(<String>[
+          sseEvent('accepted'),
+          sseEvent('result', <String, dynamic>{
+            'title': 'Купить кабель',
+            'description': null,
+            'parseId': 'dp-11',
+          }),
+        ]);
+      });
+      await pumpTask(tester, id);
+
+      await tester.tap(find.text('Причесать'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+      await settle(tester);
+
+      expect(server.patches.single.body, <String, dynamic>{
+        'title': 'Купить кабель',
+        'description': null,
+        'dictationParseId': 'dp-11',
+      });
+      expect(server.tasks.single['title'], 'Купить кабель');
+    },
+  );
+
+  group('dictating into the task', () {
+    Future<void> dictateAndTidy(
+      WidgetTester tester,
+      String id,
+      Map<String, dynamic> answer,
+      List<Map<String, dynamic>> parses,
+    ) async {
+      backend.on('POST', '/dictation/parse', (match) {
+        parses.add(match.body);
+        return sseResponse(<String>[
+          sseEvent('accepted'),
+          sseEvent('result', answer),
+        ]);
+      });
+      await pumpTask(tester, id, voice: true);
+
+      await tester.tap(find.byTooltip('Дописать голосом'));
+      await settle(tester);
+      // Stops the recording; the fake has heard "и переходник".
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+    }
+
+    testWidgets(
+      '"Разобрать": from the task and the words, and it fills both fields',
+      (tester) async {
+        final id = server.addTask(
+          projectId: projectId,
+          title: 'Купить кабель',
+          description: 'Два метра',
+        );
+        final parses = <Map<String, dynamic>>[];
+        await dictateAndTidy(tester, id, <String, dynamic>{
+          'title': 'Купить кабель и переходник',
+          'description': 'Кабель два метра.',
+          'parseId': 'dp-12',
+        }, parses);
+
+        await tester.tap(find.text('Разобрать'));
+        await settle(tester);
+        expect(parses.single['kind'], 'task_tidy');
+        expect(parses.single['text'], 'Купить кабель\nДва метра\nи переходник');
+        await tester.tap(find.text('Готово'));
+        await settle(tester);
+        await settle(tester);
+
+        // Replaced, not appended: the answer is the whole task.
+        expect(
+          tester.widget<TextField>(titleField()).controller!.text,
+          'Купить кабель и переходник',
+        );
+        expect(
+          find.widgetWithText(TextField, 'Кабель два метра.'),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+        await settle(tester);
+        expect(server.patches.single.body, <String, dynamic>{
+          'title': 'Купить кабель и переходник',
+          'description': 'Кабель два метра.',
+          'dictationParseId': 'dp-12',
+        });
+      },
+    );
+
+    testWidgets('"Как надиктовано": the words appended to the title', (
+      tester,
+    ) async {
+      final id = server.addTask(projectId: projectId, title: 'Купить кабель');
+      final parses = <Map<String, dynamic>>[];
+      await dictateAndTidy(tester, id, <String, dynamic>{
+        'title': 'Что-то другое',
+      }, parses);
+
+      await tester.tap(find.text('Разобрать'));
+      await settle(tester);
+      await tester.tap(find.text('Как надиктовано'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(titleField()).controller!.text,
+        'Купить кабель и переходник',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+      await settle(tester);
+      // The words as said are no answer of the model's: no record.
+      expect(
+        server.patches.single.body.containsKey('dictationParseId'),
+        isFalse,
+      );
+    });
+  });
+
   testWidgets('"Взять в работу" takes the task, then offers the way back', (
     tester,
   ) async {
@@ -270,4 +418,9 @@ void main() {
     // The 16 px gutter.
     expect(tester.getTopLeft(find.byType(TextField).first).dx, greaterThan(16));
   });
+}
+
+class _ReadyModel extends VoiceModelInstallation {
+  @override
+  VoiceModelState build() => VoiceModelReady(fakeInstalledModel());
 }

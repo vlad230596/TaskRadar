@@ -65,6 +65,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   late String _savedTitle = widget.note.title;
   late String _savedContent = widget.note.content;
 
+  /// The server's record of the "Причесать" answer now in the draft, sent
+  /// with the next save so it learns what was kept (F15). Null once saved, or
+  /// when the draft holds no answer.
+  String? _tidyParseId;
+
   @override
   void initState() {
     super.initState();
@@ -102,7 +107,12 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       context,
       () => ref
           .read(projectNotesProvider(widget.projectId).notifier)
-          .edit(widget.note, title: title, content: content),
+          .edit(
+            widget.note,
+            title: title,
+            content: content,
+            dictationParseId: _tidyParseId,
+          ),
       failure: 'Не удалось сохранить заметку.',
     );
 
@@ -112,6 +122,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       if (ok) {
         _savedTitle = title;
         _savedContent = content;
+        _tidyParseId = null;
       }
     });
     return ok;
@@ -136,13 +147,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     );
     if (!mounted) return;
     switch (outcome) {
-      case TidyAccepted(result: TidiedNote(:final title, :final content)):
+      case TidyAccepted(
+        result: TidiedNote(:final title, :final content, :final parseId),
+      ):
         _content.text = content;
         if (title != null && _title.text.trim().isEmpty) _title.text = title;
+        _tidyParseId = parseId;
       // "Как надиктовано" after correcting the source by hand keeps the
       // correction.
       case TidyKeptSource(:final source) when source != _content.text.trim():
         _content.text = source;
+        _tidyParseId = null;
       default:
         break;
     }

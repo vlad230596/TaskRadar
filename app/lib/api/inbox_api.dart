@@ -41,20 +41,39 @@ class InboxApi {
   /// is the row -- which is why the status can stay honest on the server.
   ///
   /// Optional because a caller with no queue behind it has nothing to replay.
-  Future<InboxItem> capture({required String text, String? captureKey}) async {
+  ///
+  /// [dictationParseId] labels the server's dataset record of the `sandbox`
+  /// parse this line is the answer of (F15). Sent only when given.
+  Future<InboxItem> capture({
+    required String text,
+    String? captureKey,
+    String? dictationParseId,
+  }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/inbox',
-      body: <String, dynamic>{'text': text, 'captureKey': ?captureKey},
+      body: <String, dynamic>{
+        'text': text,
+        'captureKey': ?captureKey,
+        'dictationParseId': ?dictationParseId,
+      },
     );
     return InboxItem.fromJson(json);
   }
 
   /// `PATCH /inbox/:id` -- fixing what was captured in a hurry (or, from F9,
-  /// dictated) before it becomes a task.
-  Future<InboxItem> editItem(String itemId, {required String text}) async {
+  /// dictated) before it becomes a task. [dictationParseId]: the new text is a
+  /// "Причесать" answer (F15).
+  Future<InboxItem> editItem(
+    String itemId, {
+    required String text,
+    String? dictationParseId,
+  }) async {
     final json = await _client.patch<Map<String, dynamic>>(
       '/inbox/$itemId',
-      body: <String, dynamic>{'text': text},
+      body: <String, dynamic>{
+        'text': text,
+        'dictationParseId': ?dictationParseId,
+      },
     );
     return InboxItem.fromJson(json);
   }
@@ -84,6 +103,7 @@ class InboxApi {
     required String projectId,
     String? title,
     String? description,
+    String? dictationParseId,
   }) async {
     assert(
       description == null || title != null,
@@ -95,6 +115,8 @@ class InboxApi {
         'projectId': projectId,
         'title': ?title,
         'description': ?description,
+        // The parse [title] and [description] came from (F15).
+        'dictationParseId': ?dictationParseId,
       },
     );
     // The response has no `isCurrent`; `Task.fromJson` requires one. Filling it

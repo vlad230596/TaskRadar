@@ -111,7 +111,7 @@ final class InboxProvider
   Inbox create() => Inbox();
 }
 
-String _$inboxHash() => r'721ba2106c6fcc7269f1181b8cb8f0301cc2c618';
+String _$inboxHash() => r'7f7b13c8dc40afb154399c56f9a2e98e7d67e599';
 
 /// The sandbox (F8): the pile of lines the server holds, and what can happen to
 /// one.

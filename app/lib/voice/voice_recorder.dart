@@ -24,6 +24,11 @@ abstract interface class VoiceRecorder {
   /// Stops and throws away whatever was recorded.
   Future<void> cancel();
 
+  /// Deletes a finished recording -- the file [stop] returned -- once its text
+  /// has been delivered somewhere. Never before: until then the file is the
+  /// only copy of what was said. Never throws.
+  Future<void> discard(String path);
+
   /// How loud the microphone is hearing right now, from 0 (silence) to 1,
   /// sampled while a recording is running.
   ///
@@ -48,9 +53,11 @@ abstract interface class VoiceRecorder {
 /// seconds is 320 KB -- there is nothing to save by compressing it and then
 /// decoding it again a second later.
 class RecordVoiceRecorder implements VoiceRecorder {
-  RecordVoiceRecorder({AudioRecorder? recorder, Future<Directory> Function()? directory})
-    : _recorder = recorder ?? AudioRecorder(),
-      _directory = directory ?? getTemporaryDirectory;
+  RecordVoiceRecorder({
+    AudioRecorder? recorder,
+    Future<Directory> Function()? directory,
+  }) : _recorder = recorder ?? AudioRecorder(),
+       _directory = directory ?? getTemporaryDirectory;
 
   final AudioRecorder _recorder;
   final Future<Directory> Function() _directory;
@@ -111,6 +118,14 @@ class RecordVoiceRecorder implements VoiceRecorder {
   }
 
   @override
+  Future<void> discard(String path) async {
+    // Not the file a recording started since is being written to: the name is
+    // fixed, and the newer recording owns it now.
+    if (path == _path) return;
+    await _delete(path);
+  }
+
+  @override
   Stream<double> levels() {
     return _recorder.onAmplitudeChanged(_levelInterval).map((amplitude) {
       final normalised = (amplitude.current - _floorDbfs) / -_floorDbfs;
@@ -132,6 +147,10 @@ class RecordVoiceRecorder implements VoiceRecorder {
     final path = _path;
     _path = null;
     if (path == null) return;
+    await _delete(path);
+  }
+
+  Future<void> _delete(String path) async {
     try {
       final file = File(path);
       if (await file.exists()) await file.delete();

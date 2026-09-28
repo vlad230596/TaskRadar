@@ -279,23 +279,30 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   /// separate "Сохранить": the moment the line becomes a task is the only
   /// moment its text has to be right, and a correction that was typed and then
   /// filed must not be filed in its old wording.
-  Future<bool> _commitEdit() async {
+  ///
+  /// [parseId]: the text is a "Причесать" answer being kept (F15).
+  Future<bool> _commitEdit({String? parseId}) async {
     final text = _text.text.trim();
     if (text.isEmpty || text == widget.item.text) return true;
 
     return runMutation(
       context,
-      () => ref.read(inboxProvider.notifier).edit(widget.item, text),
+      () => ref
+          .read(inboxProvider.notifier)
+          .edit(widget.item, text, dictationParseId: parseId),
       failure: 'Не удалось изменить строчку.',
     );
   }
 
   /// [offerTidy] false: the line was tidied a moment ago, on its way here,
-  /// and asking again would be asking twice.
+  /// and asking again would be asking twice -- [shaped] and [parseId] are then
+  /// that answer's task and record, if it had them.
   Future<void> _file(
     String projectId,
     String projectName, {
     bool offerTidy = true,
+    FilingText? shaped,
+    String? parseId,
   }) async {
     if (!await _commitEdit() || !mounted) return;
 
@@ -306,14 +313,19 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
             _text.text,
             offerTidy: (text) => _offerTidy(text, projectName),
           )
-        : (file: true, shaped: null);
+        : (file: true, shaped: shaped, parseId: parseId);
     if (!decision.file || !mounted) return;
 
     final ok = await runMutation(
       context,
       () => ref
           .read(inboxProvider.notifier)
-          .file(widget.item, projectId: projectId, shaped: decision.shaped),
+          .file(
+            widget.item,
+            projectId: projectId,
+            shaped: decision.shaped,
+            dictationParseId: decision.parseId,
+          ),
       success: 'Задача добавлена в «$projectName».',
       failure: 'Не удалось перенести в проект.',
     );
@@ -324,7 +336,8 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   /// makes a title and a description of it -- or "Как есть", the server's
   /// split. Backing out of either step files nothing.
   Future<FilingDecision> _offerTidy(String text, String projectName) async {
-    const cancelled = (file: false, shaped: null);
+    const cancelled = (file: false, shaped: null, parseId: null);
+    const asIs = (file: true, shaped: null, parseId: null);
     final tidy = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -348,7 +361,7 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
       ),
     );
     if (tidy == null || !mounted) return cancelled;
-    if (!tidy) return (file: true, shaped: null);
+    if (!tidy) return asIs;
 
     final outcome = await openAiTidy(
       context,
@@ -357,8 +370,14 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
       destination: projectName,
     );
     switch (outcome) {
-      case TidyAccepted(result: TidiedTask(:final title, :final description)):
-        return (file: true, shaped: (title: title, description: description));
+      case TidyAccepted(
+        result: TidiedTask(:final title, :final description, :final parseId),
+      ):
+        return (
+          file: true,
+          shaped: (title: title, description: description),
+          parseId: parseId,
+        );
       case TidyKeptSource(:final source):
         // "Как надиктовано": the line as it is, with any correction made to
         // it on the way -- which is the line's text now, saved before filing.
@@ -366,7 +385,7 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
           _setText(source);
           if (!mounted || !await _commitEdit()) return cancelled;
         }
-        return (file: true, shaped: null);
+        return asIs;
       default:
         return cancelled;
     }
@@ -395,19 +414,29 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
     if (!mounted) return;
     switch (outcome) {
       case TidyAccepted(
-        result: TidiedLine(text: final line),
+        result: final TidiedLine line,
         :final projectId,
         :final projectName,
       ):
-        _setText(line);
+        _setText(line.text);
         if (projectId == null) {
-          await _commitEdit();
+          await _commitEdit(parseId: line.parseId);
         } else {
           final name =
               projectName ??
               projects.where((p) => p.id == projectId).firstOrNull?.name ??
               '';
-          await _file(projectId, name, offerTidy: false);
+          // Filed in the shape the same answer gave it -- no second call to
+          // the model. Corrected by hand, the line is the server's to split.
+          await _file(
+            projectId,
+            name,
+            offerTidy: false,
+            shaped: line.hasTaskShape
+                ? (title: line.title, description: line.description)
+                : null,
+            parseId: line.parseId,
+          );
         }
       case TidyKeptSource(:final source) when source != text:
         _setText(source);
@@ -456,14 +485,16 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   }
 
   Future<void> _dictate() async {
-    final text = await AppRoutes.openDictation(
+    final result = await AppRoutes.openDictation(
       context,
       destination: const FieldDestination(
         'в эту строку',
         kind: ParseKind.sandbox,
       ),
     );
-    if (text == null || text.isEmpty || !mounted) return;
+    // A sandbox field is always handed words -- see [FieldDestination.kind].
+    final text = result is FieldWords ? result.text : '';
+    if (text.isEmpty || !mounted) return;
     final combined = '${_text.text.trimRight()} $text'.trim();
     _text.value = TextEditingValue(
       text: combined,

@@ -11,6 +11,7 @@ import {
   interpretSandboxReply,
   interpretTaskTidyReply,
   inventedDateTerm,
+  inventedDateTerms,
   NOTE_PROMPT_VERSION,
   SANDBOX_PROMPT_VERSION,
   TASK_TIDY_PROMPT_VERSION,
@@ -94,6 +95,7 @@ describe("task_tidy", () => {
       ).toEqual({
         title: "Позвонить в сервис",
         description: "Спросить про колодки в пятницу.",
+        warnings: [],
       });
     });
 
@@ -107,16 +109,30 @@ describe("task_tidy", () => {
     });
 
     it.each([
-      ["a weekday", { title: "Позвонить маме", description: "До вторника." }],
-      ["a relative day", { title: "Позвонить маме завтра", description: null }],
-      ["a date", { title: "Позвонить маме", description: "Срок — 25.09." }],
-      ["an ISO date", { title: "Позвонить маме", description: "2026-09-25" }],
-      ["a time", { title: "Позвонить маме в 10:00", description: null }],
-      ["a month", { title: "Позвонить маме", description: "В начале октября." }],
-    ])("refuses a reply that invents %s", (_label, value) => {
-      expect(() => interpretTaskTidyReply(reply(value), "позвонить маме")).toThrow(
-        UpstreamModelError,
+      ["a weekday", { title: "Позвонить маме", description: "До вторника." }, "вторника"],
+      ["a relative day", { title: "Позвонить маме завтра", description: null }, "завтра"],
+      ["a date", { title: "Позвонить маме", description: "Срок — 25.09." }, "25.09"],
+      ["an ISO date", { title: "Позвонить маме", description: "2026-09-25" }, "2026-09-25"],
+      ["a time", { title: "Позвонить маме в 10:00", description: null }, "10:00"],
+      ["a month", { title: "Позвонить маме", description: "В начале октября." }, "октября"],
+    ])("keeps a reply that invents %s, with a warning naming it", (_label, value, token) => {
+      const tidied = interpretTaskTidyReply(reply(value), "позвонить маме");
+      expect(tidied.title).toMatch(/^Позвонить маме/);
+      expect(tidied.warnings).toEqual([{ kind: "invented_date", token }]);
+    });
+
+    it("warns about a number the model wrote down from words, and keeps the answer", () => {
+      // "три ноль" is the user's own time, spelled out; the detector cannot
+      // tell "3.00" from an invented one, so the user decides.
+      const tidied = interpretTaskTidyReply(
+        reply({ title: "Созвон с Петей", description: "В 3.00, обсудить смету." }),
+        "созвон с петей в три ноль обсудить смету",
       );
+      expect(tidied).toEqual({
+        title: "Созвон с Петей",
+        description: "В 3.00, обсудить смету.",
+        warnings: [{ kind: "invented_date", token: "3.00" }],
+      });
     });
 
     it("keeps a date the source did say", () => {
@@ -148,6 +164,13 @@ describe("task_tidy", () => {
       expect(inventedDateTerm("к пятнице", "До пятницы")).toBeNull();
       expect(inventedDateTerm("в субботу", "В субботу")).toBeNull();
     });
+
+    it("finds every invented term once, in order, spelled as the reply spells it", () => {
+      expect(
+        inventedDateTerms("позвонить", "Позвонить Завтра в 10:00, потом в 10:00 и в Пятницу"),
+      ).toEqual(["Завтра", "10:00", "Пятницу"]);
+      expect(inventedDateTerms("позвонить", "Позвонить")).toEqual([]);
+    });
   });
 });
 
@@ -175,12 +198,24 @@ describe("note", () => {
     expect(interpretNoteReply(content)).toEqual({
       title: "План на дачу",
       content: "- гвозди\n- краска",
+      warnings: [],
     });
     // The user's own title is not replaced, whatever the model says.
     expect(interpretNoteReply(content, "Дача")).toEqual({
       title: null,
       content: "- гвозди\n- краска",
+      warnings: [],
     });
+  });
+
+  it("warns about a date the note did not have, and keeps the note", () => {
+    const tidied = interpretNoteReply(
+      reply({ title: null, content: "Купить гвозди до субботы." }),
+      "Дача",
+      "купить гвозди",
+    );
+    expect(tidied.content).toBe("Купить гвозди до субботы.");
+    expect(tidied.warnings).toEqual([{ kind: "invented_date", token: "субботы" }]);
   });
 
   it.each([
@@ -211,10 +246,51 @@ describe("sandbox", () => {
     expect(system.content).toContain("проектов нет");
   });
 
+  it("asks for the line as a task too, so taking the project needs no second call", () => {
+    const [system] = buildSandboxMessages({ ...input("колодки"), projects: choices });
+    expect(system.content).toContain('"title"');
+    expect(system.content).toContain('"description"');
+    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-2");
+  });
+
   it("keeps a project that is on the list, with its name from the list", () => {
     expect(
-      interpretSandboxReply(reply({ text: " Поменять колодки ", projectId: "prj_car" }), choices),
-    ).toEqual({ text: "Поменять колодки", projectId: "prj_car", projectName: "Машина" });
+      interpretSandboxReply(
+        reply({
+          text: " Поменять колодки, передние ",
+          title: "поменять колодки.",
+          description: "Передние.",
+          projectId: "prj_car",
+        }),
+        choices,
+      ),
+    ).toEqual({
+      text: "Поменять колодки, передние",
+      title: "Поменять колодки",
+      description: "Передние.",
+      projectId: "prj_car",
+      projectName: "Машина",
+      warnings: [],
+    });
+  });
+
+  it("splits the line itself when the reply has no title", () => {
+    const long =
+      "Поменять колодки на машине. Передние, до зимы, заодно спросить в сервисе про " +
+      "диски и сколько стоит работа, если делать всё вместе";
+    const tidied = interpretSandboxReply(reply({ text: long, title: "  " }), choices);
+    expect(tidied.title).toBe("Поменять колодки на машине");
+    expect(tidied.description).toMatch(/^Передние/);
+  });
+
+  it("warns about a date the line did not have", () => {
+    expect(
+      interpretSandboxReply(
+        reply({ text: "Колодки до пятницы", title: "Колодки", description: "До пятницы" }),
+        choices,
+        "колодки",
+      ).warnings,
+    ).toEqual([{ kind: "invented_date", token: "пятницы" }]);
   });
 
   it.each([
@@ -225,8 +301,11 @@ describe("sandbox", () => {
   ])("turns %s into no suggestion", (_label, projectId) => {
     expect(interpretSandboxReply(reply({ text: "Колодки", projectId }), choices)).toEqual({
       text: "Колодки",
+      title: "Колодки",
+      description: null,
       projectId: null,
       projectName: null,
+      warnings: [],
     });
   });
 
@@ -259,15 +338,23 @@ describe("createTidyParsers", () => {
     expect(new Set([...traces.map((t) => t.promptVersion), DICTATION_PROMPT_VERSION]).size).toBe(4);
   });
 
-  it("traces an invented date as a failure, keeping the reply", async () => {
-    const parsers = createTidyParsers(
-      async () => reply({ title: "Позвонить маме завтра" }),
-      async () => "m",
-    );
+  it("traces an invented date as a success with a warning, never as a failure", async () => {
+    const answer = reply({ title: "Позвонить маме завтра", content: "Завтра", text: "Завтра" });
+    const parsers = createTidyParsers(async () => answer, async () => "m");
+    const warned = { warnings: [{ kind: "invented_date", token: "завтра" }] };
+
     expect(await parsers.task_tidy(input("позвонить маме"))).toMatchObject({
-      result: null,
-      rawReply: reply({ title: "Позвонить маме завтра" }),
-      error: expect.stringMatching(/invents a date/),
+      result: { title: "Позвонить маме завтра", ...warned },
+      rawReply: answer,
+      error: null,
+    });
+    expect(await parsers.note(input("позвонить маме"))).toMatchObject({
+      result: { content: "Завтра", ...warned },
+      error: null,
+    });
+    expect(await parsers.sandbox({ ...input("позвонить маме"), projects: [] })).toMatchObject({
+      result: { warnings: [{ kind: "invented_date", token: "Завтра" }] },
+      error: null,
     });
   });
 });

@@ -538,7 +538,7 @@ final class VoiceDictationProvider
   }
 }
 
-String _$voiceDictationHash() => r'984912114e85facfd1313a5385db2f678738c113';
+String _$voiceDictationHash() => r'fd89fb27f7f18e006943cf3e24ebfa9f8b9310a5';
 
 /// The dictation: start, speak, stop, get text.
 ///

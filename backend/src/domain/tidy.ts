@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient";
 import type { DictationInput } from "./dictation";
+import { splitInboxText } from "./inboxSplit";
 import { createKindParser, KindParser, ParseSpec } from "./parsePipeline";
 
 /*
@@ -21,11 +22,19 @@ import { createKindParser, KindParser, ParseSpec } from "./parsePipeline";
  * WHY THE DATES ARE CHECKED AND NOT TRUSTED
  *
  * The one fact a small model likes to add is a date -- "до пятницы", "завтра"
- * -- because task-shaped text in its training usually has one. A tidied task
- * with a deadline the user never said is worse than no tidying, so a
- * `task_tidy` reply that names a day, a date or a time the source did not is
- * refused outright (see [inventedDateTerm]), and the client keeps the text as
- * it was.
+ * -- because task-shaped text in its training usually has one. A tidied text
+ * with a deadline the user never said is worse than no tidying, so every reply
+ * of these three kinds is searched for a day, a date or a time the source did
+ * not name (see [inventedDateTerms]).
+ *
+ * What is found is a warning, not a refusal. It used to be a refusal, and the
+ * detector cannot tell an invented deadline from a number the model merely
+ * wrote down properly: "встреча в три ноль" tidied into "в 3.00" is the
+ * tidying doing its job, and throwing the whole answer away for it cost the
+ * user everything else the model fixed. So the reply goes back with
+ * `warnings: [{ kind: "invented_date", token }]`, the client says so over the
+ * answer, and the user -- who knows what was said -- takes it or goes back to
+ * the source.
  *
  * WHY THE SANDBOX GETS THE PROJECT LIST FROM HERE
  *
@@ -47,31 +56,52 @@ export interface SandboxInput extends DictationInput {
   projects: ProjectChoice[];
 }
 
+/**
+ * Something in a reply the user should look at before taking it. Today one
+ * kind: a day, a date or a time the source did not name, as the reply wrote
+ * it (`token`) -- see the note at the top of this file.
+ */
+export interface TidyWarning {
+  kind: "invented_date";
+  token: string;
+}
+
 /** `task_tidy`: the task's own text, tidied into its two fields. */
 export interface TidiedTask {
   title: string;
   description: string | null;
+  warnings: TidyWarning[];
 }
 
 /** `note`: the body as markdown, and a title only when the note had none. */
 export interface TidiedNote {
   title: string | null;
   content: string;
+  warnings: TidyWarning[];
 }
 
-/** `sandbox`: the line tidied, and the project it most likely belongs to. */
+/**
+ * `sandbox`: the line tidied, the project it most likely belongs to, and the
+ * same text split the way a task is -- so that filing it into that project
+ * needs no second call to the model.
+ */
 export interface TidiedLine {
   text: string;
+  /** [text] as a task: a short title, the rest as the description. */
+  title: string;
+  description: string | null;
   /** One of the ids the model was shown, or null. */
   projectId: string | null;
   /** That project's name as the database has it, for the chip; null with it. */
   projectName: string | null;
+  warnings: TidyWarning[];
 }
 
 /** See `DICTATION_PROMPT_VERSION` in `./dictation.ts` for what bumping means. */
 export const TASK_TIDY_PROMPT_VERSION = "tidy-1";
 export const NOTE_PROMPT_VERSION = "note-1";
-export const SANDBOX_PROMPT_VERSION = "sandbox-1";
+/** 2: the reply carries the line as a task too, `title` and `description`. */
+export const SANDBOX_PROMPT_VERSION = "sandbox-2";
 
 /** The rules every tidying prompt shares, word for word. */
 const CLEANUP_RULES = [
@@ -150,21 +180,40 @@ function normalise(text: string): string {
 }
 
 /**
- * The first day, date or time [output] names that [source] does not, or
- * null. "В пятницу" in both is fine -- the tidying kept it; "до пятницы" in the
- * output alone is the model inventing a deadline.
+ * Every day, date or time [output] names that [source] does not, each once,
+ * in the order they appear. "В пятницу" in both is fine -- the tidying kept
+ * it; "до пятницы" in the output alone is the model inventing a deadline.
+ *
+ * Returned as [output] spells them, so the client can find the same
+ * characters again to mark them: the comparison is blind to case and to ё,
+ * the token is not. (Lower-casing and ё -> е keep every index in place.)
  */
-export function inventedDateTerm(source: string, output: string): string | null {
+export function inventedDateTerms(source: string, output: string): string[] {
   const from = normalise(source);
   const to = normalise(output);
+  const found = new Map<number, string>();
+  const keep = (index: number, length: number) =>
+    found.set(index, output.slice(index, index + length));
   for (const word of DATE_WORDS) {
-    const found = to.match(word);
-    if (found !== null && !word.test(from)) return found[0];
+    const match = to.match(word);
+    if (match?.index !== undefined && !word.test(from)) keep(match.index, match[0].length);
   }
-  for (const found of to.matchAll(DATE_NUMBERS)) {
-    if (!from.includes(found[0])) return found[0];
+  for (const match of to.matchAll(DATE_NUMBERS)) {
+    if (!from.includes(match[0])) keep(match.index, match[0].length);
   }
-  return null;
+  const ordered = [...found.entries()].sort(([a], [b]) => a - b).map(([, token]) => token);
+  return [...new Set(ordered)];
+}
+
+/** The first of [inventedDateTerms], or null. */
+export function inventedDateTerm(source: string, output: string): string | null {
+  return inventedDateTerms(source, output)[0] ?? null;
+}
+
+/** [inventedDateTerms] of the reply's fields, as its `warnings`. */
+export function dateWarnings(source: string, ...fields: (string | null)[]): TidyWarning[] {
+  const output = fields.filter((field) => field !== null).join("\n");
+  return inventedDateTerms(source, output).map((token) => ({ kind: "invented_date", token }));
 }
 
 // ---- task_tidy ----
@@ -212,8 +261,9 @@ const taskTidyReplySchema = z.object({
 });
 
 /**
- * The reply, checked. Refused -- [UpstreamModelError] -- when it has no title
- * or names a date [source] did not: see the note at the top of this file.
+ * The reply, checked. Refused -- [UpstreamModelError] -- when it has no title.
+ * A date [source] did not name is a warning, not a refusal: see the note at
+ * the top of this file.
  */
 export function interpretTaskTidyReply(content: string, source: string): TidiedTask {
   const parsed = taskTidyReplySchema.safeParse(parseJsonObject(content));
@@ -223,11 +273,7 @@ export function interpretTaskTidyReply(content: string, source: string): TidiedT
   if (title === "") throw new UpstreamModelError("reply has an empty title");
   const description = textOrNull(parsed.data.description);
 
-  const invented = inventedDateTerm(source, `${title}\n${description ?? ""}`);
-  if (invented !== null) {
-    throw new UpstreamModelError(`reply invents a date: ${invented}`);
-  }
-  return { title, description };
+  return { title, description, warnings: dateWarnings(source, title, description) };
 }
 
 export const taskTidySpec: ParseSpec<DictationInput, TidiedTask> = {
@@ -277,9 +323,14 @@ const noteReplySchema = z.object({
 
 /**
  * The reply, checked. A title is kept only when the note had none -- whatever
- * the model says, a title the user wrote is not replaced from here.
+ * the model says, a title the user wrote is not replaced from here. A date
+ * [source] did not name is a warning.
  */
-export function interpretNoteReply(content: string, noteTitle?: string): TidiedNote {
+export function interpretNoteReply(
+  content: string,
+  noteTitle?: string,
+  source = "",
+): TidiedNote {
   const parsed = noteReplySchema.safeParse(parseJsonObject(content));
   if (!parsed.success) throw new UpstreamModelError("reply has no content");
 
@@ -288,16 +339,14 @@ export function interpretNoteReply(content: string, noteTitle?: string): TidiedN
 
   const hadTitle = (noteTitle?.trim() ?? "") !== "";
   const suggested = textOrNull(parsed.data.title);
-  return {
-    title: hadTitle || suggested === null ? null : tidyTitle(suggested) || null,
-    content: body,
-  };
+  const title = hadTitle || suggested === null ? null : tidyTitle(suggested) || null;
+  return { title, content: body, warnings: dateWarnings(source, title, body) };
 }
 
 export const noteSpec: ParseSpec<DictationInput, TidiedNote> = {
   promptVersion: NOTE_PROMPT_VERSION,
   build: buildNoteMessages,
-  interpret: (content, input) => interpretNoteReply(content, input.noteTitle),
+  interpret: (content, input) => interpretNoteReply(content, input.noteTitle, input.text),
 };
 
 // ---- sandbox ----
@@ -314,11 +363,17 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
     "",
     "Верни ОДИН JSON-объект с ключами:",
     '- "text": строчка, приведённая в порядок;',
+    '- "title": та же строчка как название задачи: коротко, до 80 символов, без точки в конце, по возможности с глагола;',
+    '- "description": всё из строчки, что не вошло в название, или null;',
     '- "projectId": id проекта из списка ниже, к которому она скорее всего относится, или null.',
     "",
     "Текст:",
-    "- одна мысль остаётся одной строчкой: не дели на название и описание, не делай списков без нужды;",
+    "- одна мысль остаётся одной строчкой: не делай списков без нужды;",
     "- сохрани всё, что было сказано.",
+    "",
+    "Название и описание:",
+    '- это тот же текст, что в "text", разложенный как задача: если строчку перенесут в проект, она станет задачей с этими полями;',
+    '- ничего сверх "text"; описание не повторяет название.',
     "",
     ...CLEANUP_RULES,
     "",
@@ -338,26 +393,52 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
 
 const sandboxReplySchema = z.object({
   text: z.string(),
+  title: z.string().nullish().catch(null),
+  description: z.string().nullish().catch(null),
   projectId: z.string().nullish().catch(null),
 });
 
-/** The reply, checked. An id that is not one of [projects] becomes null. */
-export function interpretSandboxReply(content: string, projects: ProjectChoice[]): TidiedLine {
+/**
+ * The reply, checked. An id that is not one of [projects] becomes null.
+ *
+ * A reply with no usable title is still a usable line: the task is then split
+ * from the tidied text the way the server splits any line it files
+ * (`./inboxSplit.ts`), rather than the whole answer being lost for a field the
+ * line itself does not need. A date [source] did not name is a warning.
+ */
+export function interpretSandboxReply(
+  content: string,
+  projects: ProjectChoice[],
+  source = "",
+): TidiedLine {
   const parsed = sandboxReplySchema.safeParse(parseJsonObject(content));
   if (!parsed.success) throw new UpstreamModelError("reply has no text");
 
   const text = parsed.data.text.trim();
   if (text === "") throw new UpstreamModelError("reply has empty text");
 
+  const title = tidyTitle(parsed.data.title ?? "");
+  const task =
+    title === ""
+      ? splitInboxText(text)
+      : { title, description: textOrNull(parsed.data.description) };
+
   const id = parsed.data.projectId?.trim() ?? "";
   const project = projects.find((choice) => choice.id === id) ?? null;
-  return { text, projectId: project?.id ?? null, projectName: project?.name ?? null };
+  return {
+    text,
+    title: task.title,
+    description: task.description,
+    projectId: project?.id ?? null,
+    projectName: project?.name ?? null,
+    warnings: dateWarnings(source, text, task.title, task.description),
+  };
 }
 
 export const sandboxSpec: ParseSpec<SandboxInput, TidiedLine> = {
   promptVersion: SANDBOX_PROMPT_VERSION,
   build: buildSandboxMessages,
-  interpret: (content, input) => interpretSandboxReply(content, input.projects),
+  interpret: (content, input) => interpretSandboxReply(content, input.projects, input.text),
 };
 
 // ---- All three ----

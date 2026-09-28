@@ -3,12 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskradar/providers/capture_queue_providers.dart';
+import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/dictation_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/widgets/dictation.dart';
 
+import 'support/fake_backend.dart';
+import 'support/fake_capture_queue_store.dart';
+import 'support/fake_project_backend.dart';
 import 'support/fake_voice.dart';
 
 /// The dictation screen (F12): dark, full of screen, and already recording.
@@ -30,9 +35,16 @@ void main() {
   late FakeVoiceRecorder recorder;
   late FakeSpeechRecognizer recognizer;
 
+  late FakeBackend backend;
+  late FakeCaptureQueueStore store;
+  late FakeProjectBackend server;
+
   setUp(() {
     recorder = FakeVoiceRecorder();
     recognizer = FakeSpeechRecognizer();
+    backend = FakeBackend();
+    server = FakeProjectBackend(backend);
+    store = FakeCaptureQueueStore();
   });
 
   /// Puts the screen up the way the microphone button does, and collects
@@ -56,6 +68,9 @@ void main() {
             voiceModelInstallationProvider.overrideWith(_ReadyModel.new)
           else
             voiceModelInstallationProvider.overrideWith(_MissingModel.new),
+          // Where a dictation goes when its screen was closed mid-recognition.
+          apiClientProvider.overrideWithValue(backend.client),
+          captureQueueStoreProvider.overrideWithValue(store),
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
@@ -64,14 +79,20 @@ void main() {
               body: Center(
                 child: ElevatedButton(
                   onPressed: () async {
-                    final result = await Navigator.of(context).push<String>(
-                      MaterialPageRoute<String>(
-                        builder: (_) => const DictationScreen(
-                          destination: FieldDestination('в задачу'),
-                        ),
-                      ),
-                    );
-                    popped.add(result);
+                    final result = await Navigator.of(context)
+                        .push<FieldDictation>(
+                          MaterialPageRoute<FieldDictation>(
+                            builder: (_) => const DictationScreen(
+                              destination: FieldDestination('в задачу'),
+                            ),
+                          ),
+                        );
+                    // A field of one text is always handed words.
+                    popped.add(switch (result) {
+                      FieldWords(:final text) => text,
+                      FieldTaskText() => fail('a note field got a task'),
+                      null => null,
+                    });
                   },
                   child: const Text('открыть'),
                 ),
@@ -341,6 +362,89 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('"почти готово" only on the last piece, and the way out', (
+      tester,
+    ) async {
+      recognizer.chunks = const <String>['Раз.', 'Два.', 'Три.', 'Четыре.'];
+      final gates = <Completer<void>>[_gate(), _gate(), _gate(), _gate()];
+      recognizer.beforeChunk = (i) => gates[i].future;
+      await open(tester);
+      await tester.tap(find.text('Готово'));
+      await tester.pump();
+      await tester.pump();
+
+      // Under the bar from the start: the answer to "may I put it away?".
+      expect(
+        find.text('можно закрыть экран — текст попадёт в песочницу'),
+        findsOneWidget,
+      );
+      // No piece done, no estimate: nothing is guessed from nothing.
+      expect(find.textContaining('осталось около'), findsNothing);
+      expect(find.text('почти готово'), findsNothing);
+
+      gates[0].complete();
+      await tester.pump();
+      await tester.pump();
+      gates[1].complete();
+      await tester.pump();
+      await tester.pump();
+      // "2 из 4" is not almost done, however quick the first two were.
+      expect(find.text('Распознаю · 2 из 4'), findsOneWidget);
+      expect(find.text('почти готово'), findsNothing);
+      expect(find.textContaining('осталось около'), findsOneWidget);
+
+      gates[2].complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Распознаю · 3 из 4'), findsOneWidget);
+      expect(find.text('почти готово'), findsOneWidget);
+
+      gates[3].complete();
+      await tester.pump();
+      await tester.pump();
+    });
+
+    testWidgets('closing the screen mid-recognition files the text in the '
+        'sandbox, and says so', (tester) async {
+      recognizer.chunks = const <String>['Первое.', 'Второе.'];
+      final gate = _gate();
+      recognizer.beforeChunk = (i) => i == 1 ? gate.future : _done();
+      final popped = await open(tester);
+      await tester.tap(find.text('Готово'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Распознаю · 1 из 2'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Закрыть без записи'));
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 200));
+      }
+      expect(find.byType(DictationScreen), findsNothing);
+      expect(popped, <String?>[null]);
+      // Not deleted while it is the only copy of what was said.
+      expect(recorder.discarded, isEmpty);
+
+      gate.complete();
+      for (var i = 0; i < 5; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(find.text('Диктовка распознана — в песочнице'), findsOneWidget);
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('открыть')),
+      );
+      // In the sandbox: still queued on the device, or already on the server.
+      final queued = container.read(pendingCapturesProvider);
+      expect(
+        <String>[
+          ...queued.map((e) => e.text),
+          ...server.inbox.map((item) => item['text'] as String),
+        ],
+        <String>['Первое. Второе.'],
+      );
+      expect(recorder.discarded, <String>['dictation.wav']);
+    });
+
     testWidgets('half a minute before the ceiling, the screen counts down', (
       tester,
     ) async {
@@ -398,10 +502,45 @@ void main() {
       expect(formatDictationClock(const Duration(seconds: 87)), '1:27');
     });
   });
+
+  group('the guess under the recognition bar', () {
+    DictationRecognising at(int done, int total, {int? seconds}) =>
+        DictationRecognising(
+          length: const Duration(minutes: 4),
+          done: done,
+          total: total,
+          remaining: seconds == null ? null : Duration(seconds: seconds),
+        );
+
+    test('"почти готово" only while the last piece is being recognised', () {
+      // At "2 из 8" with two quick pieces behind it, the old rule said "почти
+      // готово" -- a promise six more pieces then broke.
+      expect(recognitionEstimate(at(2, 8, seconds: 1)), isNot('почти готово'));
+      expect(recognitionEstimate(at(7, 8, seconds: 1)), 'почти готово');
+      expect(recognitionEstimate(at(7, 8)), 'почти готово');
+    });
+
+    test('"осталось около" only when there is an estimate', () {
+      expect(recognitionEstimate(at(0, 8)), isNull);
+      expect(recognitionEstimate(at(2, 8)), isNull);
+      expect(recognitionEstimate(at(2, 8, seconds: 22)), 'осталось около 20 с');
+      expect(recognitionEstimate(at(2, 8, seconds: 1)), 'осталось около 5 с');
+      expect(
+        recognitionEstimate(at(1, 8, seconds: 130)),
+        'осталось около 2 мин',
+      );
+    });
+
+    test('nothing once every piece is done', () {
+      expect(recognitionEstimate(at(8, 8, seconds: 0)), isNull);
+    });
+  });
 }
 
 /// A completer typed for the fakes' gates, so the tests read as English.
 Completer<void> _gate() => Completer<void>();
+
+Future<void> _done() => Future<void>.value();
 
 class _ReadyModel extends VoiceModelInstallation {
   @override

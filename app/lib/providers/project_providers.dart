@@ -327,6 +327,38 @@ class ProjectTasks extends _$ProjectTasks {
     );
   }
 
+  /// Saves a task's whole text in one request, as the answer of a "Причесать"
+  /// (F15) -- [dictationParseId] labels the server's record of that answer
+  /// with the text as saved.
+  ///
+  /// One PATCH with both fields rather than [editTitle] then
+  /// [editDescription]: the record is labelled from the row the request
+  /// leaves behind, and a label taken between the two halves would be half
+  /// the answer. Sent even when nothing changed -- "the answer was right as
+  /// it came" is the most useful label there is.
+  Future<void> editText(
+    Task task, {
+    required String title,
+    required String? description,
+    required String dictationParseId,
+  }) {
+    final nextTitle = title.trim().isEmpty ? task.title : title.trim();
+    final trimmed = description?.trim();
+    final next = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
+
+    return _editText(
+      task,
+      (rows, index) =>
+          rows[index].copyWith(title: nextTitle, description: next),
+      () => _api.updateTask(
+        task.id,
+        title: nextTitle,
+        description: PatchField<String>.toOrClear(next),
+        dictationParseId: dictationParseId,
+      ),
+    );
+  }
+
   Future<void> remove(Task task) {
     return _mutate((rows) {
       if (!rows.any((row) => row.id == task.id)) return null;
@@ -562,7 +594,15 @@ class ProjectNotes extends _$ProjectNotes {
 
   /// Saves a note. Either field may be omitted; passing neither is a no-op
   /// rather than a 400.
-  Future<void> edit(Note note, {String? title, String? content}) async {
+  ///
+  /// [dictationParseId]: what is saved includes a "Причесать" answer (F15);
+  /// the server's record of it is labelled with the note as saved.
+  Future<void> edit(
+    Note note, {
+    String? title,
+    String? content,
+    String? dictationParseId,
+  }) async {
     final nextTitle = title?.trim();
     final changedTitle =
         nextTitle != null && nextTitle.isNotEmpty && nextTitle != note.title;
@@ -591,6 +631,7 @@ class ProjectNotes extends _$ProjectNotes {
         note.id,
         title: changedTitle ? nextTitle : null,
         content: changedContent ? content : null,
+        dictationParseId: dictationParseId,
       );
       if (!ref.mounted) return;
 

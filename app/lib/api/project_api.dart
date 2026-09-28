@@ -66,10 +66,7 @@ class ProjectApi {
   /// scope by position -- but the client always sends it, because the board the
   /// project is being created from is already showing one specific scope and
   /// landing it anywhere else would be a surprise.
-  Future<Project> createProject({
-    required String name,
-    String? scopeId,
-  }) async {
+  Future<Project> createProject({required String name, String? scopeId}) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/projects',
       body: <String, dynamic>{'name': name, 'scopeId': ?scopeId},
@@ -95,7 +92,10 @@ class ProjectApi {
   ///
   /// Answers the same object as [fetchProject], so there is one `Project` model
   /// and no rename-flavoured twin of it.
-  Future<Project> renameProject(String projectId, {required String name}) async {
+  Future<Project> renameProject(
+    String projectId, {
+    required String name,
+  }) async {
     final json = await _client.patch<Map<String, dynamic>>(
       '/projects/$projectId',
       body: <String, dynamic>{'name': name},
@@ -236,6 +236,7 @@ class ProjectApi {
     PatchField<String> description = const PatchField<String>.keep(),
     TaskStatus? status,
     PatchField<String> remindAt = const PatchField<String>.keep(),
+    String? dictationParseId,
   }) async {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
@@ -253,6 +254,9 @@ class ProjectApi {
         'PATCH /tasks/:id with no fields to change',
       );
     }
+    // Added after the check: the record of a "Причесать" answer (F15) rides
+    // along with a change, and is never a change by itself.
+    if (dictationParseId != null) body['dictationParseId'] = dictationParseId;
 
     final json = await _client.patch<Map<String, dynamic>>(
       '/tasks/$taskId',
@@ -332,10 +336,14 @@ class ProjectApi {
   /// `content` is a non-null column whose empty value is `""`. So null means
   /// "not provided" here and there is no [PatchField] in sight -- an empty note
   /// body is `content: ''`, which is a perfectly ordinary value.
+  ///
+  /// [dictationParseId]: the text is a "Причесать" answer (F15), whose record
+  /// on the server learns it was kept. Not a field to change on its own.
   Future<Note> updateNote(
     String noteId, {
     String? title,
     String? content,
+    String? dictationParseId,
   }) async {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
@@ -348,6 +356,7 @@ class ProjectApi {
         'PATCH /notes/:id with no fields to change',
       );
     }
+    if (dictationParseId != null) body['dictationParseId'] = dictationParseId;
 
     final json = await _client.patch<Map<String, dynamic>>(
       '/notes/$noteId',

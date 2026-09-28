@@ -112,6 +112,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
   bool _noteOpen = false;
 
+  /// The server's record of the tidied text now in the fields -- "Причесать",
+  /// or a dictation "Разобрать" into this task -- sent with the save so the
+  /// record learns what was kept (F15). Null once saved, and when the fields
+  /// hold no answer.
+  String? _tidyParseId;
+
   @override
   void dispose() {
     _title.dispose();
@@ -144,7 +150,11 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     final note = _note.text.trim();
     final ok = await runMutation(
       context,
-      () => _tasks.create(title, description: note.isEmpty ? null : note),
+      () => _tasks.create(
+        title,
+        description: note.isEmpty ? null : note,
+        dictationParseId: _tidyParseId,
+      ),
       failure: 'Не удалось добавить задачу.',
     );
     if (!ok || !mounted) return;
@@ -165,12 +175,24 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
     // Both writes, but only the ones that changed: `editTitle` and
     // `editDescription` each short-circuit on an unchanged value, so this is
-    // one PATCH in the common case and zero when nothing was touched.
+    // one PATCH in the common case and zero when nothing was touched. A
+    // tidied text is one PATCH of both, with the record of the answer.
+    final parseId = _tidyParseId;
     final ok = await runMutation(context, () async {
+      if (parseId != null) {
+        await _tasks.editText(
+          task,
+          title: title,
+          description: note.isEmpty ? null : note,
+          dictationParseId: parseId,
+        );
+        return;
+      }
       await _tasks.editTitle(task, title);
       await _tasks.editDescription(task, note.isEmpty ? null : note);
     }, failure: 'Не удалось сохранить задачу.');
     if (!ok || !mounted) return;
+    _tidyParseId = null;
     Navigator.of(context).pop();
   }
 
@@ -292,11 +314,15 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           ?.name,
     );
     switch (outcome) {
-      case TidyAccepted(result: TidiedTask(:final title, :final description)):
+      case TidyAccepted(
+        result: TidiedTask(:final title, :final description, :final parseId),
+      ):
+        _tidyParseId = parseId;
         return (title: title, description: description);
       // "Как надиктовано" after correcting the source by hand: the corrected
       // text is what the user asked for, split back the way it was joined.
       case TidyKeptSource(:final source) when source != _joinedSource(current):
+        _tidyParseId = null;
         final lines = source.split('\n');
         final rest = lines.skip(1).join('\n').trim();
         return (
@@ -313,15 +339,40 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     ?text.description,
   ].where((part) => part.isNotEmpty).join('\n');
 
-  /// Dictation into the title, appended rather than replacing -- a phrase said
-  /// in two goes is one thought continued.
+  /// Dictation into the task.
+  ///
+  /// As said, the words are appended to the title -- a phrase said in two
+  /// goes is one thought continued. "Разобрать" on the dictation screen
+  /// tidies the task's text and the words together (the screen is handed the
+  /// text for that, see [FieldDestination.task]), and its answer replaces
+  /// both fields, as "Причесать" does.
   Future<void> _dictate() async {
-    final text = await AppRoutes.openDictation(
+    final note = _note.text.trim();
+    final result = await AppRoutes.openDictation(
       context,
-      destination: const FieldDestination('в задачу', kind: ParseKind.taskTidy),
+      destination: FieldDestination(
+        'в задачу',
+        kind: ParseKind.taskTidy,
+        task: (
+          title: _title.text.trim(),
+          description: note.isEmpty ? null : note,
+        ),
+      ),
     );
-    if (text == null || text.isEmpty || !mounted) return;
-    appendDictated(_title, text: text);
+    if (!mounted) return;
+    switch (result) {
+      case FieldWords(:final text) when text.isNotEmpty:
+        appendDictated(_title, text: text);
+      case FieldTaskText(:final title, :final description, :final parseId):
+        setState(() {
+          _title.text = title;
+          _note.text = description ?? '';
+          if (_note.text.isNotEmpty) _noteOpen = true;
+          _tidyParseId = parseId;
+        });
+      default:
+        break;
+    }
   }
 
   @override

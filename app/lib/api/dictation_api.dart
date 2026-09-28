@@ -48,23 +48,57 @@ sealed class TidyResult {
           title: json['title'] as String,
           description: json['description'] as String?,
           parseId: json['parseId'] as String?,
+          warnings: TidyWarning.listFrom(json['warnings']),
         ),
         ParseKind.note => TidiedNote(
           title: json['title'] as String?,
           content: json['content'] as String,
           parseId: json['parseId'] as String?,
+          warnings: TidyWarning.listFrom(json['warnings']),
         ),
-        ParseKind.sandbox => TidiedLine(
-          text: json['text'] as String,
-          projectId: json['projectId'] as String?,
-          projectName: json['projectName'] as String?,
-          parseId: json['parseId'] as String?,
-        ),
+        ParseKind.sandbox => TidiedLine.fromJson(json),
       };
 
   /// The server's record of this parse in its dataset, or null when it could
   /// not keep one.
   String? get parseId;
+
+  /// What the user should check before taking the answer. Empty almost always.
+  List<TidyWarning> get warnings => const <TidyWarning>[];
+}
+
+/// Something in an answer the user should look at before taking it
+/// (`TidyWarning` in `backend/src/domain/tidy.ts`).
+///
+/// Today one kind: [inventedDate], a day, a date or a time the words did not
+/// say -- "три ноль" written down as "3.00", or a "до пятницы" the model made
+/// up. The server cannot tell the two apart, so it never withholds the answer
+/// for it; it names the [token], as the answer spells it, and the screen says
+/// so over the answer.
+class TidyWarning {
+  const TidyWarning({required this.kind, required this.token});
+
+  /// The one kind there is.
+  static const String inventedDate = 'invented_date';
+
+  final String kind;
+  final String token;
+
+  /// The `warnings` of a result: a list of `{kind, token}`. Anything else --
+  /// an older server that sends none, an entry of an unknown shape -- is no
+  /// warning rather than a failed parse: a warning is advice, and the answer
+  /// is usable without it.
+  static List<TidyWarning> listFrom(Object? json) {
+    if (json is! List) return const <TidyWarning>[];
+    return List<TidyWarning>.unmodifiable(<TidyWarning>[
+      for (final entry in json)
+        if (entry case {
+          'kind': final String kind,
+          'token': final String token,
+        } when token.isNotEmpty)
+          TidyWarning(kind: kind, token: token),
+    ]);
+  }
 }
 
 /// A dictation turned into a task by the server's language model (F14).
@@ -110,43 +144,110 @@ class ParsedDictation extends TidyResult {
 /// An existing task's text, tidied: the same words, split into a title and a
 /// description, with nothing added -- no date the text did not say.
 class TidiedTask extends TidyResult {
-  const TidiedTask({required this.title, this.description, this.parseId});
+  const TidiedTask({
+    required this.title,
+    this.description,
+    this.parseId,
+    this.warnings = const <TidyWarning>[],
+  });
 
   final String title;
   final String? description;
 
   @override
   final String? parseId;
+
+  @override
+  final List<TidyWarning> warnings;
 }
 
 /// A note's body as markdown paragraphs and lists. [title] only when the note
 /// had none to begin with.
 class TidiedNote extends TidyResult {
-  const TidiedNote({required this.content, this.title, this.parseId});
+  const TidiedNote({
+    required this.content,
+    this.title,
+    this.parseId,
+    this.warnings = const <TidyWarning>[],
+  });
 
   final String? title;
   final String content;
 
   @override
   final String? parseId;
+
+  @override
+  final List<TidyWarning> warnings;
 }
 
 /// A sandbox line tidied, and the project it most likely belongs to -- one of
 /// the projects the server has, checked there, or null.
+///
+/// Also the same text as a task, [title] and [description]: when the line
+/// goes to its project instead of staying in the sandbox, it is filed in that
+/// shape, from this one answer -- there is no second call to the model.
 class TidiedLine extends TidyResult {
   const TidiedLine({
     required this.text,
+    String? title,
+    this.description,
     this.projectId,
     this.projectName,
     this.parseId,
-  });
+    this.warnings = const <TidyWarning>[],
+  }) : _title = title;
+
+  factory TidiedLine.fromJson(Map<String, dynamic> json) => TidiedLine(
+    text: json['text'] as String,
+    title: json['title'] as String?,
+    description: json['description'] as String?,
+    projectId: json['projectId'] as String?,
+    projectName: json['projectName'] as String?,
+    parseId: json['parseId'] as String?,
+    warnings: TidyWarning.listFrom(json['warnings']),
+  );
 
   final String text;
+
+  final String? _title;
+
+  /// [text] as a task's title. The line itself when the server sent none --
+  /// a server from before the sandbox answer had one.
+  String get title {
+    final title = _title?.trim() ?? '';
+    return title.isEmpty ? text : title;
+  }
+
+  /// Null with no [title] from the server: the line is then all title.
+  final String? description;
+
+  /// Whether [title] and [description] are the model's split of [text]. False
+  /// once the line has been corrected by hand ([edited]) or when the server
+  /// sent no split: the split would then be of words that are no longer the
+  /// line, and filing it would put back what the user just took out.
+  bool get hasTaskShape => (_title?.trim() ?? '').isNotEmpty;
+
+  /// This answer with [text] corrected by hand. The split goes unless the
+  /// text is the same -- see [hasTaskShape].
+  TidiedLine edited(String text) => text == this.text
+      ? this
+      : TidiedLine(
+          text: text,
+          projectId: projectId,
+          projectName: projectName,
+          parseId: parseId,
+          warnings: warnings,
+        );
+
   final String? projectId;
   final String? projectName;
 
   @override
   final String? parseId;
+
+  @override
+  final List<TidyWarning> warnings;
 }
 
 /// A stage of [DictationApi.parseStream], in the order they come.

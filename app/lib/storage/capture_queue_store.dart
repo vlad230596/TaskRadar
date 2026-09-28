@@ -14,6 +14,7 @@ class PendingCapture {
     required this.text,
     required this.capturedAt,
     this.failed = false,
+    this.dictationParseId,
   });
 
   /// The idempotency key sent to `POST /inbox`, generated here.
@@ -43,23 +44,34 @@ class PendingCapture {
   /// more.
   final bool failed;
 
+  /// The server's dataset record of the `sandbox` parse this line is the
+  /// answer of (F15), sent with it so the record learns what was kept. Null
+  /// for a line that was typed, or dictated and kept as it was said.
+  ///
+  /// Persisted, unlike [failed]: it is a fact about the line, and a line sent
+  /// after a restart is still the same answer.
+  final String? dictationParseId;
+
   PendingCapture copyWith({String? text, bool? failed}) => PendingCapture(
     key: key,
     text: text ?? this.text,
     capturedAt: capturedAt,
     failed: failed ?? this.failed,
+    dictationParseId: dictationParseId,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
     'key': key,
     'text': text,
     'capturedAt': capturedAt.toUtc().toIso8601String(),
+    'dictationParseId': ?dictationParseId,
   };
 
   static PendingCapture fromJson(Map<String, dynamic> json) => PendingCapture(
     key: json['key'] as String,
     text: json['text'] as String,
     capturedAt: DateTime.parse(json['capturedAt'] as String),
+    dictationParseId: json['dictationParseId'] as String?,
   );
 
   /// A fresh 128-bit key, hex-encoded.
@@ -187,8 +199,7 @@ class CaptureQueueStore {
       final queue = decoded['queue'] as List<dynamic>;
       return List<PendingCapture>.unmodifiable(
         queue.map(
-          (dynamic row) =>
-              PendingCapture.fromJson(row as Map<String, dynamic>),
+          (dynamic row) => PendingCapture.fromJson(row as Map<String, dynamic>),
         ),
       );
     } catch (error) {

@@ -64,11 +64,22 @@ class DictateInto extends StatelessWidget {
       color: AppColors.indigo,
       icon: const Icon(Icons.mic_none, size: 22),
       onPressed: () async {
-        final text = await AppRoutes.openDictation(
+        final result = await AppRoutes.openDictation(
           context,
           destination: FieldDestination(label, kind: kind),
         );
-        if (text == null || text.isEmpty) return;
+        // One field, one text: a note or a line comes back as words. A
+        // task's two fields ([FieldTaskText]) are the task screen's own
+        // business, and a field here has nowhere to put the second.
+        final text = switch (result) {
+          FieldWords(:final text) => text,
+          FieldTaskText(:final title, :final description) => <String>[
+            title,
+            ?description,
+          ].join(separator),
+          null => '',
+        };
+        if (text.isEmpty) return;
         appendDictated(controller, text: text, separator: separator);
       },
     );
