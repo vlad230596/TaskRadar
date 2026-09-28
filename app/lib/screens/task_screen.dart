@@ -15,25 +15,28 @@ import 'dictation_screen.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/dictation.dart';
+import '../widgets/focus_toggle.dart';
 import '../widgets/history_charts.dart';
-import '../widgets/mode_navigation.dart';
 import '../widgets/mutation_feedback.dart';
 
-/// One task, large enough to read and edit (F12).
+/// One task, large enough to read and edit (F12; compact blocks, variant A).
 ///
-/// ## The number this screen exists for
+/// ## The field sizes to its text
 ///
-/// **252 px of text field at 20 px type** ([Targets.taskField],
-/// `AppText.taskField`). Complaint number one was "в композере видно два-три
-/// слова, продиктованную фразу нельзя ни прочитать, ни поправить", and the old
-/// answer was an inline one-line editor inside a 56 px reorderable row -- which
-/// is the same field with a different border.
+/// Complaint number one was "в композере видно два-три слова, продиктованную
+/// фразу нельзя ни прочитать, ни поправить". F12 answered it with a fixed
+/// 252 px box at 20 px type, and the answer overshot: a one-line task opened
+/// onto a screen that was mostly an empty frame, and everything below it --
+/// status, focus, the note -- was pushed out of reach. Now the field is two
+/// lines at least and grows with what is in it (`AppText.taskField`, 16.5 px),
+/// so a long dictated sentence is still read whole and a short one does not
+/// cost half the screen.
 ///
-/// Everything else here follows from that: a task is opened rather than edited
-/// in place, so there is room; the status is three 54 px buttons rather than a
-/// popup menu; the reminder is a full-width row rather than a 30 px text
-/// button; and the microphone is the same indigo square in the same corner as
-/// on every other sub-screen.
+/// Under the text, inside the same card, sit the two things done *to* the
+/// text: "Причесать" (when a tidier is wired in, see [TaskScreen.onTidy]) and
+/// the microphone, which appends. Then one full-width "Взять в работу", the
+/// three statuses as a 38 px segmented control, the note, and the life of the
+/// task folded into one line.
 ///
 /// ## Why the whole screen scrolls
 ///
@@ -46,6 +49,7 @@ class TaskScreen extends ConsumerStatefulWidget {
   const TaskScreen({
     required this.projectId,
     required this.taskId,
+    this.onTidy,
     super.key,
   });
 
@@ -63,7 +67,8 @@ class TaskScreen extends ConsumerStatefulWidget {
   /// gesture that used to justify the inline field ("empty my head into the
   /// list", five sentences and five Enters) is now the microphone, which files
   /// straight into a project without opening anything at all.
-  const TaskScreen.draft({required this.projectId, super.key}) : taskId = null;
+  const TaskScreen.draft({required this.projectId, this.onTidy, super.key})
+    : taskId = null;
 
   final String projectId;
 
@@ -71,9 +76,20 @@ class TaskScreen extends ConsumerStatefulWidget {
   /// one.
   final String? taskId;
 
+  /// Rewrites the title into a tidier one: punctuation, filler words, the
+  /// shape of a dictated sentence. Returns null to leave the text as it is.
+  ///
+  /// The hook for a later task. Null for now, and while it is null the
+  /// "Причесать" chip is not drawn at all -- a button that does nothing is
+  /// worse than no button.
+  final TidyText? onTidy;
+
   @override
   ConsumerState<TaskScreen> createState() => _TaskScreenState();
 }
+
+/// See [TaskScreen.onTidy].
+typedef TidyText = Future<String?> Function(String text);
 
 class _TaskScreenState extends ConsumerState<TaskScreen> {
   final TextEditingController _title = TextEditingController();
@@ -143,14 +159,10 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     // Both writes, but only the ones that changed: `editTitle` and
     // `editDescription` each short-circuit on an unchanged value, so this is
     // one PATCH in the common case and zero when nothing was touched.
-    final ok = await runMutation(
-      context,
-      () async {
-        await _tasks.editTitle(task, title);
-        await _tasks.editDescription(task, note.isEmpty ? null : note);
-      },
-      failure: 'Не удалось сохранить задачу.',
-    );
+    final ok = await runMutation(context, () async {
+      await _tasks.editTitle(task, title);
+      await _tasks.editDescription(task, note.isEmpty ? null : note);
+    }, failure: 'Не удалось сохранить задачу.');
     if (!ok || !mounted) return;
     Navigator.of(context).pop();
   }
@@ -237,6 +249,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     if (ok && navigator.canPop()) navigator.pop();
   }
 
+  Future<void> _tidy(TidyText tidy) async {
+    final tidied = await tidy(_title.text);
+    if (tidied == null || !mounted) return;
+    _title.text = tidied;
+  }
+
   /// Dictation into the title, appended rather than replacing -- a phrase said
   /// in two goes is one thought continued.
   Future<void> _dictate() async {
@@ -284,20 +302,33 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
             _header(task, header?.name),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.fromLTRB(
+                  Insets.gutter,
+                  0,
+                  Insets.gutter,
+                  8,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _textField(),
-                    const SizedBox(height: 16),
+                    _textField(dictateTooltip: 'Дописать голосом'),
+                    const SizedBox(height: Insets.gap),
+                    // The set's rows carry the project's name; until the
+                    // header has loaded the optimistic row goes without it,
+                    // and the re-read after `take` fills it in.
+                    FocusToggleButton(
+                      task: task,
+                      projectName: header?.name ?? '',
+                    ),
+                    const SizedBox(height: Insets.gap),
                     _statusRow(task),
                     if (task.status == TaskStatus.blocked) ...<Widget>[
-                      const SizedBox(height: 8),
+                      const SizedBox(height: Insets.gap),
                       _reminderRow(task),
                     ],
-                    const SizedBox(height: 8),
+                    const SizedBox(height: Insets.gap),
                     _noteSection(),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: Insets.gap),
                     _LifeOfTask(task: task),
                   ],
                 ),
@@ -310,7 +341,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     );
   }
 
-  /// The draft screen: the same 252 px field, and nothing that would be a lie
+  /// The draft screen: the same field, and nothing that would be a lie
   /// about a row that does not exist yet -- no status (a new task is in the
   /// queue by definition), no reminder, no history, no delete.
   Widget _draftScaffold() {
@@ -345,40 +376,13 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                 ],
               ),
             ),
-            _textField(),
-            const Spacer(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                Insets.gutter,
-                12,
-                Insets.gutter,
-                18,
-              ),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: SizedBox(
-                      height: Targets.row,
-                      child: FilledButton(
-                        style: FilledButton.styleFrom(
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(Radii.stub),
-                          ),
-                          textStyle: AppText.action.copyWith(fontSize: 16),
-                        ),
-                        onPressed: () => unawaited(_create()),
-                        child: const Text('Добавить'),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  MicrophoneSquare(
-                    tooltip: 'Продиктовать',
-                    onPressed: () => unawaited(_dictate()),
-                  ),
-                ],
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
+                child: _textField(dictateTooltip: 'Продиктовать'),
               ),
             ),
+            _bottomButton('Добавить', () => unawaited(_create())),
           ],
         ),
       ),
@@ -387,7 +391,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
   Widget _header(Task task, String? projectName) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 10, 12, 10),
+      padding: const EdgeInsets.fromLTRB(4, 10, 8, 6),
       child: Row(
         children: <Widget>[
           IconButton(
@@ -399,14 +403,14 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           Expanded(child: Text('Задача', style: AppText.screenTight)),
           if (projectName != null)
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Container(
-                height: 32,
+                height: 26,
                 constraints: const BoxConstraints(maxWidth: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
                 decoration: BoxDecoration(
                   color: AppColors.indigoFill,
-                  borderRadius: BorderRadius.circular(Radii.card),
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -417,7 +421,6 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: AppText.chip.copyWith(
-                          fontSize: 13,
                           color: AppColors.indigoInk,
                         ),
                       ),
@@ -436,51 +439,83 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     );
   }
 
-  Widget _textField() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-      child: Container(
-        height: Targets.taskField,
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          border: Border.all(color: AppColors.indigoLink, width: 1.5),
-          borderRadius: BorderRadius.circular(Radii.panel),
-        ),
-        padding: const EdgeInsets.all(Insets.gutter),
-        child: TextField(
-          controller: _title,
-          maxLines: null,
-          expands: true,
-          textAlignVertical: TextAlignVertical.top,
-          textCapitalization: TextCapitalization.sentences,
-          style: AppText.taskField,
-          decoration: const InputDecoration(
-            filled: false,
-            isCollapsed: true,
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            hintText: 'Что надо сделать',
+  /// The title, and under it the two things done *to* the title.
+  Widget _textField({required String dictateTooltip}) {
+    final tidy = widget.onTidy;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        border: Border.all(color: AppColors.indigo, width: 1.5),
+        borderRadius: BorderRadius.circular(Radii.row),
+      ),
+      // 1 at the bottom rather than 8, because the chips carry 7 px of hit area
+      // above and below their 30 px -- see [_FieldChip].
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 1),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          TextField(
+            controller: _title,
+            // Sizes to its text: two lines at least, so an empty field still
+            // reads as a place to write, and no upper bound -- the screen
+            // scrolls, the field does not.
+            minLines: 2,
+            maxLines: null,
+            textCapitalization: TextCapitalization.sentences,
+            style: AppText.taskField,
+            decoration: const InputDecoration(
+              filled: false,
+              isCollapsed: true,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              hintText: 'Что надо сделать',
+            ),
           ),
-        ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              if (tidy != null) ...<Widget>[
+                _FieldChip(
+                  icon: Icons.auto_awesome,
+                  label: 'Причесать',
+                  onTap: () => unawaited(_tidy(tidy)),
+                ),
+                const SizedBox(width: 4),
+              ],
+              _FieldChip(
+                icon: Icons.mic_none,
+                tooltip: dictateTooltip,
+                onTap: () => unawaited(_dictate()),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
   Widget _statusRow(Task task) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.lineFaint,
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           for (final status in _statusOrder) ...<Widget>[
             Expanded(
-              child: _StatusButton(
+              child: _StatusSegment(
                 status: status,
                 selected: task.status == status,
                 onTap: () => unawaited(_setStatus(task, status)),
               ),
             ),
-            if (status != _statusOrder.last) const SizedBox(width: 8),
+            if (status != _statusOrder.last) const SizedBox(width: 3),
           ],
         ],
       ),
@@ -491,61 +526,56 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     final remindAt = task.remindAt;
     final due = remindAt != null && isReminderDue(remindAt);
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-      child: Material(
-        color: AppColors.waitingFill,
+    return Material(
+      color: AppColors.waitingFill,
+      borderRadius: BorderRadius.circular(Radii.card),
+      child: InkWell(
+        onTap: () => unawaited(_pickReminder()),
         borderRadius: BorderRadius.circular(Radii.card),
-        child: InkWell(
-          onTap: () => unawaited(_pickReminder()),
-          borderRadius: BorderRadius.circular(Radii.card),
-          child: Container(
-            height: 52,
-            padding: const EdgeInsets.fromLTRB(14, 0, 6, 0),
-            decoration: BoxDecoration(
-              border: Border.all(color: AppColors.waitingLine),
-              borderRadius: BorderRadius.circular(Radii.card),
-            ),
-            child: Row(
-              children: <Widget>[
-                Icon(
-                  due
-                      ? Icons.notifications_active_outlined
-                      : Icons.notifications_none,
-                  size: 20,
-                  color: AppColors.waitingInk,
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.fromLTRB(14, 0, 6, 0),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.waitingLine),
+            borderRadius: BorderRadius.circular(Radii.card),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                due
+                    ? Icons.notifications_active_outlined
+                    : Icons.notifications_none,
+                size: 20,
+                color: AppColors.waitingInk,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  remindAt == null
+                      ? 'Напомнить когда-нибудь…'
+                      : 'Напомнить ${formatReminderDate(remindAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.action.copyWith(color: AppColors.waitingInk),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    remindAt == null
-                        ? 'Напомнить когда-нибудь…'
-                        : 'Напомнить ${formatReminderDate(remindAt)}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppText.action.copyWith(
-                      color: AppColors.waitingInk,
-                    ),
-                  ),
-                ),
-                if (remindAt == null)
-                  const Padding(
-                    padding: EdgeInsets.only(right: 8),
-                    child: Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: AppColors.waitingInk,
-                    ),
-                  )
-                else
-                  IconButton(
-                    tooltip: 'Убрать дату напоминания',
-                    onPressed: () => unawaited(_clearReminder(task)),
-                    icon: const Icon(Icons.event_busy, size: 18),
+              ),
+              if (remindAt == null)
+                const Padding(
+                  padding: EdgeInsets.only(right: 8),
+                  child: Icon(
+                    Icons.chevron_right,
+                    size: 18,
                     color: AppColors.waitingInk,
                   ),
-              ],
-            ),
+                )
+              else
+                IconButton(
+                  tooltip: 'Убрать дату напоминания',
+                  onPressed: () => unawaited(_clearReminder(task)),
+                  icon: const Icon(Icons.event_busy, size: 18),
+                  color: AppColors.waitingInk,
+                ),
+            ],
           ),
         ),
       ),
@@ -562,85 +592,157 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   /// tasks. A screen that edited only the title would quietly make that text
   /// unreachable from the app, which is a data loss dressed up as a redesign.
   ///
-  /// Folded away when empty, so the screen that matters (a 252 px field and
-  /// three status buttons) is the screen you get unless you asked for more.
+  /// Folded away when empty, so the screen that matters (the text and what to
+  /// do with it) is the screen you get unless you asked for more.
   Widget _noteSection() {
     if (!_noteOpen) {
       return Align(
         alignment: Alignment.centerLeft,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: TextButton.icon(
-            onPressed: () => setState(() => _noteOpen = true),
-            icon: const Icon(Icons.notes, size: 18),
-            label: const Text('Заметка к задаче'),
-            style: TextButton.styleFrom(foregroundColor: AppColors.muted),
+        child: TextButton.icon(
+          onPressed: () => setState(() => _noteOpen = true),
+          icon: const Icon(Icons.notes, size: 18),
+          label: const Text('Заметка к задаче'),
+          style: TextButton.styleFrom(
+            foregroundColor: AppColors.muted,
+            padding: const EdgeInsets.symmetric(horizontal: 4),
           ),
         ),
       );
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          border: Border.all(color: AppColors.line),
-          borderRadius: BorderRadius.circular(Radii.card),
-        ),
-        padding: const EdgeInsets.all(14),
-        child: TextField(
-          controller: _note,
-          minLines: 2,
-          maxLines: 6,
-          textCapitalization: TextCapitalization.sentences,
-          style: AppText.body.copyWith(color: AppColors.ink),
-          decoration: const InputDecoration(
-            filled: false,
-            isCollapsed: true,
-            border: InputBorder.none,
-            enabledBorder: InputBorder.none,
-            focusedBorder: InputBorder.none,
-            hintText: 'Кто, что, к какому сроку…',
-          ),
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(Radii.row),
       ),
-    );
-  }
-
-  Widget _saveBar(Task task) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        Insets.gutter,
-        12,
-        Insets.gutter,
-        18,
-      ),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Expanded(
-            child: SizedBox(
-              height: Targets.row,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(Radii.stub),
-                  ),
-                  textStyle: AppText.action.copyWith(fontSize: 16),
-                ),
-                onPressed: () => unawaited(_save(task)),
-                child: const Text('Сохранить'),
-              ),
-            ),
+          Text(
+            'ЗАМЕТКА',
+            style: AppText.caption.copyWith(fontSize: 11, letterSpacing: 0.88),
           ),
-          const SizedBox(width: 10),
-          MicrophoneSquare(
-            tooltip: 'Дописать голосом',
-            onPressed: () => unawaited(_dictate()),
+          const SizedBox(height: 4),
+          TextField(
+            controller: _note,
+            minLines: 1,
+            maxLines: 6,
+            textCapitalization: TextCapitalization.sentences,
+            style: AppText.body.copyWith(fontSize: 14, height: 1.45),
+            decoration: const InputDecoration(
+              filled: false,
+              isCollapsed: true,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              hintText: 'Кто, что, к какому сроку…',
+            ),
           ),
         ],
       ),
     );
+  }
+
+  Widget _saveBar(Task task) =>
+      _bottomButton('Сохранить', () => unawaited(_save(task)));
+
+  /// The one control pinned under the scrollable -- see the class comment. The
+  /// microphone used to stand next to it; it is in the text card now, next to
+  /// the text it writes into.
+  Widget _bottomButton(String label, VoidCallback onPressed) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 12, Insets.gutter, 20),
+      child: SizedBox(
+        height: 48,
+        child: FilledButton(
+          style: FilledButton.styleFrom(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(Radii.row),
+            ),
+            textStyle: AppText.action.copyWith(fontWeight: FontWeight.w700),
+          ),
+          onPressed: onPressed,
+          child: Text(label),
+        ),
+      ),
+    );
+  }
+}
+
+/// A 30 px pill under the task text: "Причесать", or the microphone alone.
+///
+/// ## Why the hit area is taller than the pill
+///
+/// 30 px is what the card has room for without growing a second toolbar;
+/// 44 px is the floor for anything tapped ([Targets.minimum]). The difference
+/// is transparent padding above and below -- the card's own bottom padding is
+/// trimmed to make room for it -- so the pill *looks* 30 and *catches* 44.
+class _FieldChip extends StatelessWidget {
+  const _FieldChip({
+    required this.icon,
+    required this.onTap,
+    this.label,
+    this.tooltip,
+  });
+
+  final IconData icon;
+  final String? label;
+  final String? tooltip;
+  final VoidCallback onTap;
+
+  static const double _height = 30;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = this.label;
+    final tooltip = this.tooltip;
+
+    final pill = Material(
+      color: AppColors.card,
+      shape: const StadiumBorder(side: BorderSide(color: AppColors.line)),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const StadiumBorder(),
+        child: SizedBox(
+          height: _height,
+          width: label == null ? _height : null,
+          child: label == null
+              ? Icon(icon, size: 16, color: AppColors.indigoLink)
+              : Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(icon, size: 14, color: AppColors.indigoLink),
+                      const SizedBox(width: 5),
+                      Text(
+                        label,
+                        style: AppText.chip.copyWith(
+                          fontSize: 12.5,
+                          color: AppColors.indigoLink,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
+
+    final hit = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          vertical: (Targets.minimum - _height) / 2,
+        ),
+        child: pill,
+      ),
+    );
+
+    return tooltip == null ? hit : Tooltip(message: tooltip, child: hit);
   }
 }
 
@@ -653,8 +755,12 @@ const List<TaskStatus> _statusOrder = <TaskStatus>[
   TaskStatus.done,
 ];
 
-class _StatusButton extends StatelessWidget {
-  const _StatusButton({
+/// One segment of the 38 px status control.
+///
+/// "Открыта" rather than the old "В очереди": a task nobody has taken is not
+/// standing in any queue, it is simply open.
+class _StatusSegment extends StatelessWidget {
+  const _StatusSegment({
     required this.status,
     required this.selected,
     required this.onTap,
@@ -666,64 +772,41 @@ class _StatusButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (String label, IconData icon, Color accent, Color fill) =
-        switch (status) {
-          TaskStatus.pending => (
-            'В очереди',
-            Icons.circle_outlined,
-            AppColors.indigoLink,
-            AppColors.indigoFill,
-          ),
-          TaskStatus.blocked => (
-            'Блокер',
-            Icons.pause_circle_outline,
-            AppColors.waitingDot,
-            AppColors.waitingFill,
-          ),
-          TaskStatus.done => (
-            'Сделано',
-            Icons.check_circle_outline,
-            AppColors.done,
-            Color(0xFFEAF3EE),
-          ),
-        };
+    final label = switch (status) {
+      TaskStatus.pending => 'Открыта',
+      TaskStatus.blocked => 'Блокер',
+      TaskStatus.done => 'Сделано',
+    };
 
-    final foreground = selected
-        ? (status == TaskStatus.blocked ? AppColors.waitingInk : accent)
-        : AppColors.muted;
+    // The selected segment is the white one. Its ink also says which status
+    // it is for the two that are not the ordinary case.
+    final foreground = !selected
+        ? AppColors.muted
+        : switch (status) {
+            TaskStatus.pending => AppColors.ink,
+            TaskStatus.blocked => AppColors.waitingInk,
+            TaskStatus.done => AppColors.done,
+          };
 
     return Semantics(
       button: true,
       selected: selected,
       child: Material(
-        color: selected ? fill : AppColors.card,
-        borderRadius: BorderRadius.circular(Radii.card),
+        color: selected ? AppColors.card : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(Radii.card),
-          child: Container(
-            height: 54,
-            decoration: BoxDecoration(
-              border: Border.all(
-                color: selected ? accent : AppColors.line,
-                width: selected ? 1.5 : 1,
+          borderRadius: BorderRadius.circular(8),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.chip.copyWith(
+                fontSize: 13,
+                color: foreground,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
               ),
-              borderRadius: BorderRadius.circular(Radii.card),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                Icon(icon, size: 20, color: foreground),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  maxLines: 1,
-                  style: AppText.chip.copyWith(
-                    color: foreground,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                  ),
-                ),
-              ],
             ),
           ),
         ),
@@ -758,13 +841,32 @@ class _StatusButton extends StatelessWidget {
 /// Пока он едет и если он не доехал, блок остаётся на месте и показывает общий
 /// срок: он выводится из `createdAt` и врать не может. Разница между «считаем»
 /// и «не посчитали» подписана — экран задачи полностью рабочий в обоих случаях.
-class _LifeOfTask extends ConsumerWidget {
+///
+/// ## Одна строка, пока не попросили больше
+///
+/// Вариант A сжимает блок до тонкой полоски и одной подписи — «открыта 11 дней
+/// · с 17.09»: текущая фаза, сколько она идёт и с какого дня. Большинство
+/// открытий экрана задачи — чтобы поправить текст или статус, а не читать
+/// биографию, и карточка на пол-экрана под полем отодвигала то, ради чего
+/// пришли. Тап по строке раскрывает прежнюю карточку целиком — с разбивкой по
+/// фазам и легендой; тап по её заголовку сворачивает обратно.
+class _LifeOfTask extends ConsumerStatefulWidget {
   const _LifeOfTask({required this.task});
 
   final Task task;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_LifeOfTask> createState() => _LifeOfTaskState();
+}
+
+class _LifeOfTaskState extends ConsumerState<_LifeOfTask> {
+  bool _expanded = false;
+
+  void _toggle() => setState(() => _expanded = !_expanded);
+
+  @override
+  Widget build(BuildContext context) {
+    final task = widget.task;
     final journal = ref.watch(taskEventsProvider(task.id));
     final totalDays = daysSince(task.createdAt);
 
@@ -787,19 +889,21 @@ class _LifeOfTask extends ConsumerWidget {
     // хуже, чем не показывать секцию.
     if (life == null && totalDays == null) return const SizedBox.shrink();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-      child: Container(
-        decoration: BoxDecoration(
-          color: AppColors.card,
-          border: Border.all(color: AppColors.line),
-          borderRadius: BorderRadius.circular(18),
-        ),
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
+    if (!_expanded) return _line(life, totalDays, journal.hasError);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(Radii.row),
+      ),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          InkWell(
+            onTap: _toggle,
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.baseline,
               textBaseline: TextBaseline.alphabetic,
               children: <Widget>[
@@ -813,35 +917,100 @@ class _LifeOfTask extends ConsumerWidget {
                 ),
               ],
             ),
-            if (life == null) ...<Widget>[
-              const SizedBox(height: 12),
-              Text(
-                journal.hasError
-                    ? 'Журнал переходов не прочитался — разбивки по статусам '
-                          'не будет. Остальное на экране работает.'
-                    : 'Считаем по журналу переходов…',
-                style: AppText.hint.copyWith(fontSize: 12),
-              ),
-            ] else
-              ..._breakdown(life),
-          ],
+          ),
+          if (life == null) ...<Widget>[
+            const SizedBox(height: 12),
+            Text(
+              journal.hasError
+                  ? 'Журнал переходов не прочитался — разбивки по статусам '
+                        'не будет. Остальное на экране работает.'
+                  : 'Считаем по журналу переходов…',
+              style: AppText.hint.copyWith(fontSize: 12),
+            ),
+          ] else
+            ..._breakdown(life),
+        ],
+      ),
+    );
+  }
+
+  /// Свёрнутый блок: полоска и «открыта 11 дней · с 17.09».
+  Widget _line(TaskLife? life, int? totalDays, bool failed) {
+    final String text;
+    if (life == null) {
+      // Без журнала честно известен только общий срок — его и пишем, с
+      // припиской, почему разбивки нет.
+      text =
+          'живёт ${formatDays(totalDays!)} · '
+          '${failed ? 'журнал не прочитался' : 'считаем…'}';
+    } else {
+      final current = DateTime.now().toUtc().difference(life.since);
+      text =
+          '${_currentPhrase(life.phase)} '
+          '${formatSpanLong(current.inMilliseconds)} · '
+          'с ${_shortDate(life.since)}';
+    }
+
+    return Semantics(
+      button: true,
+      hint: 'Показать жизнь задачи',
+      child: InkWell(
+        onTap: _toggle,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 8),
+          // The caption takes what it needs, up to three quarters of the
+          // width; the bar takes the rest, so it is never squeezed to nothing
+          // and never pushed off the edge.
+          child: LayoutBuilder(
+            builder: (context, constraints) => Row(
+              children: <Widget>[
+                Expanded(
+                  child: SpanBar(
+                    height: 6,
+                    segments: <SpanSegment>[
+                      if (life != null)
+                        for (final phase in _order)
+                          if (life[phase] > 0)
+                            SpanSegment(life[phase], phaseColour(phase)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: constraints.maxWidth * 0.75,
+                  ),
+                  child: Text(
+                    text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.caption.copyWith(
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
+  // Фазы в том порядке, в каком задача их проживает, а не по величине:
+  // полоска читается слева направо как её биография, и пересортировка
+  // сегментов сделала бы две соседние задачи несравнимыми.
+  static const List<TaskLifePhase> _order = <TaskLifePhase>[
+    TaskLifePhase.queued,
+    TaskLifePhase.working,
+    TaskLifePhase.blocked,
+    TaskLifePhase.done,
+  ];
+
   List<Widget> _breakdown(TaskLife life) {
-    // Фазы в том порядке, в каком задача их проживает, а не по величине:
-    // полоска читается слева направо как её биография, и пересортировка
-    // сегментов сделала бы две соседние задачи несравнимыми.
-    const order = <TaskLifePhase>[
-      TaskLifePhase.queued,
-      TaskLifePhase.working,
-      TaskLifePhase.blocked,
-      TaskLifePhase.done,
-    ];
     final shown = <TaskLifePhase>[
-      for (final phase in order)
+      for (final phase in _order)
         if (life[phase] > 0) phase,
     ];
 
@@ -850,7 +1019,8 @@ class _LifeOfTask extends ConsumerWidget {
       SpanBar(
         height: 16,
         segments: <SpanSegment>[
-          for (final phase in shown) SpanSegment(life[phase], phaseColour(phase)),
+          for (final phase in shown)
+            SpanSegment(life[phase], phaseColour(phase)),
         ],
       ),
       const SizedBox(height: 12),
@@ -872,15 +1042,19 @@ class _LifeOfTask extends ConsumerWidget {
 
   /// Настоящее время для фазы, которая ещё идёт.
   static String _currentPhrase(TaskLifePhase phase) => switch (phase) {
-    TaskLifePhase.queued => 'лежит в очереди',
+    TaskLifePhase.queued => 'открыта',
     TaskLifePhase.working => 'в работе',
     TaskLifePhase.blocked => 'ждёт',
     TaskLifePhase.done => 'закрыта',
   };
 
-  static String _shortDate(DateTime at) =>
-      '${at.day.toString().padLeft(2, '0')}.'
-      '${at.month.toString().padLeft(2, '0')}';
+  // По местному календарю: разбор журнала ведёт время в UTC, и ночное
+  // событие иначе подписалось бы вчерашним числом.
+  static String _shortDate(DateTime at) {
+    final local = at.toLocal();
+    return '${local.day.toString().padLeft(2, '0')}.'
+        '${local.month.toString().padLeft(2, '0')}';
+  }
 }
 
 class _LifeRow extends StatelessWidget {

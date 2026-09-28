@@ -13,6 +13,7 @@ import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mode_navigation.dart';
+import '../widgets/mode_title.dart';
 import 'shell_screen.dart';
 
 /// История: что закрыто и что висит (F13).
@@ -101,8 +102,7 @@ class HistoryHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
       child: Row(
         children: <Widget>[
-          Text(AppMode.history.title, style: AppText.mode),
-          const Spacer(),
+          Expanded(child: ModeTitle(AppMode.history.title)),
           if (isWideLayout(context))
             const _RangeSegments()
           else

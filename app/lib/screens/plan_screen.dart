@@ -19,6 +19,7 @@ import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/glance.dart';
 import '../widgets/mode_navigation.dart';
+import '../widgets/mode_title.dart';
 import 'shell_screen.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/project_name_dialog.dart';
@@ -124,7 +125,7 @@ class PlanHeader extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
-                Text(AppMode.plan.title, style: AppText.mode),
+                ModeTitle(AppMode.plan.title),
                 // Only with something to switch between. One scope is the
                 // ordinary case and a picker offering a single option that is
                 // already chosen is furniture -- the same rule the old

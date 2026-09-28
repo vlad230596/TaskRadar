@@ -27,12 +27,17 @@ abstract final class AppText {
 
   // -- Display: the mode name, the screen title, and big numbers ------------
 
-  /// "Планирование" at the top of a mode. 21/700 Unbounded.
+  /// "Планирование" at the top of a mode. 19/700 Unbounded.
+  ///
+  /// Unbounded is a wide face: at 21 px "Планирование" alone is ~190 px, and
+  /// next to the layout toggle and the overflow button on a 375 px phone it
+  /// did not fit and broke mid-word. Two points down, and `ModeTitle` scales
+  /// whatever still does not fit rather than wrapping it.
   static const TextStyle mode = TextStyle(
     fontFamily: AppFonts.display,
     fontWeight: FontWeight.w700,
-    fontSize: 21,
-    letterSpacing: -0.21,
+    fontSize: 19,
+    letterSpacing: -0.19,
     color: AppColors.ink,
   );
 
@@ -40,8 +45,8 @@ abstract final class AppText {
   static const TextStyle modeWide = TextStyle(
     fontFamily: AppFonts.display,
     fontWeight: FontWeight.w700,
-    fontSize: 22,
-    letterSpacing: -0.22,
+    fontSize: 20,
+    letterSpacing: -0.2,
     color: AppColors.ink,
   );
 
@@ -118,12 +123,12 @@ abstract final class AppText {
     color: AppColors.inkSoft,
   );
 
-  /// A task row's title. 15.5/500, because a row is 56-66 px and this is what
-  /// fits two lines into it.
+  /// A task row's title. 14.5/500, because a row is 56-66 px and this is what
+  /// fits two lines into it with room to spare.
   static const TextStyle taskTitle = TextStyle(
     fontFamily: AppFonts.text,
     fontWeight: FontWeight.w500,
-    fontSize: 15.5,
+    fontSize: 14.5,
     height: 1.3,
     color: AppColors.ink,
   );
@@ -132,28 +137,30 @@ abstract final class AppText {
   static const TextStyle taskTitleCurrent = TextStyle(
     fontFamily: AppFonts.text,
     fontWeight: FontWeight.w600,
-    fontSize: 15.5,
+    fontSize: 14.5,
     height: 1.3,
     color: AppColors.ink,
   );
 
-  /// A line waiting in the sandbox. 16.5/500 -- a touch larger than a task,
+  /// A line waiting in the sandbox. 15/500 -- a touch larger than a task,
   /// because it is unsorted prose and the screen's job is reading it.
   static const TextStyle sandboxLine = TextStyle(
     fontFamily: AppFonts.text,
     fontWeight: FontWeight.w500,
-    fontSize: 16.5,
+    fontSize: 15,
     height: 1.35,
     color: AppColors.ink,
   );
 
-  /// The task screen's text area. **20/500** -- the direct answer to complaint
-  /// number one. See [Targets.taskField] for its height.
+  /// The task screen's text area. 16.5/500: readable at a glance, and a
+  /// dictated sentence of twenty words fits in four lines rather than seven.
+  /// The field sizes to its text (two lines minimum), so the size no longer
+  /// has to fill a fixed box.
   static const TextStyle taskField = TextStyle(
     fontFamily: AppFonts.text,
     fontWeight: FontWeight.w500,
-    fontSize: 20,
-    height: 1.42,
+    fontSize: 16.5,
+    height: 1.38,
     color: AppColors.ink,
   );
 
@@ -167,13 +174,13 @@ abstract final class AppText {
     color: AppColors.ink,
   );
 
-  /// What the microphone just heard. 25/500 on the dark screen, half a screen
-  /// of it, correctable on the spot.
+  /// What the microphone just heard. 20/500 on the dark screen, correctable
+  /// on the spot.
   static const TextStyle dictated = TextStyle(
     fontFamily: AppFonts.text,
     fontWeight: FontWeight.w500,
-    fontSize: 25,
-    height: 1.38,
+    fontSize: 20,
+    height: 1.36,
     color: Color(0xFFFFFFFF),
   );
 
