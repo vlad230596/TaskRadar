@@ -2,9 +2,14 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskradar/providers/capture_queue_providers.dart';
+import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/voice/voice_model.dart';
 
+import 'support/fake_backend.dart';
+import 'support/fake_capture_queue_store.dart';
+import 'support/fake_project_backend.dart';
 import 'support/fake_voice.dart';
 
 /// The dictation state machine, everywhere it ends somewhere other than text.
@@ -500,6 +505,25 @@ void main() {
       expect(spoken, isEmpty);
     });
 
+    test('the recording is thrown away only once its text is delivered', () async {
+      final gate = Completer<void>();
+      recognizer.chunks = const <String>['Первое.', 'Второе.'];
+      recognizer.beforeChunk =
+          (i) => i == 1 ? gate.future : Future<void>.value();
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+
+      await begin(dictation);
+      final pending = dictation.finish();
+      await Future<void>.delayed(Duration.zero);
+      expect(recorder.discarded, isEmpty);
+
+      gate.complete();
+      await pending;
+      expect(spoken, <String>['Первое. Второе.']);
+      expect(recorder.discarded, <String>['dictation.wav']);
+    });
+
     test('the ceiling is ten minutes, with a warning half a minute before', () {
       expect(VoiceDictation.ceiling, const Duration(minutes: 10));
 
@@ -515,6 +539,150 @@ void main() {
       expect(due.nearCeiling, isTrue);
       expect(due.left, const Duration(seconds: 30));
     });
+  });
+
+  group('a screen closed mid-recognition', _closedMidRecognition);
+}
+
+/// A screen closed while its dictation is still being recognised: the
+/// recognition carries on without it and the text lands in the sandbox.
+void _closedMidRecognition() {
+  late FakeVoiceRecorder recorder;
+  late FakeSpeechRecognizer recognizer;
+  late FakeCaptureQueueStore store;
+  late FakeProjectBackend server;
+  late Completer<void> gate;
+  late List<String> spoken;
+
+  setUp(() {
+    recorder = FakeVoiceRecorder();
+    gate = Completer<void>();
+    recognizer = FakeSpeechRecognizer()
+      ..chunks = const <String>['Первое.', 'Второе.']
+      ..beforeChunk = (i) => i == 1 ? gate.future : Future<void>.value();
+    store = FakeCaptureQueueStore();
+    spoken = <String>[];
+  });
+
+  /// A container, and the screen's listener on the dictation -- closed by a
+  /// test to stand for the screen going away.
+  (ProviderContainer, ProviderSubscription<DictationState>) makeContainer() {
+    final backend = FakeBackend();
+    server = FakeProjectBackend(backend);
+    final container = ProviderContainer(
+      overrides: [
+        voiceRecorderProvider.overrideWithValue(recorder),
+        speechRecognizerProvider.overrideWithValue(recognizer),
+        voiceModelInstallationProvider.overrideWith(_ReadyModel.new),
+        apiClientProvider.overrideWithValue(backend.client),
+        captureQueueStoreProvider.overrideWithValue(store),
+      ],
+    );
+    addTearDown(container.dispose);
+    final screen = container.listen(voiceDictationProvider, (_, _) {});
+    return (container, screen);
+  }
+
+  test('carries on with nobody watching, and files the text in the sandbox', () async {
+    final (container, screen) = makeContainer();
+    final dictation = container.read(voiceDictationProvider.notifier);
+    final said = <String>[];
+
+    await dictation.start(sink: spoken.add);
+    final pending = dictation.finish();
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(voiceDictationProvider), isA<DictationRecognising>());
+
+    // The screen goes: it hands the dictation over, and stops listening.
+    expect(dictation.detach(announce: said.add), isTrue);
+    screen.close();
+    await Future<void>.delayed(Duration.zero);
+    // Still alive, still holding the recording and the recogniser.
+    expect(recognizer.unloadCount, 0);
+    expect(recorder.discarded, isEmpty);
+
+    gate.complete();
+    await pending;
+    // The capture's own send, so this test owns every future it started.
+    await container.read(captureQueueProvider.notifier).flush();
+
+    expect(spoken, isEmpty);
+    expect(<String>[
+      ...container.read(pendingCapturesProvider).map((e) => e.text),
+      ...server.inbox.map((item) => item['text'] as String),
+    ], <String>['Первое. Второе.']);
+    expect(said, <String>['Диктовка распознана — в песочнице']);
+    // Delivered, so now -- and only now -- the file goes.
+    expect(recorder.discarded, <String>['dictation.wav']);
+  });
+
+  test('keeps the recording when the sandbox could not take the text', () async {
+    final (container, screen) = makeContainer();
+    final dictation = container.read(voiceDictationProvider.notifier);
+    final said = <String>[];
+    await container.read(captureQueueProvider.future);
+    store.writeFailure = Exception('disk full');
+
+    await dictation.start(sink: spoken.add);
+    final pending = dictation.finish();
+    await Future<void>.delayed(Duration.zero);
+    dictation.detach(announce: said.add);
+    screen.close();
+    gate.complete();
+    await pending;
+
+    expect(said.single, contains('не удалось'));
+    expect(recorder.discarded, isEmpty);
+  });
+
+  test('says so when the closed dictation heard nothing', () async {
+    recognizer.chunks = const <String>['', ''];
+    final (container, screen) = makeContainer();
+    final dictation = container.read(voiceDictationProvider.notifier);
+    final said = <String>[];
+
+    await dictation.start(sink: spoken.add);
+    final pending = dictation.finish();
+    await Future<void>.delayed(Duration.zero);
+    dictation.detach(announce: said.add);
+    screen.close();
+    gate.complete();
+    await pending;
+
+    expect(said.single, startsWith('Диктовка не распознана'));
+    expect(store.queue, isEmpty);
+  });
+
+  test('a screen opened meanwhile takes the text over', () async {
+    final (container, screen) = makeContainer();
+    final dictation = container.read(voiceDictationProvider.notifier);
+    final said = <String>[];
+    final reopened = <String>[];
+
+    await dictation.start(sink: spoken.add);
+    final pending = dictation.finish();
+    await Future<void>.delayed(Duration.zero);
+    dictation.detach(announce: said.add);
+    screen.close();
+
+    // The microphone pressed again before the first dictation is done.
+    container.listen(voiceDictationProvider, (_, _) {});
+    expect(await dictation.start(sink: reopened.add), isFalse);
+    expect(recorder.startCount, 1);
+
+    gate.complete();
+    await pending;
+    expect(reopened, <String>['Первое. Второе.']);
+    expect(store.queue, isEmpty);
+    expect(said, isEmpty);
+  });
+
+  test('closing a screen with nothing being recognised hands nothing over', () async {
+    final (container, _) = makeContainer();
+    final dictation = container.read(voiceDictationProvider.notifier);
+    expect(dictation.detach(), isFalse);
+    await dictation.start(sink: spoken.add);
+    expect(dictation.detach(), isFalse);
   });
 }
 

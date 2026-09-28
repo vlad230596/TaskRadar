@@ -398,6 +398,62 @@ void main() {
         isEmpty,
       );
     });
+
+    testWidgets('filed in the shape the answer gave it, with its record', (
+      tester,
+    ) async {
+      final dacha = server.addProject(name: 'Дача');
+      server.addInboxItem(text: 'ну это купить краску на дачу белую');
+      final parses = modelAnswers(backend, <String, dynamic>{
+        'text': 'Купить краску на дачу, белую',
+        'title': 'Купить краску на дачу',
+        'description': 'Белую.',
+        'projectId': dacha,
+        'projectName': 'Дача',
+        'parseId': 'dp-21',
+      });
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Причесать'));
+      await settle(tester);
+      await tester.tap(find.text('В «Дача»'));
+      await settle(tester);
+
+      // One call to the model: the task was in the same answer.
+      expect(parses, hasLength(1));
+      final filed = backend.requests.lastWhere(
+        (request) => request.path.endsWith('/file'),
+      );
+      expect(filed.data, <String, dynamic>{
+        'projectId': dacha,
+        'title': 'Купить краску на дачу',
+        'description': 'Белую.',
+        'dictationParseId': 'dp-21',
+      });
+    });
+
+    testWidgets('kept in the sandbox, the line is saved with its record', (
+      tester,
+    ) async {
+      server.addInboxItem(text: 'ну это купить краску');
+      modelAnswers(backend, <String, dynamic>{
+        'text': 'Купить краску',
+        'projectId': null,
+        'parseId': 'dp-22',
+      });
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Причесать'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+
+      final edit = backend.requests.lastWhere((r) => r.method == 'PATCH');
+      expect(edit.data, <String, dynamic>{
+        'text': 'Купить краску',
+        'dictationParseId': 'dp-22',
+      });
+    });
   });
 
   test('"ещё N строк" is declined the Russian way', () {

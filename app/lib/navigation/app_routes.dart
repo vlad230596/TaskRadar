@@ -149,7 +149,7 @@ abstract final class AppRoutes {
 
     if (settings.name == dictation) {
       final args = settings.arguments;
-      return MaterialPageRoute<String>(
+      return MaterialPageRoute<FieldDictation>(
         settings: settings,
         // Full screen, opaque, and deliberately **not** a dialog or a sheet:
         // the whole point is that it owns the display, so nothing behind it can
@@ -222,10 +222,9 @@ abstract final class AppRoutes {
     BuildContext context, {
     required String projectId,
   }) {
-    return Navigator.of(context).pushNamed<void>(
-      task,
-      arguments: TaskRouteArgs(projectId: projectId),
-    );
+    return Navigator.of(
+      context,
+    ).pushNamed<void>(task, arguments: TaskRouteArgs(projectId: projectId));
   }
 
   /// Opens one task, large (F12).
@@ -242,18 +241,18 @@ abstract final class AppRoutes {
 
   /// Opens the dictation screen (F12).
   ///
-  /// Returns the recognised text only for a [FieldDestination] -- the case
-  /// where a field behind this screen is waiting for words. For the sandbox and
-  /// for a project the screen files the text itself and this answers null,
-  /// because there is nobody behind it to hand anything to.
-  static Future<String?> openDictation(
+  /// Returns the text only for a [FieldDestination] -- the case where a field
+  /// behind this screen is waiting for words: words to append ([FieldWords]),
+  /// or a task's whole text to replace its fields with ([FieldTaskText]). For
+  /// the sandbox and for a project the screen files the text itself and this
+  /// answers null, because there is nobody behind it to hand anything to.
+  static Future<FieldDictation?> openDictation(
     BuildContext context, {
     DictationDestination destination = const SandboxDestination(),
   }) {
-    return Navigator.of(context).pushNamed<String>(
-      dictation,
-      arguments: destination,
-    );
+    return Navigator.of(
+      context,
+    ).pushNamed<FieldDictation>(dictation, arguments: destination);
   }
 
   /// Opens a project from outside the widget tree -- a notification tap, or

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/api/dictation_api.dart';
 import 'package:taskradar/models/note.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/project_providers.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/note_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
@@ -264,6 +265,113 @@ void main() {
       expect((accepted.result as TidiedLine).text, 'Купить краску');
     });
 
+    testWidgets('a sandbox line carries its task shape, unless corrected', (
+      tester,
+    ) async {
+      final answer = <String, dynamic>{
+        'text': 'Купить краску, белую',
+        'title': 'Купить краску',
+        'description': 'Белую.',
+        'projectId': 'prj_1',
+        'projectName': 'Дача',
+        'parseId': 'dp-8',
+      };
+      answers.add(answer);
+      await open(
+        tester,
+        kind: ParseKind.sandbox,
+        source: 'купить краску белую',
+        projects: const <TidyProject>[(id: 'prj_1', name: 'Дача')],
+      );
+      await tester.tap(find.text('В «Дача»'));
+      await settle(tester);
+
+      final line = (outcome! as TidyAccepted).result as TidiedLine;
+      expect(line.hasTaskShape, isTrue);
+      expect((line.title, line.description), ('Купить краску', 'Белую.'));
+      expect(line.parseId, 'dp-8');
+
+      // Corrected by hand: the split was of other words, so it goes.
+      await open(
+        tester,
+        kind: ParseKind.sandbox,
+        source: 'купить краску белую',
+        projects: const <TidyProject>[(id: 'prj_1', name: 'Дача')],
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Купить краску, белую'),
+        'Купить краску, синюю',
+      );
+      await tester.tap(find.text('В «Дача»'));
+      await settle(tester);
+      final edited = (outcome! as TidyAccepted).result as TidiedLine;
+      expect(edited.hasTaskShape, isFalse);
+      expect(edited.title, 'Купить краску, синюю');
+      expect(edited.parseId, 'dp-8');
+    });
+
+    testWidgets('an invented date: the answer, with an amber note naming it', (
+      tester,
+    ) async {
+      answers.add(<String, dynamic>{
+        'title': 'Созвон с Петей',
+        'description': 'В 3.00, обсудить смету.',
+        'warnings': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'invented_date', 'token': '3.00'},
+        ],
+      });
+      await open(
+        tester,
+        kind: ParseKind.taskTidy,
+        source: 'созвон с петей в три ноль обсудить смету',
+      );
+
+      expect(
+        find.text(
+          'AI добавил «3.00», которого не было в тексте — проверь',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      // The token is marked, not just named.
+      final note = tester.widget<Text>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('tidy-warning')),
+          matching: find.byType(Text),
+        ),
+      );
+      final marked = <String>[];
+      note.textSpan!.visitChildren((span) {
+        if (span is TextSpan && span.style?.backgroundColor != null) {
+          marked.add(span.text ?? '');
+        }
+        return true;
+      });
+      expect(marked, <String>['«3.00»']);
+
+      // Taking it is the user's call, and "Исходник" is one tap away.
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      expect(
+        ((outcome! as TidyAccepted).result as TidiedTask).description,
+        'В 3.00, обсудить смету.',
+      );
+    });
+
+    test('warnings are read leniently: none, or only the well-formed', () {
+      expect(TidyWarning.listFrom(null), isEmpty);
+      expect(TidyWarning.listFrom('invented_date'), isEmpty);
+      final read = TidyWarning.listFrom(<dynamic>[
+        <String, dynamic>{'kind': 'invented_date', 'token': 'завтра'},
+        <String, dynamic>{'kind': 'invented_date'},
+        <String, dynamic>{'kind': 'invented_date', 'token': ''},
+        42,
+      ]);
+      expect(read.map((w) => (w.kind, w.token)), <(String, String)>[
+        ('invented_date', 'завтра'),
+      ]);
+    });
+
     testWidgets('a sandbox line: or another project, picked from the list', (
       tester,
     ) async {
@@ -342,6 +450,58 @@ void main() {
       expect(find.text('- гвозди\n- краска'), findsOneWidget);
       // A draft, not a save: the user says "Сохранить" as for any edit.
       expect(find.text('Заметка · не сохранено'), findsOneWidget);
+    });
+
+    testWidgets('saved, the answer takes its record along (F15)', (
+      tester,
+    ) async {
+      final json = <String, dynamic>{
+        'id': 'note_1',
+        'projectId': 'prj_1',
+        'title': 'Дача',
+        'content': 'ну гвозди краска',
+        'createdAt': '2026-09-20T10:00:00.000Z',
+        'updatedAt': '2026-09-20T10:00:00.000Z',
+      };
+      final patches = <Map<String, dynamic>>[];
+      backend
+        ..on(
+          'GET',
+          '/projects/prj_1/notes',
+          (_) => jsonResponse(<dynamic>[json]),
+        )
+        ..on('PATCH', '/notes/note_1', (match) {
+          patches.add(match.body);
+          return jsonResponse(<String, dynamic>{...json, ...match.body});
+        });
+      answers.add(<String, dynamic>{
+        'title': null,
+        'content': '- гвозди\n- краска',
+        'parseId': 'dp-9',
+      });
+      await pumpHost(
+        tester,
+        // The project's notes loaded underneath, as in the app: the editor
+        // is opened from the list, and saves through it.
+        Consumer(
+          builder: (context, ref, _) {
+            ref.watch(projectNotesProvider('prj_1'));
+            return NoteEditorScreen(projectId: 'prj_1', note: note());
+          },
+        ),
+      );
+
+      await tester.tap(find.byTooltip('Причесать'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await tester.tap(find.byTooltip('Сохранить'));
+      await settle(tester);
+
+      expect(patches.single, <String, dynamic>{
+        'content': '- гвозди\n- краска',
+        'dictationParseId': 'dp-9',
+      });
     });
 
     testWidgets('an empty body has nothing to tidy', (tester) async {

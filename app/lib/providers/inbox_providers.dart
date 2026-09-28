@@ -80,8 +80,13 @@ class Inbox extends _$Inbox {
     _publish(<InboxItem>[...current, ...added]);
   }
 
-  /// `PATCH /inbox/:id`.
-  Future<void> edit(InboxItem item, String text) async {
+  /// `PATCH /inbox/:id`. [dictationParseId]: [text] is a "Причесать" answer,
+  /// whose record on the server learns it was kept (F15).
+  Future<void> edit(
+    InboxItem item,
+    String text, {
+    String? dictationParseId,
+  }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError.value(text, 'text', 'an inbox item needs text');
@@ -90,7 +95,7 @@ class Inbox extends _$Inbox {
 
     final saved = await ref
         .read(inboxApiProvider)
-        .editItem(item.id, text: trimmed);
+        .editItem(item.id, text: trimmed, dictationParseId: dictationParseId);
     _publish(
       (state.value ?? const <InboxItem>[])
           .map((row) => row.id == saved.id ? saved : row)
@@ -122,10 +127,14 @@ class Inbox extends _$Inbox {
   /// [shaped] is the text already split into a title and a description by the
   /// client. Null -- the ordinary case -- leaves it to the server, which splits
   /// a long line itself (see `InboxApi.fileItem`).
+  ///
+  /// [dictationParseId]: the line or its shape is an answer of the server's
+  /// model (F15), whose record learns which task it became.
   Future<Task> file(
     InboxItem item, {
     required String projectId,
     FilingText? shaped,
+    String? dictationParseId,
   }) async {
     final task = await ref
         .read(inboxApiProvider)
@@ -134,6 +143,7 @@ class Inbox extends _$Inbox {
           projectId: projectId,
           title: shaped?.title,
           description: shaped?.description,
+          dictationParseId: dictationParseId,
         );
 
     _publish(
@@ -178,8 +188,9 @@ typedef FilingText = ({String title, String? description});
 
 /// Whether to file a line, and in what shape: [shaped] is the client's title
 /// and description, null for the server's split; `file: false` is the user
-/// backing out of filing altogether.
-typedef FilingDecision = ({bool file, FilingText? shaped});
+/// backing out of filing altogether. [parseId] is the server's record of the
+/// parse that shaped it, when a model did (F15).
+typedef FilingDecision = ({bool file, FilingText? shaped, String? parseId});
 
 /// Past this length a line is offered "Причесать" before it is filed. The
 /// same number as `INBOX_TITLE_LIMIT` in `backend/src/domain/inboxSplit.ts`:
@@ -201,6 +212,8 @@ Future<FilingDecision> shapeLineForFiling(
   required Future<FilingDecision> Function(String text) offerTidy,
 }) async {
   final line = text.trim();
-  if (line.length <= filingTidyThreshold) return (file: true, shaped: null);
+  if (line.length <= filingTidyThreshold) {
+    return (file: true, shaped: null, parseId: null);
+  }
   return offerTidy(line);
 }

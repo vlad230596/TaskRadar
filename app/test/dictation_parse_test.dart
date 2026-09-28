@@ -32,8 +32,14 @@ void main() {
   late FakeProjectBackend server;
   late List<Map<String, dynamic>> parseBodies;
 
-  /// What the screen popped with -- the text a [FieldDestination] hands back.
-  String? popped;
+  /// What the screen popped with -- what a [FieldDestination] hands back.
+  FieldDictation? popped;
+
+  /// [popped] as words to append, or null when it is not that.
+  String? poppedWords() => switch (popped) {
+    FieldWords(:final text) => text,
+    _ => null,
+  };
 
   setUp(() {
     popped = null;
@@ -118,8 +124,8 @@ void main() {
               body: Center(
                 child: ElevatedButton(
                   onPressed: () async {
-                    popped = await Navigator.of(context).push<String>(
-                      MaterialPageRoute<String>(
+                    popped = await Navigator.of(context).push<FieldDictation>(
+                      MaterialPageRoute<FieldDictation>(
                         builder: (_) =>
                             DictationScreen(destination: destination),
                       ),
@@ -541,19 +547,13 @@ void main() {
     testWidgets(
       "the sandbox answer's project: one tap, and the words become a task there",
       (tester) async {
-        backend.on('POST', '/dictation/parse', (match) {
-          parseBodies.add(match.body);
-          final result = match.body['kind'] == 'sandbox'
-              ? <String, dynamic>{
-                  'text': 'Купить кабель',
-                  'projectId': 'prj_1',
-                  'projectName': 'Дом',
-                }
-              : <String, dynamic>{'title': 'Купить кабель USB-C'};
-          return sseResponse(<String>[
-            sseEvent('accepted'),
-            sseEvent('result', result),
-          ]);
+        modelAnswers(<String, dynamic>{
+          'text': 'Купить кабель USB-C, два метра',
+          'title': 'Купить кабель USB-C',
+          'description': 'Два метра',
+          'projectId': 'prj_1',
+          'projectName': 'Дом',
+          'parseId': 'dp-5',
         });
 
         await dictate(tester, destination: const SandboxDestination());
@@ -561,17 +561,106 @@ void main() {
         await tester.tap(find.text('Задачей в «Дом»'));
         await settle(tester);
 
-        // Parsed again, as a task, from the same words.
-        expect(parseBodies.map((body) => body['kind']), <String>[
-          'sandbox',
-          'task',
-        ]);
-        expect(parseBodies.last['text'], 'Купить кабель');
+        // No second call: the sandbox answer already had the task in it,
+        // and it is on screen for correction, under the project's chip.
+        expect(parseBodies.map((body) => body['kind']), <String>['sandbox']);
+        expect(find.text('Купить кабель USB-C'), findsOneWidget);
+        expect(find.text('Два метра'), findsOneWidget);
+        expect(find.text('Дом'), findsOneWidget);
         await save(tester);
 
         expect(server.tasks.single['title'], 'Купить кабель USB-C');
+        expect(server.tasks.single['description'], 'Два метра');
+        // Labelled with the task it became.
+        expect(createBody()['dictationParseId'], 'dp-5');
+        expect(backend.requests.where((r) => r.path == '/inbox'), isEmpty);
       },
     );
+
+    testWidgets(
+      "the sandbox answer's project after correcting the line: the line whole",
+      (tester) async {
+        modelAnswers(<String, dynamic>{
+          'text': 'Купить кабель',
+          'title': 'Купить кабель',
+          'description': 'Лишнее',
+          'projectId': 'prj_1',
+          'projectName': 'Дом',
+        });
+
+        await dictate(tester, destination: const SandboxDestination());
+        await tidy(tester);
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Купить кабель'),
+          'Купить кабель и переходник',
+        );
+        await tester.tap(find.text('Задачей в «Дом»'));
+        await settle(tester);
+        await save(tester);
+
+        expect(parseBodies, hasLength(1));
+        expect(server.tasks.single['title'], 'Купить кабель и переходник');
+        expect(server.tasks.single['description'], isNull);
+      },
+    );
+
+    testWidgets('the sandbox line is sent with its record', (tester) async {
+      modelAnswers(<String, dynamic>{
+        'text': 'Купить кабель USB-C.',
+        'projectId': null,
+        'parseId': 'dp-6',
+      });
+
+      await dictate(tester, destination: const SandboxDestination());
+      await tidy(tester);
+      await save(tester);
+
+      final sent = backend.requests.singleWhere(
+        (r) => r.method == 'POST' && r.path == '/inbox',
+      );
+      expect((sent.data as Map<String, dynamic>)['dictationParseId'], 'dp-6');
+    });
+
+    testWidgets('an invented date: kept, with an amber note naming it', (
+      tester,
+    ) async {
+      modelAnswers(<String, dynamic>{
+        'text': 'Созвон в 3.00',
+        'warnings': <Map<String, dynamic>>[
+          <String, dynamic>{'kind': 'invented_date', 'token': '3.00'},
+        ],
+      });
+
+      await dictate(tester, destination: const SandboxDestination());
+      await tidy(tester);
+
+      expect(
+        find.byKey(const ValueKey<String>('tidy-warning')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'AI добавил «3.00», которого не было в тексте — проверь',
+          findRichText: true,
+        ),
+        findsOneWidget,
+      );
+      // The answer is still the answer: taking it is the user's call.
+      await save(tester);
+      final sent = backend.requests.singleWhere(
+        (r) => r.method == 'POST' && r.path == '/inbox',
+      );
+      expect((sent.data as Map<String, dynamic>)['text'], 'Созвон в 3.00');
+    });
+
+    testWidgets('no warning, no note', (tester) async {
+      modelAnswers(<String, dynamic>{'text': 'Купить кабель', 'warnings': []});
+
+      await dictate(tester, destination: const SandboxDestination());
+      await tidy(tester);
+
+      expect(find.byKey(const ValueKey<String>('tidy-warning')), findsNothing);
+    });
 
     testWidgets('a note field: tidied as a note, handed back as text', (
       tester,
@@ -586,15 +675,16 @@ void main() {
 
       expect(parseBodies.single['kind'], 'note');
       await save(tester);
-      expect(popped, '- кабель\n- переходник');
+      expect(poppedWords(), '- кабель\n- переходник');
     });
 
-    testWidgets('a task field: tidied as a task, handed back whole', (
+    testWidgets('a task field: tidied as a task, handed back as two fields', (
       tester,
     ) async {
       modelAnswers(<String, dynamic>{
         'title': 'Купить кабель',
         'description': 'Два метра',
+        'parseId': 'dp-3',
       });
 
       await dictate(
@@ -608,7 +698,78 @@ void main() {
 
       expect(parseBodies.single['kind'], 'task_tidy');
       await save(tester);
-      expect(popped, 'Купить кабель\nДва метра');
+      final task = popped! as FieldTaskText;
+      expect(task.title, 'Купить кабель');
+      expect(task.description, 'Два метра');
+      expect(task.parseId, 'dp-3');
+    });
+
+    testWidgets(
+      "a task field: the source is the task's text and the new words",
+      (tester) async {
+        modelAnswers(<String, dynamic>{
+          'title': 'Заказать кабель USB-C',
+          'description': 'Два метра, и купить кабель',
+          'warnings': <Map<String, dynamic>>[
+            <String, dynamic>{'kind': 'invented_date', 'token': 'завтра'},
+          ],
+        });
+
+        await dictate(
+          tester,
+          destination: const FieldDestination(
+            'в задачу',
+            kind: ParseKind.taskTidy,
+            task: (title: 'Заказать кабель', description: 'Два метра'),
+          ),
+        );
+        // Said over the words: what "Разобрать" sends along with them.
+        expect(find.text('УЖЕ В ЗАДАЧЕ'), findsOneWidget);
+        expect(find.text('Заказать кабель\nДва метра'), findsOneWidget);
+        await tidy(tester);
+
+        expect(
+          parseBodies.single['text'],
+          'Заказать кабель\nДва метра\nКупить кабель',
+        );
+        // The answer fills the two fields, with the warning over them.
+        expect(find.text('НАЗВАНИЕ'), findsOneWidget);
+        expect(find.text('Заказать кабель USB-C'), findsOneWidget);
+        expect(find.textContaining('«завтра»', findRichText: true), findsOne);
+
+        // "Исходник" still holds the words alone, under the task's text.
+        await tester.tap(find.text('Исходник'));
+        await settle(tester);
+        expect(find.widgetWithText(TextField, 'Купить кабель'), findsOneWidget);
+
+        await tester.tap(find.text('Результат AI'));
+        await settle(tester);
+        await save(tester);
+        final task = popped! as FieldTaskText;
+        expect(task.title, 'Заказать кабель USB-C');
+        expect(task.description, 'Два метра, и купить кабель');
+      },
+    );
+
+    testWidgets('a task field: "Как надиктовано" hands back only the words', (
+      tester,
+    ) async {
+      modelAnswers(<String, dynamic>{'title': 'Что-то другое'});
+
+      await dictate(
+        tester,
+        destination: const FieldDestination(
+          'в задачу',
+          kind: ParseKind.taskTidy,
+          task: (title: 'Заказать кабель', description: null),
+        ),
+      );
+      await tidy(tester);
+      await tester.tap(find.text('Как надиктовано'));
+      await settle(tester);
+      await save(tester);
+
+      expect(poppedWords(), 'Купить кабель');
     });
 
     testWidgets('"Как надиктовано" hands a field the words as they were', (
@@ -622,7 +783,7 @@ void main() {
       await settle(tester);
       await save(tester);
 
-      expect(popped, 'Купить кабель');
+      expect(poppedWords(), 'Купить кабель');
     });
   });
 

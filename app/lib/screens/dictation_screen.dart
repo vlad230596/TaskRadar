@@ -54,12 +54,12 @@ final class ProjectDestination extends DictationDestination {
 
 /// Back to the field that opened this screen -- the task text, a sandbox line.
 ///
-/// Nothing is written anywhere: the screen pops with the text and the caller
-/// puts it where it belongs. Not switchable, because the caller is a field that
-/// is already open behind this screen and "send it somewhere else instead"
-/// would leave that field waiting for words that went elsewhere.
+/// Nothing is written anywhere: the screen pops with a [FieldDictation] and the
+/// caller puts it where it belongs. Not switchable, because the caller is a
+/// field that is already open behind this screen and "send it somewhere else
+/// instead" would leave that field waiting for words that went elsewhere.
 final class FieldDestination extends DictationDestination {
-  const FieldDestination(this.label, {this.kind = ParseKind.note});
+  const FieldDestination(this.label, {this.kind = ParseKind.note, this.task});
 
   @override
   final String label;
@@ -69,6 +69,42 @@ final class FieldDestination extends DictationDestination {
   /// sandbox line. Never [ParseKind.task] -- a field gets text back, and a
   /// reminder has nowhere to go in it.
   final ParseKind kind;
+
+  /// [ParseKind.taskTidy]: the task's text as it stands behind this screen.
+  ///
+  /// The words are said *into* a task, so a tidied task is the task's text
+  /// and the words together: "Разобрать" sends all three, title, description
+  /// and what was just said, and the answer replaces both fields
+  /// ([FieldTaskText]). Tidying the new words alone would give back a second
+  /// title for a task that already has one -- which is what used to land at
+  /// the end of the title field. "Как надиктовано" still hands back only the
+  /// words ([FieldWords]), to be appended as before.
+  final ({String title, String? description})? task;
+}
+
+/// What a [FieldDestination] gets back when the screen is done with it. Null
+/// from the route is "nothing": the caller leaves its field alone.
+sealed class FieldDictation {
+  const FieldDictation();
+}
+
+/// Words to append to the field: as dictated, or -- for a field that holds
+/// one text, a note or a line -- as tidied.
+final class FieldWords extends FieldDictation {
+  const FieldWords(this.text);
+
+  final String text;
+}
+
+/// A task's whole text, tidied from what it held and the words said into it:
+/// replaces its title and its description. [parseId] is the server's record
+/// of the answer, for the save to label (see `ProjectTasks.editText`).
+final class FieldTaskText extends FieldDictation {
+  const FieldTaskText({required this.title, this.description, this.parseId});
+
+  final String title;
+  final String? description;
+  final String? parseId;
 }
 
 /// The dictation screen: dark, full of screen, and already recording (F12).
@@ -152,6 +188,14 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// The running parse; cancelled by "Отменить", and when the screen goes.
   TidyJob? _job;
 
+  /// The dictation, held so [dispose] can hand it over -- `ref` is not to be
+  /// used once the widget is going.
+  VoiceDictation? _dictation;
+
+  /// The app's messenger, above the navigator: still there to say where the
+  /// words went after this screen is gone.
+  ScaffoldMessengerState? _messenger;
+
   @override
   void initState() {
     super.initState();
@@ -162,8 +206,27 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _messenger = ScaffoldMessenger.maybeOf(context);
+  }
+
+  @override
   void dispose() {
     _job?.cancel();
+    // Closed while the pieces are still being recognised: the recognition
+    // carries on without this screen and its text goes to the sandbox -- the
+    // one place that is always there to take it, whatever this screen was
+    // aimed at. Never thrown away: that was a minute of speech.
+    final messenger = _messenger;
+    _dictation?.detach(
+      announce: (message) {
+        if (!(messenger?.mounted ?? false)) return;
+        messenger!
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(message)));
+      },
+    );
     _text.dispose();
     _textFocus.dispose();
     _title.dispose();
@@ -174,10 +237,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
   void _begin() {
     if (!mounted) return;
+    final dictation = ref.read(voiceDictationProvider.notifier);
+    _dictation = dictation;
     unawaited(
-      ref
-          .read(voiceDictationProvider.notifier)
-          .start(sink: (text) => appendDictated(_text, text: text)),
+      dictation.start(sink: (text) => appendDictated(_text, text: text)),
     );
   }
 
@@ -218,18 +281,23 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
     switch (_destination) {
       case FieldDestination():
-        await _leave(_result == null ? text : _fieldText());
+        await _leave(_fieldResult(text));
 
       case SandboxDestination():
-        final line = _result is TidiedLine ? _resultText.text.trim() : '';
+        final result = _result;
+        final line = result is TidiedLine ? _resultText.text.trim() : '';
         // Through the capture queue like everything else the sandbox accepts,
         // so dictating with no signal writes the line to disk and sends it when
-        // there is a network (F8.1).
+        // there is a network (F8.1). The answer's record goes with it, so the
+        // server learns the line was kept (F15).
         final ok = await runMutation(
           context,
           () => ref
               .read(captureQueueProvider.notifier)
-              .capture(line.isEmpty ? text : line),
+              .capture(
+                line.isEmpty ? text : line,
+                dictationParseId: line.isEmpty ? null : result?.parseId,
+              ),
           failure: 'Не удалось записать строчку на устройство.',
         );
         if (ok) await _leave(null);
@@ -239,11 +307,17 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         // pressed and answered, the words as they stand otherwise. Never a
         // silent round trip to the model on the way out -- the user should
         // not find a title in the project they did not see here.
-        final proposal = _result is ParsedDictation ? _result : null;
+        //
+        // A [TidiedTask] here is a sandbox answer whose project was taken
+        // (see [_takeSuggestion]): the same shape, without a reminder.
+        final proposal = switch (_result) {
+          ParsedDictation() || TidiedTask() => _result,
+          _ => null,
+        };
         final parsed = proposal != null;
         final title = parsed ? _title.text.trim() : '';
         final description = parsed ? _description.text.trim() : '';
-        final remindDate = parsed ? _remindDate : null;
+        final remindDate = proposal is ParsedDictation ? _remindDate : null;
         final ok = await runMutation(
           context,
           () => _createTask(
@@ -311,7 +385,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     job = TidyJob.start(
       ref,
       kind: _kind,
-      text: text,
+      text: _source(text),
       onProgress: () {
         if (mounted && _job == job) setState(() {});
       },
@@ -344,6 +418,31 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
       _tidyProblem = null;
       _progress = job.progress;
     });
+  }
+
+  /// The text "Разобрать" sends: the [words], and for a task field the task's
+  /// own text before them -- see [FieldDestination.task]. The title on the
+  /// first line, as "Причесать" on the task screen sends it.
+  String _source(String words) {
+    final task = _taskBehind;
+    if (task == null) return words;
+    return <String>[
+      task.title.trim(),
+      task.description?.trim() ?? '',
+      words,
+    ].where((part) => part.isNotEmpty).join('\n');
+  }
+
+  /// The task a [FieldDestination] with [ParseKind.taskTidy] sits on, when
+  /// it has any text yet.
+  ({String title, String? description})? get _taskBehind {
+    if (_destination
+        case FieldDestination(kind: ParseKind.taskTidy, task: final task?)
+        when task.title.trim().isNotEmpty ||
+            (task.description?.trim().isNotEmpty ?? false)) {
+      return task;
+    }
+    return null;
   }
 
   /// "Разобрать заново": from the words as they now stand in "Исходник".
@@ -396,27 +495,48 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   }
 
   /// The sandbox answer's project, taken: the words go to that project as a
-  /// task instead, so they are parsed again -- as a task, from the source.
-  void _takeSuggestion(String projectId, String name) {
+  /// task instead -- in the shape the same answer already gave them. No
+  /// second call to the model: the sandbox kind answers with the task split
+  /// of its line as well ([TidiedLine.title], [TidiedLine.description]).
+  ///
+  /// A line corrected by hand is no longer the text that split was of, so it
+  /// becomes the title whole and the user shapes it from there.
+  void _takeSuggestion(TidiedLine answer, String projectId, String name) {
+    final line = answer.edited(_resultText.text.trim());
     setState(() {
       _destination = ProjectDestination(projectId: projectId, name: name);
-      _result = null;
+      _result = TidiedTask(
+        title: line.title,
+        description: line.hasTaskShape ? line.description : null,
+        parseId: line.parseId,
+        warnings: line.warnings,
+      );
+      _title.text = line.title;
+      _description.text = line.hasTaskShape ? line.description ?? '' : '';
+      _remindDate = null;
       _showSource = false;
     });
-    _tidy();
   }
 
-  /// What a field gets back when the answer is what is saved.
-  String _fieldText() {
-    final String text = switch (_result) {
-      TidiedTask() || ParsedDictation() => <String>[
-        _title.text.trim(),
-        _description.text.trim(),
-      ].where((part) => part.isNotEmpty).join('\n'),
-      TidiedNote() || TidiedLine() => _resultText.text.trim(),
-      null => '',
-    };
-    return text.isEmpty ? _text.text.trim() : text;
+  /// What a field gets back: the answer if it is what is saved, the words
+  /// otherwise.
+  FieldDictation _fieldResult(String words) {
+    switch (_result) {
+      case TidiedTask(:final parseId) || ParsedDictation(:final parseId):
+        final title = _title.text.trim();
+        if (title.isEmpty) return FieldWords(words);
+        final description = _description.text.trim();
+        return FieldTaskText(
+          title: title,
+          description: description.isEmpty ? null : description,
+          parseId: parseId,
+        );
+      case TidiedNote() || TidiedLine():
+        final text = _resultText.text.trim();
+        return FieldWords(text.isEmpty ? words : text);
+      case null:
+        return FieldWords(words);
+    }
   }
 
   /// Creates the task in a project whose screen is usually *not* open.
@@ -457,7 +577,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     return parts.length == 3 ? '${parts[2]}.${parts[1]}' : date;
   }
 
-  Future<void> _leave(String? result) async {
+  Future<void> _leave(FieldDictation? result) async {
     if (!mounted || _leaving) return;
     _leaving = true;
     // Whatever is still open is thrown away: the words are already either saved
@@ -725,6 +845,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // What "Разобрать" sends along with the words, for a task: said
+            // here, over the words, so the source the model works from is the
+            // source the user can see. Not while recording -- the meter and
+            // the words need the room then, and nothing can be sent yet.
+            if (_taskBehind case final task?
+                when state is DictationIdle && !compact)
+              _TaskBehind(task),
             Expanded(
               // Deaf to pointers while the microphone is open, so the tap lands
               // on the `GestureDetector` above rather than on the field's own
@@ -861,6 +988,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       children: <Widget>[
+        // Above the answer, where it is read before the answer is taken.
+        if (result != null && result.warnings.isNotEmpty) ...<Widget>[
+          TidyWarningNote(result.warnings),
+          const SizedBox(height: 16),
+        ],
         if (result is ParsedDictation || result is TidiedTask) ...<Widget>[
           const TidyLabel('НАЗВАНИЕ'),
           TidyTextField(
@@ -920,10 +1052,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         // The sandbox answer's project: one tap sends the words there as a
         // task instead. Only for the sandbox itself -- a field behind this
         // screen is waiting for text, not for a project.
-        if (result case TidiedLine(
-          :final projectId?,
-          :final projectName?,
-        ) when _destination is SandboxDestination) ...<Widget>[
+        if (result case final TidiedLine line
+            when line.projectId != null &&
+                line.projectName != null &&
+                _destination is SandboxDestination) ...<Widget>[
           const SizedBox(height: 20),
           const TidyLabel('ПОХОЖЕ НА ПРОЕКТ'),
           Align(
@@ -937,9 +1069,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                   borderRadius: BorderRadius.circular(Radii.row),
                 ),
               ),
-              onPressed: () => _takeSuggestion(projectId, projectName),
+              onPressed: () =>
+                  _takeSuggestion(line, line.projectId!, line.projectName!),
               icon: const Icon(Icons.folder_outlined, size: 18),
-              label: Text('Задачей в «$projectName»'),
+              label: Text('Задачей в «${line.projectName}»'),
             ),
           ),
         ],
@@ -1139,6 +1272,38 @@ class _DestinationChip extends ConsumerWidget {
   }
 }
 
+/// "УЖЕ В ЗАДАЧЕ": the task's text over the words said into it -- the other
+/// half of what "Разобрать" sends. See [FieldDestination.task].
+class _TaskBehind extends StatelessWidget {
+  const _TaskBehind(this.task);
+
+  final ({String title, String? description}) task;
+
+  @override
+  Widget build(BuildContext context) {
+    final description = task.description?.trim() ?? '';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const TidyLabel('УЖЕ В ЗАДАЧЕ'),
+          Text(
+            <String>[
+              task.title.trim(),
+              description,
+            ].where((part) => part.isNotEmpty).join('\n'),
+            key: const ValueKey<String>('task-behind'),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: AppText.voiceNote.copyWith(fontSize: 15),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// "Распознаю · 3 из 8", a bar that fills, and a guess at the rest.
 ///
 /// The top card of the reference page. A card rather than the stage row with
@@ -1155,7 +1320,7 @@ class _RecognitionCard extends StatelessWidget {
     // the bar would jump from empty to gone. It keeps the old face -- the
     // word, and a bar that only says "working".
     final counted = state.total > 1;
-    final remaining = state.remaining;
+    final estimate = counted ? recognitionEstimate(state) : null;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
@@ -1201,28 +1366,47 @@ class _RecognitionCard extends StatelessWidget {
                 color: AppColors.voiceLevelHigh,
               ),
             ),
-            if (counted && remaining != null) ...<Widget>[
+            if (estimate != null) ...<Widget>[
               const SizedBox(height: 10),
-              Text(
-                _roughly(remaining),
-                style: AppText.voiceNote.copyWith(fontSize: 13),
-              ),
+              Text(estimate, style: AppText.voiceNote.copyWith(fontSize: 13)),
             ],
+            const SizedBox(height: 10),
+            // The question a bar that takes a minute raises: may I put the
+            // phone away? Yes -- see `VoiceDictation.detach`.
+            Text(
+              'можно закрыть экран — текст попадёт в песочницу',
+              style: AppText.voiceNote.copyWith(
+                fontSize: 13,
+                color: AppColors.voiceMuted,
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+}
 
-  /// "осталось около 20 с", "осталось около 2 мин". A guess, rounded like
-  /// one: to five seconds under a minute, so the number does not flicker by
-  /// one every piece.
-  static String _roughly(Duration d) {
-    final seconds = d.inSeconds;
-    if (seconds < 5) return 'почти готово';
-    if (seconds < 60) return 'осталось около ${(seconds / 5).round() * 5} с';
-    return 'осталось около ${(seconds / 60).round()} мин';
+/// The line under the recognition bar, or null for none.
+///
+/// "почти готово" only once the last piece is the one being recognised --
+/// said at "2 из 8" because the first pieces happened to be quick, it was a
+/// promise the next six broke. Before that, "осталось около 20 с" when there
+/// is an estimate ([DictationRecognising.remaining]), and nothing when there
+/// is not: a guess from no data is not worth a line.
+///
+/// Rounded like a guess: to five seconds under a minute, so the number does
+/// not flicker by one every piece, and never down to "0 с".
+String? recognitionEstimate(DictationRecognising state) {
+  if (state.total > 1 && state.done == state.total - 1) return 'почти готово';
+  final remaining = state.remaining;
+  if (remaining == null || state.done >= state.total) return null;
+  final seconds = remaining.inSeconds;
+  if (seconds < 60) {
+    final rounded = ((seconds / 5).round() * 5).clamp(5, 55);
+    return 'осталось около $rounded с';
   }
+  return 'осталось около ${(seconds / 60).round()} мин';
 }
 
 class _Spinner extends StatelessWidget {

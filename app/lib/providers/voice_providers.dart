@@ -8,6 +8,7 @@ import '../voice/speech_recognizer.dart';
 import '../voice/voice_model.dart';
 import '../voice/voice_model_store.dart';
 import '../voice/voice_recorder.dart';
+import 'capture_queue_providers.dart';
 
 part 'voice_providers.g.dart';
 
@@ -275,10 +276,7 @@ class DictationStarting extends DictationState {
 /// A periodic timer moves with both, so the seconds the user reads are the same
 /// seconds a test can assert on.
 class DictationRecording extends DictationState {
-  const DictationRecording({
-    required this.elapsed,
-    required this.modelLoading,
-  });
+  const DictationRecording({required this.elapsed, required this.modelLoading});
 
   final Duration elapsed;
 
@@ -457,6 +455,13 @@ class VoiceDictation extends _$VoiceDictation {
   void Function(String text)? _sink;
   Duration _elapsed = Duration.zero;
 
+  /// True while a recognition runs with nobody left to hand its text to: the
+  /// screen that started it was closed. See [detach].
+  bool _detached = false;
+
+  /// Told how a [detach]ed recognition ended, in a sentence for a snackbar.
+  void Function(String message)? _announce;
+
   /// Which attempt is the current one.
   ///
   /// ## Why a counter and not just `ref.mounted`
@@ -481,6 +486,19 @@ class VoiceDictation extends _$VoiceDictation {
   /// screen that is already on display, so it does not have to do anything with
   /// the answer -- the state it can see is the answer.
   Future<bool> start({required void Function(String text) sink}) async {
+    // A dictation from a screen that was closed is still being recognised
+    // (see [detach]), and this is a screen opened meanwhile. It takes the
+    // text over rather than starting a second recording on top of the first:
+    // the words land in front of the user, who is looking, instead of in the
+    // sandbox behind their back. Nothing is recorded -- the screen shows the
+    // recognition it has adopted, and then the words.
+    if (state is DictationRecognising && _detached) {
+      _sink = sink;
+      _detached = false;
+      _announce = null;
+      return false;
+    }
+
     // Re-entry is a no-op rather than a failure. The screen calls this from
     // `initState`, and a rebuild that called it twice must not end the
     // recording that is already running.
@@ -550,6 +568,8 @@ class VoiceDictation extends _$VoiceDictation {
     }
 
     _sink = sink;
+    _detached = false;
+    _announce = null;
     _elapsed = Duration.zero;
     _startClock();
 
@@ -666,17 +686,40 @@ class VoiceDictation extends _$VoiceDictation {
   ///
   /// Reached from "Готово", from a tap on the text area, and from [ceiling].
   /// All three mean the same thing and there is deliberately only one path.
+  ///
+  /// ## Why the provider is kept alive for the length of it
+  ///
+  /// It is auto-disposed with the screen, and the screen can be closed while
+  /// the pieces are still being recognised -- which on a ten-minute recording
+  /// is the better part of a minute nobody wants to spend watching a bar.
+  /// Disposed, it would unload the recogniser under the transcription and the
+  /// dictation would be gone. So from the moment the recording stops until
+  /// its text has gone somewhere, the provider -- and with it the recorder,
+  /// the recogniser and the file -- stays; see [detach] for where the text
+  /// goes when the screen is not there to take it.
   Future<void> finish() async {
     if (state is! DictationRecording) return;
 
+    final keepAlive = ref.keepAlive();
+    try {
+      await _finish();
+    } finally {
+      keepAlive.close();
+    }
+  }
+
+  Future<void> _finish() async {
     final length = _elapsed;
     _clock?.cancel();
     _clock = null;
 
-    final path = await ref.read(voiceRecorderProvider).stop();
+    final recorder = ref.read(voiceRecorderProvider);
+    final path = await recorder.stop();
     if (!ref.mounted) return;
     if (path == null) {
-      state = const DictationFailed('Запись не получилась — попробуйте ещё раз.');
+      _fail(
+        const DictationFailed('Запись не получилась — попробуйте ещё раз.'),
+      );
       return;
     }
 
@@ -691,9 +734,11 @@ class VoiceDictation extends _$VoiceDictation {
       // send the user to try the same phrase again against weights that will
       // not load this time either.
       if (_loadFailure != null) {
-        state = const DictationFailed(
-          'Модель не загрузилась — переустановите её в настройках.',
-          retryable: false,
+        _fail(
+          const DictationFailed(
+            'Модель не загрузилась — переустановите её в настройках.',
+            retryable: false,
+          ),
         );
         return;
       }
@@ -725,17 +770,86 @@ class VoiceDictation extends _$VoiceDictation {
         // Not an error: a screen opened by accident, or a phrase the model
         // heard as silence. Saying "ничего не расслышали" is the difference
         // between "it is broken" and "say it again".
-        state = const DictationFailed('Ничего не расслышали.');
+        _fail(const DictationFailed('Ничего не расслышали.'));
+        return;
+      }
+
+      if (_detached) {
+        await _deliverToSandbox(text, recorder, path);
         return;
       }
 
       state = const DictationIdle();
       _sink?.call(text);
+      // Delivered: the file has done its job, and a recording of somebody's
+      // thoughts is not something to leave lying in a cache.
+      await recorder.discard(path);
     } catch (error) {
       debugPrint('Recognition failed: $error');
       if (!ref.mounted) return;
-      state = const DictationFailed('Не удалось распознать запись.');
+      _fail(const DictationFailed('Не удалось распознать запись.'));
     }
+  }
+
+  /// [failure] as the state, and -- for a [detach]ed dictation, whose screen
+  /// is gone -- said in the snackbar instead, since there is no screen left
+  /// to say it on.
+  void _fail(DictationFailed failure) {
+    state = failure;
+    if (!_detached) return;
+    final announce = _announce;
+    _detached = false;
+    _announce = null;
+    announce?.call('Диктовка не распознана: ${_lowerFirst(failure.message)}');
+  }
+
+  static String _lowerFirst(String text) =>
+      text.isEmpty ? text : text[0].toLowerCase() + text.substring(1);
+
+  /// The text of a dictation whose screen was closed, into the sandbox.
+  ///
+  /// The sandbox whatever the screen was aimed at. The capture queue is the
+  /// one destination that is always valid: a project may have been archived
+  /// meanwhile, and a field -- a task, a note, a line -- was on a screen that
+  /// is gone, so there is nobody left to hand the words to. From the sandbox
+  /// they are one tap from anywhere.
+  ///
+  /// The recording is deleted only once the line is on disk: if the capture
+  /// fails, the file is the only copy left of what was said.
+  Future<void> _deliverToSandbox(
+    String text,
+    VoiceRecorder recorder,
+    String path,
+  ) async {
+    final announce = _announce;
+    _detached = false;
+    _announce = null;
+    state = const DictationIdle();
+    try {
+      await ref.read(captureQueueProvider.notifier).capture(text);
+    } catch (error) {
+      debugPrint('Could not keep a detached dictation: $error');
+      announce?.call('Диктовку не удалось записать в песочницу.');
+      return;
+    }
+    await recorder.discard(path);
+    announce?.call('Диктовка распознана — в песочнице');
+  }
+
+  /// The screen that started this dictation is going away while it is still
+  /// being recognised. The recognition carries on (see [finish]); its text
+  /// goes to the sandbox rather than to the screen, and [announce] is told
+  /// how it ended, in words for a snackbar.
+  ///
+  /// Returns false when there is nothing under way to carry on with -- the
+  /// recording is not being recognised, so closing the screen loses nothing
+  /// that is not already on it.
+  bool detach({void Function(String message)? announce}) {
+    if (state is! DictationRecognising) return false;
+    _sink = null;
+    _detached = true;
+    _announce = announce;
+    return true;
   }
 
   /// "Отменить", or the screen being dismissed mid-phrase.

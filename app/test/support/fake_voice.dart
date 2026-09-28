@@ -68,6 +68,15 @@ class FakeVoiceRecorder implements VoiceRecorder {
     recording = false;
   }
 
+  /// Every finished recording thrown away, in order: a recording must not be
+  /// among them before its text has been delivered.
+  final List<String> discarded = <String>[];
+
+  @override
+  Future<void> discard(String path) async {
+    discarded.add(path);
+  }
+
   /// What [levels] replays. Empty by default: the meter is decoration over a
   /// platform stream, and a test that does not care about it should not have to
   /// drain one.

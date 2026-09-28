@@ -127,6 +127,43 @@ void main() {
       expect(container.read(pendingCapturesProvider), isEmpty);
       expect(store.queue, isEmpty);
     });
+
+    test("a tidied line keeps its parse's record, on disk and on the wire", () async {
+      // A dictated line sent after a restart is still the same answer (F15):
+      // the record survives the queue, and the server is told it was kept.
+      backend.failingPaths.add('/inbox');
+      final container = makeContainer();
+      await container
+          .read(captureQueueProvider.notifier)
+          .capture('Купить кабель USB-C', dictationParseId: 'dp-4');
+      await container.read(captureQueueProvider.notifier).flush();
+
+      final stored = store.queue.single;
+      expect(stored.dictationParseId, 'dp-4');
+      expect(PendingCapture.fromJson(stored.toJson()).dictationParseId, 'dp-4');
+
+      backend.failingPaths.remove('/inbox');
+      await container.read(captureQueueProvider.notifier).flush();
+      final sent = backend.requests.lastWhere(
+        (r) => r.method == 'POST' && r.path == '/inbox',
+      );
+      expect((sent.data as Map<String, dynamic>)['dictationParseId'], 'dp-4');
+    });
+
+    test('a typed line sends no record at all', () async {
+      final container = makeContainer();
+      await container.read(captureQueueProvider.notifier).capture('Руками');
+      await container.read(captureQueueProvider.notifier).flush();
+
+      final sent = backend.requests.lastWhere(
+        (r) => r.method == 'POST' && r.path == '/inbox',
+      );
+      expect(
+        (sent.data as Map<String, dynamic>).containsKey('dictationParseId'),
+        isFalse,
+      );
+      expect(store.queue, isEmpty);
+    });
   });
 
   group('flushing', () {

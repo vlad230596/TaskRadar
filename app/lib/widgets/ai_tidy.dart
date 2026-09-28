@@ -347,6 +347,85 @@ class TidyActions extends StatelessWidget {
   }
 }
 
+/// The amber line over an answer that says something the words did not: "AI
+/// добавил «3.00», которого не было в тексте — проверь" (F15).
+///
+/// ## Why a note and not a refusal
+///
+/// The server used to throw such an answer away, and the check behind it
+/// cannot tell an invented deadline from a time the user said in words --
+/// "три ноль" is "3.00" either way. Thrown away, the answer took everything
+/// else the model fixed with it. Now the answer is shown and this says what to
+/// look at; the user, who knows what was said, takes it or goes to "Исходник".
+/// The token is marked, because "проверь" is only useful with the thing to
+/// check in sight.
+class TidyWarningNote extends StatelessWidget {
+  const TidyWarningNote(this.warnings, {super.key});
+
+  final List<TidyWarning> warnings;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = <String>[
+      for (final warning in warnings)
+        if (warning.kind == TidyWarning.inventedDate) warning.token,
+    ];
+    if (tokens.isEmpty) return const SizedBox.shrink();
+
+    const amber = AppColors.waitingDotOnInk;
+    const text = TextStyle(
+      fontWeight: FontWeight.w500,
+      fontSize: 14,
+      height: 1.35,
+      color: AppColors.voiceInk,
+    );
+    final mark = text.copyWith(
+      fontWeight: FontWeight.w700,
+      color: AppColors.voiceBackground,
+      backgroundColor: amber,
+    );
+
+    return Container(
+      key: const ValueKey<String>('tidy-warning'),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: amber.withValues(alpha: 0.12),
+        border: Border.all(color: amber),
+        borderRadius: BorderRadius.circular(Radii.row),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Padding(
+            padding: EdgeInsets.only(top: 1),
+            child: Icon(Icons.warning_amber_rounded, size: 18, color: amber),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                style: text,
+                children: <InlineSpan>[
+                  const TextSpan(text: 'AI добавил '),
+                  for (var i = 0; i < tokens.length; i++) ...<InlineSpan>[
+                    if (i > 0) const TextSpan(text: ', '),
+                    TextSpan(text: '«${tokens[i]}»', style: mark),
+                  ],
+                  TextSpan(
+                    text: tokens.length == 1
+                        ? ', которого не было в тексте — проверь'
+                        : ', которых не было в тексте — проверь',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// What [AiTidyScreen] ended with. Null from [openAiTidy] means closed with
 /// nothing decided: the caller leaves its text alone.
 sealed class TidyOutcome {
@@ -566,14 +645,9 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
           content: _body.text.trim(),
           parseId: parseId,
         );
-      case TidiedLine(:final projectId, :final projectName, :final parseId):
+      case final TidiedLine line:
         if (body.isEmpty) return null;
-        return TidiedLine(
-          text: body,
-          projectId: projectId,
-          projectName: projectName,
-          parseId: parseId,
-        );
+        return line.edited(body);
       case ParsedDictation() || null:
         return null;
     }
@@ -713,6 +787,20 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
     );
     final body = AppText.dictated.copyWith(fontSize: 16);
 
+    return <Widget>[
+      if (result != null && result.warnings.isNotEmpty) ...<Widget>[
+        TidyWarningNote(result.warnings),
+        const SizedBox(height: 16),
+      ],
+      ..._resultFields(result, heading: heading, body: body),
+    ];
+  }
+
+  List<Widget> _resultFields(
+    TidyResult? result, {
+    required TextStyle heading,
+    required TextStyle body,
+  }) {
     return switch (result) {
       TidiedTask() => <Widget>[
         const TidyLabel('НАЗВАНИЕ'),
