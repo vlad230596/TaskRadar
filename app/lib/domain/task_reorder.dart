@@ -109,3 +109,31 @@ TaskMove? planTaskMove(List<Task> tasks, int oldIndex, int newIndex) {
     targetIndex: target,
   );
 }
+
+/// Translates a reorder inside one *section* of the list into the same reorder
+/// in the whole list, for [planTaskMove].
+///
+/// The project screen draws its tasks in sections ("в работе", "открытые",
+/// "выполнено") and only the open section is draggable -- but its rows are not
+/// contiguous in server order: a done or focused task can sit between two of
+/// them. [sectionIndices] are the full-list indices of the section's rows, in
+/// order; [oldIndex] and [newIndex] are what `onReorder` reported for the
+/// section, in its "dragged item still in the list" convention, and the result
+/// keeps that convention.
+///
+/// Dropping *before* section row `b` becomes dropping before that same row in
+/// the full list; dropping past the last row becomes dropping right after it.
+/// Either way the section reads in the order the drag left it, which is the
+/// only order the person could see. Null for indices out of range.
+(int, int)? mapSectionReorder(
+  List<int> sectionIndices,
+  int oldIndex,
+  int newIndex,
+) {
+  if (oldIndex < 0 || oldIndex >= sectionIndices.length) return null;
+  if (newIndex < 0 || newIndex > sectionIndices.length) return null;
+  final to = newIndex < sectionIndices.length
+      ? sectionIndices[newIndex]
+      : sectionIndices.last + 1;
+  return (sectionIndices[oldIndex], to);
+}

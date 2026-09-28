@@ -13,6 +13,7 @@ _Project _$ProjectFromJson(Map<String, dynamic> json) => _Project(
   archivedAt: json['archivedAt'] as String?,
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,
+  noteCount: _countFromJson(json['noteCount']),
 );
 
 Map<String, dynamic> _$ProjectToJson(_Project instance) => <String, dynamic>{
@@ -22,4 +23,5 @@ Map<String, dynamic> _$ProjectToJson(_Project instance) => <String, dynamic>{
   'archivedAt': instance.archivedAt,
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
+  'noteCount': ?instance.noteCount,
 };

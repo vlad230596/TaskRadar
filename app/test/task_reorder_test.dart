@@ -46,6 +46,51 @@ void main() {
     });
   });
 
+  group('mapSectionReorder (F15)', () {
+    // Six rows a..f; the open section is b, d, e -- a, c and f are in work or
+    // done and sit between them in server order.
+    const open = <int>[1, 3, 4];
+    final six = rows(6);
+
+    List<String>? afterDrag(int oldIndex, int newIndex) {
+      final full = mapSectionReorder(open, oldIndex, newIndex);
+      final plan = planTaskMove(six, full!.$1, full.$2);
+      return plan == null ? null : idsOf(plan.reordered);
+    }
+
+    List<String> openOf(List<String> ids) =>
+        ids.where((id) => <String>{'b', 'd', 'e'}.contains(id)).toList();
+
+    test('down to the end of the section lands after its last row', () {
+      final ids = afterDrag(0, 3)!;
+      expect(openOf(ids), <String>['d', 'e', 'b']);
+      expect(ids.indexOf('b'), ids.indexOf('e') + 1);
+    });
+
+    test('up to the top lands before the first open row', () {
+      final ids = afterDrag(2, 0)!;
+      expect(openOf(ids), <String>['e', 'b', 'd']);
+      // ...and nothing outside the section moved relative to it more than it
+      // had to: `a` is still first.
+      expect(ids.first, 'a');
+    });
+
+    test('into the middle, across a row of another section', () {
+      expect(openOf(afterDrag(0, 2)!), <String>['d', 'b', 'e']);
+    });
+
+    test('a drop in place is still no request', () {
+      expect(afterDrag(1, 1), isNull);
+      expect(afterDrag(1, 2), isNull);
+    });
+
+    test('out-of-range indices are refused', () {
+      expect(mapSectionReorder(open, 3, 0), isNull);
+      expect(mapSectionReorder(open, 0, 4), isNull);
+      expect(mapSectionReorder(const <int>[], 0, 0), isNull);
+    });
+  });
+
   group('planTaskMove', () {
     test('into the middle names both neighbours', () {
       // a b c d -> move a between b and c.

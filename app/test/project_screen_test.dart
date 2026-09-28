@@ -11,6 +11,7 @@ import 'package:taskradar/screens/note_editor_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/screens/task_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
+import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
 import 'package:taskradar/widgets/note_list.dart';
 import 'package:taskradar/widgets/task_list.dart';
@@ -88,19 +89,45 @@ void main() {
     await settle(tester);
   }
 
-  /// Swaps the body to the notes.
+  /// The two halves of the phone's "Задачи · N | Заметки · N" switch (F15).
   ///
-  /// A header button rather than a tab since F12: the tabs cost a 48 px strip
-  /// on every project screen to answer a question the icon answers, on a screen
-  /// whose job is fitting as many 56 px task rows as it can.
+  /// It replaced F12's header icon, which nobody found: an icon says neither
+  /// that the notes exist nor how many there are.
+  final notesSegment = find.textContaining(RegExp(r'^Заметки( · \d+)?$'));
+  final tasksSegment = find.textContaining(RegExp(r'^Задачи · \d+$'));
+
+  /// Swaps the body to the notes.
   Future<void> openNotesTab(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('Заметки проекта'));
+    await tester.tap(notesSegment);
     await settle(tester);
   }
 
   Future<void> openTasksTab(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('К задачам'));
+    await tester.tap(tasksSegment);
     await settle(tester);
+  }
+
+  /// Unfolds "Выполнено · N", which is folded on every visit.
+  Future<void> openDone(WidgetTester tester) async {
+    await tester.tap(find.textContaining('Выполнено ·'));
+    await settle(tester);
+  }
+
+  /// The titles on screen, top to bottom, out of [among].
+  List<String> titlesOnScreen(WidgetTester tester, List<String> among) {
+    final found = <(double, String)>[
+      for (final title in among)
+        if (find.text(title).evaluate().isNotEmpty)
+          (tester.getTopLeft(find.text(title)).dy, title),
+    ]..sort((a, b) => a.$1.compareTo(b.$1));
+    return <String>[for (final entry in found) entry.$2];
+  }
+
+  /// Holds `GET .../notes` until [gate] completes; everything else is served.
+  void holdNotes(Completer<void> gate) {
+    backend.delay = (options) => options.path.endsWith('/notes')
+        ? gate.future
+        : Future<void>.value();
   }
 
   /// Opens one task on its own screen -- which is where every edit lives now.
@@ -249,26 +276,92 @@ void main() {
       );
     });
 
-    testWidgets('renders every task in server order', (tester) async {
+    const all = <String>['Уже сделано', 'Позвонить прорабу', 'Жду кабель'];
+
+    testWidgets('open tasks in server order; the done ones folded below', (
+      tester,
+    ) async {
       await pumpProject(tester);
 
-      final titles = tester
-          .widgetList<Text>(find.byType(Text))
-          .map((text) => text.data)
-          .where(
-            (data) => <String>[
-              'Уже сделано',
-              'Позвонить прорабу',
-              'Жду кабель',
-            ].contains(data),
-          )
-          .toList();
-
-      expect(titles, <String>[
-        'Уже сделано',
+      // Pending and blocked together, in the order the server keeps them.
+      expect(titlesOnScreen(tester, all), <String>[
         'Позвонить прорабу',
         'Жду кабель',
       ]);
+      expect(find.text('Выполнено · 1'), findsOneWidget);
+      // Nothing in work, so "ОТКРЫТЫЕ" still has the done row to be told apart
+      // from -- but there is no "В РАБОТЕ" to draw.
+      expect(find.text('В РАБОТЕ'), findsNothing);
+
+      await openDone(tester);
+      expect(titlesOnScreen(tester, all), <String>[
+        'Позвонить прорабу',
+        'Жду кабель',
+        'Уже сделано',
+      ]);
+    });
+
+    testWidgets('the done section is folded again on the next visit', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      await openDone(tester);
+      expect(find.text('Уже сделано'), findsOneWidget);
+
+      // Folding it back by hand works...
+      await openDone(tester);
+      expect(find.text('Уже сделано'), findsNothing);
+
+      // ...and a fresh screen starts folded whatever was left open before:
+      // nothing about it is remembered.
+      await openDone(tester);
+      await tester.pumpWidget(const SizedBox());
+      await pumpProject(tester);
+      expect(find.text('Уже сделано'), findsNothing);
+      expect(find.text('Выполнено · 1'), findsOneWidget);
+    });
+
+    testWidgets('a task in the focus set heads the list, in its own section', (
+      tester,
+    ) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Купить лампочки',
+        focused: true,
+      );
+      await pumpProject(tester);
+
+      expect(find.text('В РАБОТЕ'), findsOneWidget);
+      expect(find.text('ОТКРЫТЫЕ'), findsOneWidget);
+      // Last in server order, first on screen.
+      expect(
+        titlesOnScreen(tester, <String>[...all, 'Купить лампочки']),
+        <String>['Купить лампочки', 'Позвонить прорабу', 'Жду кабель'],
+      );
+      expect(
+        tester.getTopLeft(find.text('В РАБОТЕ')).dy,
+        lessThan(tester.getTopLeft(find.text('ОТКРЫТЫЕ')).dy),
+      );
+
+      // The in-work card carries the indigo border.
+      final row = tester.widget<TaskRow>(
+        find.ancestor(
+          of: find.text('Купить лампочки'),
+          matching: find.byType(TaskRow),
+        ),
+      );
+      expect(row.inWork, isTrue);
+      final card = tester.widget<Container>(
+        find
+            .descendant(
+              of: find.byWidget(row),
+              matching: find.byType(Container),
+            )
+            .first,
+      );
+      final border = (card.decoration! as BoxDecoration).border! as Border;
+      expect(border.top.color, AppColors.indigo);
+      expect(border.top.width, 1.5);
     });
 
     testWidgets('the header counts done against total', (tester) async {
@@ -293,6 +386,7 @@ void main() {
 
         // A done task is struck through rather than hidden -- it is part of the
         // record of what happened in this project.
+        await openDone(tester);
         final done = tester.widget<Text>(find.text('Уже сделано'));
         expect(done.style?.decoration, TextDecoration.lineThrough);
       },
@@ -335,16 +429,20 @@ void main() {
       // (`design/reference/Project.html`) выбрал за нас: набор собирают каждый
       // день, порядок задач меняют изредка.
       expect(find.byIcon(Icons.drag_indicator), findsNothing);
-      expect(find.byIcon(Icons.adjust), findsNWidgets(3));
+      // Two open rows; the done one is folded and would have none anyway.
+      expect(find.byIcon(Icons.adjust), findsNWidgets(2));
+      expect(find.byType(FocusPill), findsNothing);
     });
 
     testWidgets('dragging a row persists the new order', (tester) async {
       await pumpProject(tester);
 
       // Жест целиком, через `ReorderableDelayedDragStartListener`: долгое
-      // нажатие по тексту первой строки и протяжка ниже второй. Ручки больше
-      // нет — см. тест выше и заметку в `widgets/task_list.dart`.
-      final handle = find.text('Уже сделано');
+      // нажатие по тексту первой открытой строки и протяжка ниже второй.
+      // Ручки больше нет — см. тест выше и заметку в `widgets/task_list.dart`.
+      // Перетаскиваются только открытые (F15), а сделанная, стоящая перед
+      // ними в серверном порядке, остаётся где была.
+      final handle = find.text('Позвонить прорабу');
       final gesture = await tester.startGesture(tester.getCenter(handle));
       // Дольше, чем `kLongPressTimeout`: задержанный слушатель до этого момента
       // жест не забирает, чтобы не отнимать его у прокрутки.
@@ -362,10 +460,89 @@ void main() {
       await settle(tester);
 
       expect(server.titlesInOrder(projectId), <String>[
-        'Позвонить прорабу',
         'Уже сделано',
         'Жду кабель',
+        'Позвонить прорабу',
       ]);
+    });
+
+    testWidgets('a row in work cannot be dragged', (tester) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Купить лампочки',
+        focused: true,
+      );
+      await pumpProject(tester);
+
+      final gesture = await tester.startGesture(
+        tester.getCenter(find.text('Купить лампочки')),
+      );
+      await tester.pump(const Duration(milliseconds: 700));
+      for (var i = 0; i < 6; i++) {
+        await gesture.moveBy(const Offset(0, 30));
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await gesture.up();
+      await settle(tester);
+
+      expect(
+        server.patches.where((patch) => patch.path.endsWith('/position')),
+        isEmpty,
+      );
+    });
+  });
+
+  group('the focus target (F15)', () {
+    setUp(() {
+      server.addTask(projectId: projectId, title: 'Позвонить прорабу');
+    });
+
+    testWidgets('outside the set: an outlined ring; inside: the pill', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+
+      expect(find.byTooltip('Взять в работу'), findsOneWidget);
+      expect(find.byType(FocusPill), findsNothing);
+      final ring = tester.widget<Icon>(find.byIcon(Icons.adjust));
+      expect(ring.size, 20);
+      expect(ring.color, AppColors.muted);
+
+      await tester.tap(find.byTooltip('Взять в работу'));
+      await settle(tester);
+
+      expect(server.tasks.single['focusedAt'], isNotNull);
+      expect(find.byType(FocusPill), findsOneWidget);
+      expect(find.text('В работе'), findsOneWidget);
+      expect(find.byTooltip('Убрать из набора'), findsOneWidget);
+      // It moved to the section that says so.
+      expect(find.text('В РАБОТЕ'), findsOneWidget);
+      // And the tap is confirmed in words.
+      expect(find.text('Взята в работу'), findsOneWidget);
+    });
+
+    testWidgets('"Отменить" puts it back out of the set', (tester) async {
+      await pumpProject(tester);
+      await tester.tap(find.byTooltip('Взять в работу'));
+      await settle(tester);
+
+      await tester.tap(find.text('Отменить'));
+      await settle(tester);
+
+      expect(server.tasks.single['focusedAt'], isNull);
+      expect(find.byType(FocusPill), findsNothing);
+    });
+
+    testWidgets('dropping it says so', (tester) async {
+      server.tasks.single['focusedAt'] = '2026-09-22T09:40:00.000Z';
+      await pumpProject(tester);
+
+      await tester.tap(find.byType(FocusPill));
+      await settle(tester);
+
+      expect(server.tasks.single['focusedAt'], isNull);
+      expect(find.text('Убрана из работы'), findsOneWidget);
+      expect(find.byType(FocusPill), findsNothing);
     });
   });
 
@@ -434,6 +611,71 @@ void main() {
       expect(server.tasks.single['status'], 'done');
       // And only the status went over the wire.
       expect(server.patches.last.body, <String, dynamic>{'status': 'done'});
+      // The row has left for the folded section, so the screen says what
+      // happened to it -- with a way back.
+      expect(find.text('Сделано'), findsOneWidget);
+      expect(find.text('Отменить'), findsOneWidget);
+      expect(find.text('Выполнено · 1'), findsOneWidget);
+    });
+
+    testWidgets('"Отменить" after "сделано" reopens the task', (tester) async {
+      server.addTask(projectId: projectId, title: 'Позвонить прорабу');
+      await pumpProject(tester);
+
+      await tester.tap(find.byTooltip('Отметить сделанной'));
+      await settle(tester);
+      await tester.tap(find.text('Отменить'));
+      await settle(tester);
+
+      expect(server.tasks.single['status'], 'pending');
+      expect(find.byTooltip('Отметить сделанной'), findsOneWidget);
+      expect(find.textContaining('Выполнено'), findsNothing);
+    });
+
+    testWidgets("undo restores a blocker's date and its place in the set", (
+      tester,
+    ) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Жду кабель',
+        status: 'blocked',
+        remindAt: _remindAt(5),
+        focused: true,
+      );
+      await pumpProject(tester);
+
+      // A tap on a blocker's circle closes it, the same as on a pending one.
+      await tester.tap(find.byTooltip('Блокер — снять'));
+      await settle(tester);
+      expect(server.tasks.single['status'], 'done');
+      expect(server.tasks.single['focusedAt'], isNull);
+
+      await tester.tap(find.text('Отменить'));
+      await settle(tester);
+
+      expect(server.tasks.single['status'], 'blocked');
+      expect(
+        (server.tasks.single['remindAt'] as String).substring(0, 10),
+        _remindAt(5).substring(0, 10),
+      );
+      expect(server.tasks.single['focusedAt'], isNotNull);
+      // No date picker: restoring a date is not asking for one.
+      expect(find.text('Когда напомнить'), findsNothing);
+    });
+
+    testWidgets('a done task offers "открыть снова"', (tester) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Уже сделано',
+        status: 'done',
+      );
+      await pumpProject(tester);
+      await openDone(tester);
+
+      await tester.tap(find.byTooltip('Сделана — открыть снова'));
+      await settle(tester);
+
+      expect(server.tasks.single['status'], 'pending');
     });
 
     testWidgets('a long press offers the three-way choice', (tester) async {
@@ -443,7 +685,7 @@ void main() {
       await tester.longPress(find.byTooltip('Отметить сделанной'));
       await settle(tester);
 
-      expect(find.text('В очереди'), findsOneWidget);
+      expect(find.text('Открыта'), findsOneWidget);
       expect(find.text('Блокер'), findsOneWidget);
       expect(find.text('Сделано'), findsOneWidget);
     });
@@ -532,6 +774,52 @@ void main() {
   });
 
   group('notes', () {
+    testWidgets('the switch counts both halves as soon as it can', (
+      tester,
+    ) async {
+      server.addTask(projectId: projectId, title: 'Позвонить прорабу');
+      server.addTask(projectId: projectId, title: 'Готово', status: 'done');
+      server.addNote(projectId: projectId, title: 'Контекст');
+      server.addNote(projectId: projectId, title: 'Ещё одна');
+
+      await pumpProject(tester);
+
+      // Open tasks only -- the done one is folded away and is not what
+      // "Задачи" means at a glance. The notes were fetched on open, so their
+      // count is there without visiting them.
+      expect(find.text('Задачи · 1'), findsOneWidget);
+      expect(find.text('Заметки · 2'), findsOneWidget);
+      // The old header icon is gone.
+      expect(find.byTooltip('Заметки проекта'), findsNothing);
+    });
+
+    testWidgets("before the notes arrive, the project's noteCount stands in", (
+      tester,
+    ) async {
+      server.projects[projectId]!['noteCount'] = 4;
+      final gate = Completer<void>();
+      holdNotes(gate);
+
+      await pumpProject(tester);
+      expect(find.text('Заметки · 4'), findsOneWidget);
+
+      gate.complete();
+      await settle(tester);
+      // The loaded list wins.
+      expect(find.text('Заметки · 0'), findsOneWidget);
+    });
+
+    testWidgets('with neither, no number at all', (tester) async {
+      final gate = Completer<void>();
+      holdNotes(gate);
+
+      await pumpProject(tester);
+      expect(find.text('Заметки'), findsOneWidget);
+
+      gate.complete();
+      await settle(tester);
+    });
+
     testWidgets('an empty notes tab says so', (tester) async {
       await pumpProject(tester);
       await openNotesTab(tester);

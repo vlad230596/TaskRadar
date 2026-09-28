@@ -26,7 +26,15 @@ mixin _$Project {
 /// raising reminders for whichever scopes are not on screen. See
 /// `../providers/scope_providers.dart`.
  String get scopeId;/// Null means "active". Non-null is the ISO instant it was archived at.
- String? get archivedAt; String get createdAt; String get updatedAt;
+ String? get archivedAt; String get createdAt; String get updatedAt;/// How many notes the project has, when the list endpoint says so.
+///
+/// Optional on the wire: `GET /projects` started carrying it for the
+/// project screen's "Заметки · N" switch, and older servers, the board
+/// snapshot and `GET /projects/:id` may not. Null means "not told", never
+/// "none" -- the screen then waits for the notes themselves. Read
+/// leniently ([_countFromJson]), because a counter is not worth failing a
+/// whole project list over.
+@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? get noteCount;
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -39,16 +47,16 @@ $ProjectCopyWith<Project> get copyWith => _$ProjectCopyWithImpl<Project>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt,noteCount);
 
 @override
 String toString() {
-  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt, noteCount: $noteCount)';
 }
 
 
@@ -59,7 +67,7 @@ abstract mixin class $ProjectCopyWith<$Res>  {
   factory $ProjectCopyWith(Project value, $Res Function(Project) _then) = _$ProjectCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt
+ String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt,@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount
 });
 
 
@@ -76,7 +84,7 @@ class _$ProjectCopyWithImpl<$Res>
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? noteCount = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -84,7 +92,8 @@ as String,scopeId: null == scopeId ? _self.scopeId : scopeId // ignore: cast_nul
 as String,archivedAt: freezed == archivedAt ? _self.archivedAt : archivedAt // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as String,
+as String,noteCount: freezed == noteCount ? _self.noteCount : noteCount // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 
@@ -169,10 +178,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Project() when $default != null:
-return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount);case _:
   return orElse();
 
 }
@@ -190,10 +199,10 @@ return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.created
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount)  $default,) {final _that = this;
 switch (_that) {
 case _Project():
-return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -210,10 +219,10 @@ return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.created
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount)?  $default,) {final _that = this;
 switch (_that) {
 case _Project() when $default != null:
-return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount);case _:
   return null;
 
 }
@@ -225,7 +234,7 @@ return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.created
 @JsonSerializable()
 
 class _Project implements Project {
-  const _Project({required this.id, required this.name, required this.scopeId, required this.archivedAt, required this.createdAt, required this.updatedAt});
+  const _Project({required this.id, required this.name, required this.scopeId, required this.archivedAt, required this.createdAt, required this.updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false) this.noteCount});
   factory _Project.fromJson(Map<String, dynamic> json) => _$ProjectFromJson(json);
 
 @override final  String id;
@@ -245,6 +254,15 @@ class _Project implements Project {
 @override final  String? archivedAt;
 @override final  String createdAt;
 @override final  String updatedAt;
+/// How many notes the project has, when the list endpoint says so.
+///
+/// Optional on the wire: `GET /projects` started carrying it for the
+/// project screen's "Заметки · N" switch, and older servers, the board
+/// snapshot and `GET /projects/:id` may not. Null means "not told", never
+/// "none" -- the screen then waits for the notes themselves. Read
+/// leniently ([_countFromJson]), because a counter is not worth failing a
+/// whole project list over.
+@override@JsonKey(fromJson: _countFromJson, includeIfNull: false) final  int? noteCount;
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
@@ -259,16 +277,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt,noteCount);
 
 @override
 String toString() {
-  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt, noteCount: $noteCount)';
 }
 
 
@@ -279,7 +297,7 @@ abstract mixin class _$ProjectCopyWith<$Res> implements $ProjectCopyWith<$Res> {
   factory _$ProjectCopyWith(_Project value, $Res Function(_Project) _then) = __$ProjectCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt
+ String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt,@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount
 });
 
 
@@ -296,7 +314,7 @@ class __$ProjectCopyWithImpl<$Res>
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? noteCount = freezed,}) {
   return _then(_Project(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -304,7 +322,8 @@ as String,scopeId: null == scopeId ? _self.scopeId : scopeId // ignore: cast_nul
 as String,archivedAt: freezed == archivedAt ? _self.archivedAt : archivedAt // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as String,
+as String,noteCount: freezed == noteCount ? _self.noteCount : noteCount // ignore: cast_nullable_to_non_nullable
+as int?,
   ));
 }
 

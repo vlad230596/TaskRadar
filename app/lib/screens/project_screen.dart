@@ -139,11 +139,17 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
   /// rules out stacking it above the notes in one scroll view. A tab gave each
   /// its own viewport.
   ///
-  /// A boolean plus one header button gives each its own viewport too, and it
-  /// buys back the 48 px strip the tabs cost on every project screen -- on a
-  /// screen whose job is showing as many 56 px task rows as will fit. It also
-  /// matches `design/reference/Project.html`, which puts the notes behind an
-  /// icon in the header and gives the whole body to the tasks.
+  /// A boolean gives each its own viewport too.
+  ///
+  /// ## Why the header icon became a switch (F15)
+  ///
+  /// F12 put the notes behind an icon in the header to buy back the tab
+  /// strip's 48 px. Nobody found them there: an icon says nothing about how
+  /// many notes there are, and a project with three notes looked exactly like
+  /// one with none. The switch under the header ("Задачи · 5 | Заметки · 3")
+  /// costs 46 px and answers both questions -- that the notes exist, and how
+  /// many -- without a tap. It is the phone half only; the desktop shows both
+  /// panes and needs neither.
   bool _notes = false;
 
   @override
@@ -156,12 +162,18 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
     );
 
     final tasksLabel = 'Задачи · ${summary.doneCount}/${summary.totalCount}';
-    // The count appears only once the notes have actually loaded -- "Заметки ·
-    // 0" while the request is still in flight reads as a fact about the project
-    // rather than about the request.
-    final notesLabel = notes.value == null
-        ? 'Заметки'
-        : 'Заметки · ${notes.requireValue.length}';
+    // The loaded list wins; until it arrives, the count the project list
+    // carried (when the server sends one). With neither, no number at all --
+    // "Заметки · 0" while the request is still in flight reads as a fact about
+    // the project rather than about the request. The notes themselves are
+    // requested the moment this screen opens (the `watch` above), so the
+    // fallback only has to cover one round trip.
+    final noteCount = notes.value?.length ?? view.project.noteCount;
+    final notesLabel = noteCount == null ? 'Заметки' : 'Заметки · $noteCount';
+    // The switch counts what is left to do, as the reference does: the done
+    // ones are folded away at the bottom of the list and are not what "Задачи"
+    // means at a glance.
+    final openCount = summary.totalCount - summary.doneCount;
 
     final taskPane = TaskListView(
       projectId: projectId,
@@ -207,11 +219,12 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            _ProjectHeader(
-              view: view,
-              summary: summary,
-              notesOpen: _notes,
-              onToggleNotes: () => setState(() => _notes = !_notes),
+            _ProjectHeader(view: view, summary: summary),
+            _ViewSwitch(
+              tasksLabel: 'Задачи · $openCount',
+              notesLabel: notesLabel,
+              notes: _notes,
+              onChanged: (notes) => setState(() => _notes = notes),
             ),
             if (view.isStale || view.refreshError != null)
               _ProjectBanner(view: view, projectId: projectId),
@@ -239,24 +252,17 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
   }
 }
 
-/// The project's own header: back, its name, the shape of its task list, the
-/// notes, and the menu.
+/// The project's own header: back, its name, the shape of its task list, and
+/// the menu. The notes moved to [_ViewSwitch] under it in F15.
 ///
 /// The dots and the counter are the same ones the planning list draws for this
 /// project, in the same order -- so arriving here continues the row that was
 /// tapped rather than describing the same project a second way.
 class _ProjectHeader extends StatelessWidget {
-  const _ProjectHeader({
-    required this.view,
-    required this.summary,
-    required this.notesOpen,
-    required this.onToggleNotes,
-  });
+  const _ProjectHeader({required this.view, required this.summary});
 
   final ProjectReady view;
   final ProjectSummary summary;
-  final bool notesOpen;
-  final VoidCallback onToggleNotes;
 
   @override
   Widget build(BuildContext context) {
@@ -310,17 +316,98 @@ class _ProjectHeader extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-          IconButton(
-            tooltip: notesOpen ? 'К задачам' : 'Заметки проекта',
-            onPressed: onToggleNotes,
-            icon: Icon(
-              notesOpen ? Icons.checklist : Icons.sticky_note_2_outlined,
-              size: 21,
-            ),
-            color: notesOpen ? AppColors.indigoLink : AppColors.muted,
-          ),
           _ProjectMenu(project: view.project),
         ],
+      ),
+    );
+  }
+}
+
+/// "Задачи · 5 | Заметки · 3": which of the two lists the phone is showing.
+///
+/// A two-segment switch in the reference's shape (36 px, a sunken track, the
+/// chosen half raised in white) rather than Material's `SegmentedButton`, whose
+/// outlined pills and check mark read as a filter, not as "one of two pages".
+class _ViewSwitch extends StatelessWidget {
+  const _ViewSwitch({
+    required this.tasksLabel,
+    required this.notesLabel,
+    required this.notes,
+    required this.onChanged,
+  });
+
+  final String tasksLabel;
+  final String notesLabel;
+  final bool notes;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 10, Insets.gutter, 0),
+      child: Container(
+        height: 36,
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: AppColors.lineFaint,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: <Widget>[
+            _Segment(
+              label: tasksLabel,
+              selected: !notes,
+              onTap: () => onChanged(false),
+            ),
+            const SizedBox(width: 3),
+            _Segment(
+              label: notesLabel,
+              selected: notes,
+              onTap: () => onChanged(true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        child: Material(
+          color: selected ? AppColors.card : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: selected ? null : onTap,
+            child: Center(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.caption.copyWith(
+                  fontSize: 13,
+                  color: selected ? AppColors.ink : AppColors.muted,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

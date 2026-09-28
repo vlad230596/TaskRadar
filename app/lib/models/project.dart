@@ -46,7 +46,25 @@ abstract class Project with _$Project {
     required String? archivedAt,
     required String createdAt,
     required String updatedAt,
+
+    /// How many notes the project has, when the list endpoint says so.
+    ///
+    /// Optional on the wire: `GET /projects` started carrying it for the
+    /// project screen's "Заметки · N" switch, and older servers, the board
+    /// snapshot and `GET /projects/:id` may not. Null means "not told", never
+    /// "none" -- the screen then waits for the notes themselves. Read
+    /// leniently ([_countFromJson]), because a counter is not worth failing a
+    /// whole project list over.
+    @JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount,
   }) = _Project;
 
   factory Project.fromJson(Map<String, dynamic> json) => _$ProjectFromJson(json);
 }
+
+/// A non-negative whole number, or null for anything else.
+int? _countFromJson(Object? value) => switch (value) {
+  final int count when count >= 0 => count,
+  final double count when count >= 0 && count == count.roundToDouble() =>
+    count.toInt(),
+  _ => null,
+};
