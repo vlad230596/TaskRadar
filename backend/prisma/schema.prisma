@@ -302,6 +302,11 @@ model AppSetting {
 model DictationParse {
   id String @id @default(cuid())
 
+  /// What the words were parsed into: `task`, `task_tidy`, `note` or `sandbox`
+  /// (`PARSE_KINDS` in src/domain/parsePipeline.ts). Each kind has its own
+  /// prompt and its own `promptVersion`; a replay compares rows of one kind.
+  kind String @default("task")
+
   /// The words as sent -- after any correction on the screen, before the model.
   inputText   String
   /// IANA zone the dates were read in.
@@ -318,7 +323,8 @@ model DictationParse {
   /// The model's reply exactly as received, before any tidying. Null when no
   /// reply arrived at all.
   rawReply   String?
-  /// What the client was sent: `{ title, description, remindDate, remindTime }`.
+  /// What the client was sent, in the kind's shape -- for `task`,
+  /// `{ title, description, remindDate, remindTime }`.
   result     Json?
   /// Why it failed, for `failed`. Never shown to the client.
   error      String?
@@ -334,6 +340,7 @@ model DictationParse {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+  @@index([kind, createdAt])
   @@index([taskId])
   @@map("dictation_parses")
 }
