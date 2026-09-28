@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { countByDay, historyRangeStart, replayStatusTime } from "../domain/history";
 import { historyQuerySchema } from "../schemas";
 
@@ -42,6 +43,7 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
     // One `now` for the whole response, read once. Every block below is
     // measured against it, so the bars and the ages cannot describe two
     // different moments.
+    const userId = userIdOf(request);
     const now = new Date();
     const from = historyRangeStart(query.range, now, query.tzOffsetMinutes);
 
@@ -55,6 +57,7 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
      */
     const movements = await prisma.taskEvent.findMany({
       where: {
+        task: { project: { scope: { userId } } },
         OR: [{ kind: "created" }, { kind: "status", toStatus: "done" }],
         ...(from ? { at: { gte: from } } : {}),
       },
@@ -106,7 +109,7 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
      * it is a single indexed fetch.
      */
     const openTasks = await prisma.task.findMany({
-      where: { status: { not: "done" }, project: { archivedAt: null } },
+      where: { status: { not: "done" }, project: { archivedAt: null, scope: { userId } } },
       include: {
         project: { select: { id: true, name: true } },
         events: { orderBy: { at: "asc" } },

@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { NotFoundError, ValidationError } from "../lib/errors";
 import { annotateIsCurrent } from "../domain/isCurrent";
 import { planStatusChange } from "../domain/taskEvents";
@@ -19,8 +20,11 @@ import {
 import { linkDictationParse } from "../domain/dictationLink";
 import { getProjectOrThrow } from "./projects";
 
-export async function getTaskOrThrow(id: string) {
-  const task = await prisma.task.findUnique({ where: { id } });
+export async function getTaskOrThrow(userId: string, id: string) {
+  // A task belongs to whoever owns its project's scope.
+  const task = await prisma.task.findFirst({
+    where: { id, project: { scope: { userId } } },
+  });
   if (!task) {
     throw new NotFoundError("Task");
   }
@@ -30,8 +34,9 @@ export async function getTaskOrThrow(id: string) {
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
+    const userId = userIdOf(request);
     const body = createTaskSchema.parse(request.body);
-    await getProjectOrThrow(projectId);
+    await getProjectOrThrow(userId, projectId);
 
     const last = await prisma.task.aggregate({
       where: { projectId },
@@ -79,7 +84,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
        * taken, and a draft task tidied before its first save.
        */
       if (body.dictationParseId !== undefined) {
-        await linkDictationParse(tx, body.dictationParseId, ["task", "sandbox", "task_tidy"], {
+        await linkDictationParse(tx, userId, body.dictationParseId, ["task", "sandbox", "task_tidy"], {
           taskId: created.id,
           finalTitle: created.title,
           finalDescription: created.description,
@@ -95,7 +100,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
-    await getProjectOrThrow(projectId);
+    await getProjectOrThrow(userIdOf(request), projectId);
 
     const tasks = await prisma.task.findMany({
       where: { projectId },
@@ -106,8 +111,9 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch("/tasks/:id", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
+    const userId = userIdOf(request);
     const body = updateTaskSchema.parse(request.body);
-    const before = await getTaskOrThrow(id);
+    const before = await getTaskOrThrow(userId, id);
 
     /*
      * What this change means for the journal and for the working set, decided
@@ -155,7 +161,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
        * ../domain/dictationLink.ts.
        */
       if (body.dictationParseId !== undefined) {
-        await linkDictationParse(tx, body.dictationParseId, ["task_tidy"], {
+        await linkDictationParse(tx, userId, body.dictationParseId, ["task_tidy"], {
           taskId: updated.id,
           finalTitle: updated.title,
           finalDescription: updated.description,
@@ -171,7 +177,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.patch("/tasks/:id/position", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
     const body = updateTaskPositionSchema.parse(request.body);
-    const task = await getTaskOrThrow(id);
+    const task = await getTaskOrThrow(userIdOf(request), id);
 
     const beforeId = body.beforeTaskId ?? null;
     const afterId = body.afterTaskId ?? null;
@@ -242,7 +248,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
    */
   app.get("/tasks/:id/events", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    await getTaskOrThrow(id);
+    await getTaskOrThrow(userIdOf(request), id);
 
     const events = await prisma.taskEvent.findMany({
       where: { taskId: id },
@@ -258,7 +264,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
    */
   app.delete("/tasks/:id", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    await getTaskOrThrow(id);
+    await getTaskOrThrow(userIdOf(request), id);
     await prisma.task.delete({ where: { id } });
     reply.status(204).send();
   });

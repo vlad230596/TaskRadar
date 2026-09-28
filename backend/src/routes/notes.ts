@@ -1,12 +1,13 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { NotFoundError } from "../lib/errors";
 import { linkDictationParse } from "../domain/dictationLink";
 import { createNoteSchema, updateNoteSchema, idParamSchema, projectIdParamSchema } from "../schemas";
 import { getProjectOrThrow } from "./projects";
 
-async function getNoteOrThrow(id: string) {
-  const note = await prisma.note.findUnique({ where: { id } });
+async function getNoteOrThrow(userId: string, id: string) {
+  const note = await prisma.note.findFirst({ where: { id, project: { scope: { userId } } } });
   if (!note) {
     throw new NotFoundError("Note");
   }
@@ -22,8 +23,9 @@ async function getNoteOrThrow(id: string) {
 export async function noteRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects/:projectId/notes", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
+    const userId = userIdOf(request);
     const body = createNoteSchema.parse(request.body);
-    await getProjectOrThrow(projectId);
+    await getProjectOrThrow(userId, projectId);
 
     const parseId = body.dictationParseId;
     const note = await prisma.$transaction(async (tx) => {
@@ -31,7 +33,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
         data: { projectId, title: body.title, content: body.content },
       });
       if (parseId !== undefined) {
-        await linkDictationParse(tx, parseId, ["note"], {
+        await linkDictationParse(tx, userId, parseId, ["note"], {
           noteId: created.id,
           finalTitle: created.title,
           finalContent: created.content,
@@ -44,7 +46,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/projects/:projectId/notes", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
-    await getProjectOrThrow(projectId);
+    await getProjectOrThrow(userIdOf(request), projectId);
 
     const notes = await prisma.note.findMany({
       where: { projectId },
@@ -55,8 +57,9 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch("/notes/:id", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
+    const userId = userIdOf(request);
     const body = updateNoteSchema.parse(request.body);
-    await getNoteOrThrow(id);
+    await getNoteOrThrow(userId, id);
 
     const data: { title?: string; content?: string } = {};
     if (body.title !== undefined) data.title = body.title;
@@ -66,7 +69,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
     const note = await prisma.$transaction(async (tx) => {
       const updated = await tx.note.update({ where: { id }, data });
       if (parseId !== undefined) {
-        await linkDictationParse(tx, parseId, ["note"], {
+        await linkDictationParse(tx, userId, parseId, ["note"], {
           noteId: updated.id,
           finalTitle: updated.title,
           finalContent: updated.content,
@@ -79,7 +82,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete("/notes/:id", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    await getNoteOrThrow(id);
+    await getNoteOrThrow(userIdOf(request), id);
     await prisma.note.delete({ where: { id } });
     reply.status(204).send();
   });

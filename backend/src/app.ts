@@ -15,6 +15,7 @@ import { dictationRoutes } from "./routes/dictation";
 import { registerErrorHandler } from "./lib/errorHandler";
 import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfig";
 import { createAuthGuard } from "./lib/authGuard";
+import { UserStore, prismaUserStore } from "./lib/users";
 import { loadLlmConfig, streamTimeoutFor } from "./lib/llmConfig";
 import { createOpenAiCompatibleClient } from "./lib/llmClient";
 import { createDictationParser } from "./domain/dictation";
@@ -28,6 +29,11 @@ export interface BuildAppOptions {
    * hash without touching the real `.env`; defaults to reading the environment.
    */
   authConfig?: AuthConfig;
+  /**
+   * Where users are looked up. Injectable so route tests need no database;
+   * defaults to the `users` table.
+   */
+  users?: UserStore;
   /** Enable request logging. Defaults to true; tests turn it off for quiet output. */
   logger?: boolean;
   /**
@@ -36,6 +42,8 @@ export interface BuildAppOptions {
    * feature off -- when nothing does.
    */
   dictation?: DictationFeature | null;
+  /** AI requests one user may make per UTC day. Defaults to `AI_DAILY_LIMIT`, else 50. */
+  aiDailyLimit?: number;
   /** Heartbeat of a streamed dictation parse. Tests shorten it; 5 s otherwise. */
   dictationHeartbeatMs?: number;
 }
@@ -56,6 +64,7 @@ function defaultDictation(): DictationFeature | null {
 /** Builds the Fastify app, wired with auth. */
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const authConfig = options.authConfig ?? loadAuthConfig();
+  const users = options.users ?? prismaUserStore;
   const dictation = options.dictation !== undefined ? options.dictation : defaultDictation();
 
   const app = Fastify({
@@ -88,10 +97,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Global guard. Registered before the routes so it applies to all of them
   // (including the not-found handler), with PUBLIC_ROUTES as the only exceptions.
-  app.addHook("onRequest", createAuthGuard());
+  app.addHook("onRequest", createAuthGuard(users));
 
   await app.register(healthRoutes);
-  await app.register(authRoutes(authConfig));
+  await app.register(authRoutes(authConfig, users));
   await app.register(scopeRoutes);
   await app.register(projectRoutes);
   await app.register(taskRoutes);
@@ -100,7 +109,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(focusRoutes);
   await app.register(historyRoutes);
   await app.register(boardRoutes);
-  await app.register(dictationRoutes(dictation, { heartbeatMs: options.dictationHeartbeatMs }));
+  await app.register(dictationRoutes(dictation, {
+      heartbeatMs: options.dictationHeartbeatMs,
+      dailyLimit: options.aiDailyLimit,
+    }));
 
   return app;
 }

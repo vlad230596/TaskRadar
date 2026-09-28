@@ -1,6 +1,7 @@
 import type { onRequestHookHandler } from "fastify";
 import type { CookieSerializeOptions } from "@fastify/cookie";
 import { AuthConfig, SESSION_TTL_SECONDS } from "./authConfig";
+import type { UserStore } from "./users";
 
 /**
  * Routes reachable without a session cookie, as `"<METHOD> <route pattern>"`.
@@ -56,7 +57,7 @@ export function sessionCookieOptions(config: AuthConfig): CookieSerializeOptions
 
     // "lax" still sends the cookie on normal top-level navigation to the app but
     // withholds it from cross-site POSTs, which blocks the basic CSRF shape while
-    // keeping a single-user tool pleasant to use.
+    // keeping the tool pleasant to use.
     sameSite: "lax",
 
     // Driven entirely by the COOKIE_SECURE env var -- never hardcoded. On plain
@@ -84,7 +85,7 @@ export function sessionCookieOptions(config: AuthConfig): CookieSerializeOptions
  * caller and no stack trace escapes: the verification error is swallowed here
  * rather than thrown, so it can't reach the central error handler.
  */
-export function createAuthGuard(): onRequestHookHandler {
+export function createAuthGuard(users: UserStore): onRequestHookHandler {
   return async function authGuard(request, reply) {
     if (isPublicRoute(request.method, request.routeOptions.url)) {
       return;
@@ -94,6 +95,12 @@ export function createAuthGuard(): onRequestHookHandler {
       // Reads the token from the session cookie (configured on @fastify/jwt) and
       // verifies signature + expiry.
       await request.jwtVerify();
+      // A valid signature is not enough: the account may have been disabled (or
+      // removed) since the token was issued, and tokens cannot be revoked one by
+      // one. One indexed lookup per request is the price of "disable" meaning it.
+      if (!(await users.isActive(request.user.sub))) {
+        throw new Error("inactive user");
+      }
     } catch {
       reply.status(401).send({ error: "Unauthorized", message: "Unauthorized" });
       // Returning the reply halts the lifecycle so the route handler never runs.

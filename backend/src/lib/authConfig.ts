@@ -1,32 +1,37 @@
 import { z } from "zod";
 
 /**
- * Auth configuration for the single TaskRadar user.
+ * Auth configuration.
  *
- * There is no users table and no registration: the one and only user is defined
- * entirely by environment variables in the repo-root `.env`, which is the single
- * source of truth for secrets in this repo.
+ * People live in the `users` table and are created by an operator
+ * (`npm run user:create`); there is no registration. What stays in the repo-root
+ * `.env` -- the single source of truth for secrets -- is the JWT secret, the
+ * cookie flag, and `AUTH_EMAIL` / `AUTH_PASSWORD_HASH`, which now describe only
+ * the *first* user (id {@link OWNER_SUBJECT}): the server writes them onto that
+ * row at startup (`ensureOwner`), so the login that worked before multi-user
+ * keeps working and changing the password there still changes it.
  */
 
 /** Name of the httpOnly cookie carrying the session JWT. */
 export const SESSION_COOKIE_NAME = "taskradar_session";
 
 /**
- * The only `sub` value we ever issue. There is exactly one user, so the token
- * needs no identity beyond "this is the owner" -- no id, no email, no roles.
- * Keeping the claim set minimal means the cookie leaks nothing if inspected.
+ * The id of the first user, whose credentials come from `.env`. Before
+ * multi-user it was the only `sub` ever issued, so tokens already in the wild
+ * carry it -- giving the first user this fixed id keeps them valid.
+ *
+ * The token still carries nothing but `sub`: the user's id, no email or roles.
  */
 export const OWNER_SUBJECT = "owner";
 
 /**
  * Session lifetime: 30 days.
  *
- * This is a single-user personal tool used daily from both a desktop and a phone.
- * A short expiry (hours) would mean constant re-logins on the phone for no real
- * security gain, since there is only one account and no privileged operations to
- * step up for. An effectively infinite expiry would be worse: with no session
+ * A personal tool used daily from both a desktop and a phone. A short expiry
+ * (hours) would mean constant re-logins on the phone for no real security gain,
+ * since there are no privileged operations to step up for. An effectively infinite expiry would be worse: with no session
  * table there is no way to revoke an individual token, so the only kill switch is
- * rotating JWT_SECRET (which logs out every device). 30 days keeps a lost or
+ * rotating JWT_SECRET (which logs out every device); a single user can be cut off with `disabledAt`. 30 days keeps a lost or
  * copied cookie from being useful forever while staying out of the user's way.
  *
  * NOTE: numeric `expiresIn` is interpreted in SECONDS by @fastify/jwt (fast-jwt),
@@ -60,9 +65,9 @@ const authEnvSchema = z.object({
 });
 
 export interface AuthConfig {
-  /** Expected login email, normalised to trimmed lowercase. */
+  /** Login email of the first user, normalised to trimmed lowercase. */
   readonly email: string;
-  /** bcrypt hash of the expected password. */
+  /** bcrypt hash of the first user's password. */
   readonly passwordHash: string;
   /** Secret used to sign and verify session JWTs. */
   readonly jwtSecret: string;

@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { NotFoundError, ConflictError, ValidationError } from "../lib/errors";
 import {
   computeAppendPosition,
@@ -38,8 +39,9 @@ import {
  */
 
 /** Loads a scope by id, or answers 404. */
-export async function getScopeOrThrow(scopeId: string) {
-  const scope = await prisma.scope.findUnique({ where: { id: scopeId } });
+export async function getScopeOrThrow(userId: string, scopeId: string) {
+  // Somebody else's scope is a 404, exactly like one that does not exist.
+  const scope = await prisma.scope.findFirst({ where: { id: scopeId, userId } });
   if (!scope) {
     throw new NotFoundError("Scope");
   }
@@ -55,8 +57,8 @@ export async function getScopeOrThrow(scopeId: string) {
  * looking. The migration guarantees at least one scope exists, but a database
  * that somehow has none gets a clear 409 instead of a foreign key error.
  */
-export async function getDefaultScopeOrThrow() {
-  const scope = await prisma.scope.findFirst({ orderBy: { position: "asc" } });
+export async function getDefaultScopeOrThrow(userId: string) {
+  const scope = await prisma.scope.findFirst({ where: { userId }, orderBy: { position: "asc" } });
   if (!scope) {
     throw new ConflictError("No scope exists to put this project in; create one first");
   }
@@ -69,29 +71,32 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
    * scopes are a handful of rows that the client renders as a switcher, and it
    * needs all of them to draw it.
    */
-  app.get("/scopes", async (_request, reply) => {
-    const scopes = await prisma.scope.findMany({ orderBy: { position: "asc" } });
+  app.get("/scopes", async (request, reply) => {
+    const userId = userIdOf(request);
+    const scopes = await prisma.scope.findMany({ where: { userId }, orderBy: { position: "asc" } });
     reply.send(scopes);
   });
 
   app.post("/scopes", async (request, reply) => {
+    const userId = userIdOf(request);
     const body = createScopeSchema.parse(request.body);
 
     // Appended to the end, like a new task in a project: a scope created now is
     // not claimed to belong anywhere in particular, and the user can drag it.
-    const last = await prisma.scope.findFirst({ orderBy: { position: "desc" } });
+    const last = await prisma.scope.findFirst({ where: { userId }, orderBy: { position: "desc" } });
     const position = computeAppendPosition(last?.position ?? null);
 
-    const scope = await prisma.scope.create({ data: { name: body.name, position } });
+    const scope = await prisma.scope.create({ data: { userId, name: body.name, position } });
     reply.status(201).send(scope);
   });
 
   app.patch("/scopes/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const body = updateScopeSchema.parse(request.body);
     // Existence first, so a missing scope is a 404 rather than Prisma's P2025
     // surfacing as an opaque 500 -- same order as `PATCH /projects/:id`.
-    await getScopeOrThrow(id);
+    await getScopeOrThrow(userId, id);
 
     const scope = await prisma.scope.update({ where: { id }, data: { name: body.name } });
     reply.send(scope);
@@ -108,9 +113,10 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
    * whole body of the function.
    */
   app.patch("/scopes/:id/position", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const body = updateScopePositionSchema.parse(request.body);
-    await getScopeOrThrow(id);
+    await getScopeOrThrow(userId, id);
 
     const beforeId = body.beforeScopeId ?? null;
     const afterId = body.afterScopeId ?? null;
@@ -121,7 +127,7 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
 
     async function resolveNeighborPosition(neighborId: string | null): Promise<number | null> {
       if (neighborId === null) return null;
-      const neighbor = await prisma.scope.findUnique({ where: { id: neighborId } });
+      const neighbor = await prisma.scope.findFirst({ where: { id: neighborId, userId } });
       if (!neighbor) {
         throw new ValidationError(`Neighbor scope ${neighborId} was not found`);
       }
@@ -143,7 +149,7 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
       // fire here as being struck by lightning while reordering five rows --
       // but "about as likely" is not "impossible", and the tasks route already
       // proved the cheap way to handle it.
-      const allScopes = await prisma.scope.findMany({ orderBy: { position: "asc" } });
+      const allScopes = await prisma.scope.findMany({ where: { userId }, orderBy: { position: "asc" } });
       const rebalanced = computeRebalancedPositions(allScopes.map((s) => s.id));
 
       await prisma.$transaction(
@@ -174,12 +180,13 @@ export async function scopeRoutes(app: FastifyInstance): Promise<void> {
    * included) still point at it; see domain/scopeDeleteGuard.ts.
    */
   app.delete("/scopes/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
-    await getScopeOrThrow(id);
+    await getScopeOrThrow(userId, id);
 
     const [projectCount, totalScopes] = await Promise.all([
       prisma.project.count({ where: { scopeId: id } }),
-      prisma.scope.count(),
+      prisma.scope.count({ where: { userId } }),
     ]);
 
     const refusal = scopeDeleteRefusal({ projectCount, totalScopes });

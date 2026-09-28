@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { NotFoundError } from "../lib/errors";
 import { computeAppendPosition } from "../domain/position";
 import { splitInboxText } from "../domain/inboxSplit";
@@ -68,18 +69,19 @@ function isUniqueConstraintViolation(error: unknown): boolean {
  * statement that is a no-op when it has nothing to label.
  */
 async function labelSample(
+  userId: string,
   parseId: string | undefined,
   item: { id: string; text: string },
 ): Promise<void> {
   if (parseId === undefined) return;
-  await linkDictationParse(prisma, parseId, ["sandbox"], {
+  await linkDictationParse(prisma, userId, parseId, ["sandbox"], {
     inboxItemId: item.id,
     finalContent: item.text,
   });
 }
 
-async function getInboxItemOrThrow(id: string) {
-  const item = await prisma.inboxItem.findUnique({ where: { id } });
+async function getInboxItemOrThrow(userId: string, id: string) {
+  const item = await prisma.inboxItem.findFirst({ where: { id, userId } });
   if (!item) {
     throw new NotFoundError("Inbox item");
   }
@@ -95,8 +97,10 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
    * make an old item sink out of sight exactly as it becomes the one that
    * matters. It also matches what the eye expects from a queue.
    */
-  app.get("/inbox", async (_request, reply) => {
+  app.get("/inbox", async (request, reply) => {
+    const userId = userIdOf(request);
     const items = await prisma.inboxItem.findMany({
+      where: { userId },
       orderBy: { createdAt: "asc" },
     });
     reply.send(items);
@@ -130,17 +134,20 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
    * difference, which is why it is safe to be honest about it.
    */
   app.post("/inbox", async (request, reply) => {
+    const userId = userIdOf(request);
     const body = createInboxItemSchema.parse(request.body);
     const { captureKey } = body;
 
     if (captureKey === undefined) {
-      const item = await prisma.inboxItem.create({ data: { text: body.text } });
-      await labelSample(body.dictationParseId, item);
+      const item = await prisma.inboxItem.create({ data: { userId, text: body.text } });
+      await labelSample(userId, body.dictationParseId, item);
       reply.status(201).send(item);
       return;
     }
 
-    const known = await prisma.inboxItem.findUnique({ where: { captureKey } });
+    const known = await prisma.inboxItem.findUnique({
+      where: { userId_captureKey: { userId, captureKey } },
+    });
     if (known) {
       reply.status(200).send(known);
       return;
@@ -148,11 +155,11 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
 
     try {
       const item = await prisma.inboxItem.create({
-        data: { text: body.text, captureKey },
+        data: { userId, text: body.text, captureKey },
       });
       // Only for a line that is new here: a replay answers with the row as
       // it stands, and the row -- if it was dictated -- was labelled then.
-      await labelSample(body.dictationParseId, item);
+      await labelSample(userId, body.dictationParseId, item);
       reply.status(201).send(item);
     } catch (error) {
       // Two copies of the same retry in flight at once: the check above passed
@@ -161,7 +168,9 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       // is a real error and belongs to the error handler.
       if (!isUniqueConstraintViolation(error)) throw error;
 
-      const raced = await prisma.inboxItem.findUnique({ where: { captureKey } });
+      const raced = await prisma.inboxItem.findUnique({
+      where: { userId_captureKey: { userId, captureKey } },
+    });
       if (!raced) throw error;
       reply.status(200).send(raced);
     }
@@ -176,15 +185,16 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
    * the same edit, one screen further away.
    */
   app.patch("/inbox/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const body = updateInboxItemSchema.parse(request.body);
-    await getInboxItemOrThrow(id);
+    await getInboxItemOrThrow(userId, id);
 
     const item = await prisma.inboxItem.update({
       where: { id },
       data: { text: body.text },
     });
-    await labelSample(body.dictationParseId, item);
+    await labelSample(userId, body.dictationParseId, item);
     reply.send(item);
   });
 
@@ -195,8 +205,9 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
    * holds months of work. This holds a sentence.
    */
   app.delete("/inbox/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
-    await getInboxItemOrThrow(id);
+    await getInboxItemOrThrow(userId, id);
     await prisma.inboxItem.delete({ where: { id } });
     reply.status(204).send();
   });
@@ -231,11 +242,12 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
    * is what `ProjectTasks` already does after every structural change.
    */
   app.post("/inbox/:id/file", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const body = fileInboxItemSchema.parse(request.body);
 
-    const item = await getInboxItemOrThrow(id);
-    await getProjectOrThrow(body.projectId);
+    const item = await getInboxItemOrThrow(userId, id);
+    await getProjectOrThrow(userId, body.projectId);
 
     // Appended, like any new task: the item has no order of its own, and
     // dropping it into the middle of a project's list would be inventing one.
@@ -285,7 +297,7 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       // A tidied line (F15): the `sandbox` answer whose project was taken, or
       // a `task_tidy` of the line on its way here, labelled with the task.
       if (body.dictationParseId !== undefined) {
-        await linkDictationParse(tx, body.dictationParseId, ["sandbox", "task_tidy"], {
+        await linkDictationParse(tx, userId, body.dictationParseId, ["sandbox", "task_tidy"], {
           taskId: created.id,
           finalTitle: created.title,
           finalDescription: created.description,

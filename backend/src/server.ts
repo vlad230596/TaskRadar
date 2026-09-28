@@ -7,6 +7,8 @@ import dotenv from "dotenv";
 dotenv.config({ path: path.resolve(__dirname, "..", "..", ".env") });
 
 import { buildApp } from "./app";
+import { ensureOwner } from "./lib/users";
+import { loadAuthConfig } from "./lib/authConfig";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3001;
 const HOST = "0.0.0.0";
@@ -15,7 +17,11 @@ async function main(): Promise<void> {
   // buildApp() validates the auth configuration and throws if it is missing or
   // malformed, so a misconfigured deployment fails here instead of starting up as
   // an app nobody can log into.
-  const app = await buildApp();
+  const authConfig = loadAuthConfig();
+  // The first user's login comes from .env; put it on their row before anyone
+  // can try to log in.
+  await ensureOwner(authConfig);
+  const app = await buildApp({ authConfig });
 
   try {
     await app.listen({ port: PORT, host: HOST });

@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { annotateIsCurrent } from "../domain/isCurrent";
 import { boardQuerySchema } from "../schemas";
 
@@ -44,6 +45,7 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
      */
     const projects = await prisma.project.findMany({
       where: {
+        scope: { userId: userIdOf(request) },
         archivedAt: showArchived ? { not: null } : null,
         // F7: optional, and the Flutter client does not use it -- it fetches
         // every scope's projects and filters locally, because the local

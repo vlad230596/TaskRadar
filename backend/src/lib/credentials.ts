@@ -1,6 +1,5 @@
 import bcrypt from "bcrypt";
 import { createHash, timingSafeEqual } from "node:crypto";
-import type { AuthConfig } from "./authConfig";
 
 /** Normalises a submitted email the same way `loadAuthConfig` normalises the expected one. */
 export function normaliseEmail(email: string): string {
@@ -26,25 +25,33 @@ export function verifyPassword(plaintext: string, passwordHash: string): Promise
 }
 
 /**
- * Checks a submitted email + password pair against the configured single user.
+ * A well-formed bcrypt hash nobody has the password for. Compared against when
+ * the email is unknown or the account is disabled, so those cost the same
+ * ~250ms as a wrong password.
+ */
+const UNMATCHABLE_HASH = "$2b$12$56KpwF2fp9APK26Md/R0PuFXF6Nky8.L1sQDDImm3oXfyGoxwtUZW";
+
+/**
+ * Checks a submitted password against the user found for the submitted email
+ * (`null` when there is none).
  *
- * Deliberately does NOT short-circuit when the email is wrong: the bcrypt compare
- * always runs, so a request with a wrong email costs the same ~250ms as one with a
- * wrong password. Short-circuiting would make "unknown email" measurably faster
- * than "wrong password" and hand an attacker the very distinction that the generic
- * 401 message exists to hide.
+ * Deliberately does NOT short-circuit when there is no user: the bcrypt compare
+ * always runs, so an unknown email costs the same as a wrong password.
+ * Short-circuiting would make the two measurably different and hand an attacker
+ * the very distinction that the generic 401 message exists to hide. A disabled
+ * account is treated exactly like an unknown one.
  *
- * Returns a single boolean -- callers get no way to tell which half failed, so a
- * route handler can't accidentally leak it.
+ * Returns the user's id on success and `null` otherwise -- callers get no way
+ * to tell which half failed, so a route handler can't accidentally leak it.
  */
 export async function verifyCredentials(
-  submittedEmail: string,
+  user: { id: string; passwordHash: string; disabledAt: Date | null } | null,
   submittedPassword: string,
-  config: AuthConfig,
-): Promise<boolean> {
-  const emailMatches = constantTimeEquals(normaliseEmail(submittedEmail), config.email);
-  const passwordMatches = await verifyPassword(submittedPassword, config.passwordHash);
-
-  // Both operands are already evaluated above; `&&` here does not skip work.
-  return emailMatches && passwordMatches;
+): Promise<string | null> {
+  const usable = user !== null && user.disabledAt === null;
+  const passwordMatches = await verifyPassword(
+    submittedPassword,
+    usable ? user.passwordHash : UNMATCHABLE_HASH,
+  );
+  return usable && passwordMatches ? user.id : null;
 }

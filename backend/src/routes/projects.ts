@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { NotFoundError, ConflictError } from "../lib/errors";
 import { canHardDeleteProject } from "../domain/projectDeleteGuard";
 import { getDefaultScopeOrThrow, getScopeOrThrow } from "./scopes";
@@ -42,8 +43,11 @@ import {
  * board/list queries filter on `archivedAt` themselves so an archived project
  * still leaves the board and stops raising reminders.
  */
-export async function getProjectOrThrow(projectId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId } });
+export async function getProjectOrThrow(userId: string, projectId: string) {
+  // A project belongs to whoever owns its scope.
+  const project = await prisma.project.findFirst({
+    where: { id: projectId, scope: { userId } },
+  });
   if (!project) {
     throw new NotFoundError("Project");
   }
@@ -52,6 +56,7 @@ export async function getProjectOrThrow(projectId: string) {
 
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects", async (request, reply) => {
+    const userId = userIdOf(request);
     const body = createProjectSchema.parse(request.body);
 
     /*
@@ -64,8 +69,8 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
      * hit a few times a week.
      */
     const scope = body.scopeId
-      ? await getScopeOrThrow(body.scopeId)
-      : await getDefaultScopeOrThrow();
+      ? await getScopeOrThrow(userId, body.scopeId)
+      : await getDefaultScopeOrThrow(userId);
 
     const project = await prisma.project.create({
       data: { name: body.name, scopeId: scope.id },
@@ -74,11 +79,13 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/projects", async (request, reply) => {
+    const userId = userIdOf(request);
     const query = listProjectsQuerySchema.parse(request.query);
     const showArchived = query.archived === "true";
 
     const projects = await prisma.project.findMany({
       where: {
+        scope: { userId },
         archivedAt: showArchived ? { not: null } : null,
         // Absent means every scope. See the note on `listProjectsQuerySchema`
         // for why the client filters the board itself instead of using this.
@@ -90,8 +97,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get("/projects/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
-    const project = await getProjectOrThrow(id);
+    const project = await getProjectOrThrow(userId, id);
     reply.send(project);
   });
 
@@ -132,17 +140,18 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
    * only routes that move a project between the two states.
    */
   app.patch("/projects/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const body = updateProjectSchema.parse(request.body);
     // Existence is checked first so a missing project answers 404 rather than
     // whatever Prisma raises for an update against no rows (P2025, which the
     // error handler would turn into an opaque 500).
-    await getProjectOrThrow(id);
+    await getProjectOrThrow(userId, id);
 
     // Same for the scope, and for the same reason as in POST: an unknown
     // `scopeId` is a 404 about the scope, not a 500 about a constraint.
     if (body.scopeId !== undefined) {
-      await getScopeOrThrow(body.scopeId);
+      await getScopeOrThrow(userId, body.scopeId);
     }
 
     /*
@@ -167,8 +176,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/projects/:id/archive", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
-    await getProjectOrThrow(id);
+    await getProjectOrThrow(userId, id);
     const project = await prisma.project.update({
       where: { id },
       data: { archivedAt: new Date() },
@@ -177,8 +187,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.post("/projects/:id/unarchive", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
-    await getProjectOrThrow(id);
+    await getProjectOrThrow(userId, id);
     const project = await prisma.project.update({
       where: { id },
       data: { archivedAt: null },
@@ -187,8 +198,9 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.delete("/projects/:id", async (request, reply) => {
+    const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
-    const project = await getProjectOrThrow(id);
+    const project = await getProjectOrThrow(userId, id);
 
     if (!canHardDeleteProject(project)) {
       throw new ConflictError("Project must be archived before it can be deleted");

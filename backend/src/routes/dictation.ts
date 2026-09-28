@@ -1,6 +1,9 @@
 import { FastifyInstance, FastifyBaseLogger } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
+import { OWNER_SUBJECT } from "../lib/authConfig";
+import { consumeAiQuota, loadAiDailyLimit } from "../lib/aiLimit";
 import { HttpError } from "../lib/errors";
 import { UpstreamModelError } from "../lib/llmClient";
 import { openEventStream, wantsEventStream } from "../lib/eventStream";
@@ -35,6 +38,8 @@ export interface DictationFeature {
 export interface DictationRouteOptions {
   /** How often a streamed parse says it is still alive. */
   heartbeatMs?: number | undefined;
+  /** AI requests one user may make per UTC day. Defaults to `AI_DAILY_LIMIT`. */
+  dailyLimit?: number | undefined;
 }
 
 const HEARTBEAT_MS = 5_000;
@@ -52,12 +57,12 @@ class DictationUnavailableError extends HttpError {
 
 /**
  * The projects a sandbox line can be filed into, for the `sandbox` prompt:
- * every one not archived, read here and never taken from the request -- see
+ * every one of the caller's own not archived, read here and never taken from the request -- see
  * `../domain/tidy.ts`.
  */
-async function sandboxInput(input: DictationInput): Promise<SandboxInput> {
+async function sandboxInputFor(userId: string, input: DictationInput): Promise<SandboxInput> {
   const projects = await prisma.project.findMany({
-    where: { archivedAt: null },
+    where: { archivedAt: null, scope: { userId } },
     select: { id: true, name: true },
     orderBy: { createdAt: "asc" },
   });
@@ -73,6 +78,7 @@ async function sandboxInput(input: DictationInput): Promise<SandboxInput> {
  * from the person waiting for it now.
  */
 async function keepSample(
+  userId: string,
   kind: ParseKind,
   input: DictationInput,
   trace: ParseTrace<object>,
@@ -81,6 +87,7 @@ async function keepSample(
   try {
     const row = await prisma.dictationParse.create({
       data: {
+        userId,
         kind,
         inputText: input.text,
         timeZone: input.timeZone,
@@ -110,12 +117,13 @@ async function keepSample(
  * to debug and nobody else's to read.
  */
 function pipelineFor(
+  userId: string,
   feature: DictationFeature,
   kind: ParseKind,
   log: FastifyBaseLogger,
 ): ParsePipeline | null {
   const keep = <I extends DictationInput>(sample: I, trace: ParseTrace<object>) =>
-    keepSample(kind, sample, trace, log);
+    keepSample(userId, kind, sample, trace, log);
   const onFailure = (reason: string | null, parseId: string | null) =>
     log.warn({ reason, parseId, kind }, "dictation model failed");
 
@@ -128,7 +136,7 @@ function pipelineFor(
     case "note":
       return keptPipeline(tidiers.note, keep, onFailure);
     case "sandbox":
-      return keptPipeline(tidiers.sandbox, keep, onFailure, sandboxInput);
+      return keptPipeline(tidiers.sandbox, keep, onFailure, (input) => sandboxInputFor(userId, input));
   }
 }
 
@@ -155,6 +163,7 @@ export function dictationRoutes(
   options: DictationRouteOptions = {},
 ) {
   const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
+  const dailyLimit = options.dailyLimit ?? loadAiDailyLimit();
 
   return async function (app: FastifyInstance): Promise<void> {
     /*
@@ -206,8 +215,15 @@ export function dictationRoutes(
         now: new Date(),
         noteTitle: body.noteTitle,
       };
-      const pipeline = pipelineFor(feature, body.kind, request.log);
+      const userId = userIdOf(request);
+      const pipeline = pipelineFor(userId, feature, body.kind, request.log);
       if (pipeline === null) throw new DictationUnavailableError();
+
+      // The owner's key pays for every user, so each gets a day's allowance.
+      // Spent here, before the stream opens, so a refusal is an ordinary 429
+      // the client can show, and a request that was never going to run (bad
+      // body, feature off) costs nothing.
+      await consumeAiQuota(userId, dailyLimit, input.now);
 
       if (!stream) {
         reply.send(await pipeline(input));
@@ -253,6 +269,10 @@ export function dictationRoutes(
 
     app.put("/dictation/model", async (request, reply) => {
       const body = setDictationModelSchema.parse(request.body);
+      // The model is one setting for the whole server and it decides what the
+      // owner's key is spent on, so only the owner may change it. Everyone can
+      // read it.
+      if (userIdOf(request) !== OWNER_SUBJECT) throw new HttpError(403, "Only the owner can change the model");
       if (feature === null) throw new DictationUnavailableError();
 
       // Choosing the `.env` model by name is the same as choosing nothing, and

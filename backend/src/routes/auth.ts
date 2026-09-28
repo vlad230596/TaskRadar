@@ -1,11 +1,12 @@
 import { FastifyInstance, FastifyPluginAsync } from "fastify";
 import { verifyCredentials } from "../lib/credentials";
-import { AuthConfig, OWNER_SUBJECT, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../lib/authConfig";
+import { AuthConfig, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "../lib/authConfig";
+import { UserStore } from "../lib/users";
 import { sessionCookieOptions } from "../lib/authGuard";
 import { loginSchema } from "../schemas";
 
 /**
- * Login / logout / session probe for the single TaskRadar user.
+ * Login / logout / session probe.
  *
  * Login and logout are public (listed in PUBLIC_ROUTES) -- you obviously cannot
  * require a session in order to create one, and logout stays usable even once a
@@ -13,16 +14,16 @@ import { loginSchema } from "../schemas";
  * is deliberately NOT public: answering "is this session alive?" is exactly the
  * job of the guard, so the route only has to exist to be useful.
  */
-export function authRoutes(config: AuthConfig): FastifyPluginAsync {
+export function authRoutes(config: AuthConfig, users: UserStore): FastifyPluginAsync {
   return async function register(app: FastifyInstance): Promise<void> {
     app.post("/auth/login", async (request, reply) => {
       const body = loginSchema.parse(request.body);
 
-      const valid = await verifyCredentials(body.email, body.password, config);
-      if (!valid) {
-        // One generic message for both "unknown email" and "wrong password".
-        // `verifyCredentials` returns a single boolean and always does the bcrypt
-        // work, so neither the body nor the response time distinguishes the two.
+      const userId = await verifyCredentials(await users.findByEmail(body.email), body.password);
+      if (userId === null) {
+        // One generic message for "unknown email", "disabled" and "wrong
+        // password". `verifyCredentials` always does the bcrypt work, so neither
+        // the body nor the response time distinguishes them.
         reply.status(401).send({
           error: "Unauthorized",
           message: "Invalid email or password",
@@ -30,9 +31,9 @@ export function authRoutes(config: AuthConfig): FastifyPluginAsync {
         return;
       }
 
-      // Minimal claims: one user means the token only has to say "the owner".
-      // `expiresIn` is in seconds for @fastify/jwt (fast-jwt).
-      const token = app.jwt.sign({ sub: OWNER_SUBJECT }, { expiresIn: SESSION_TTL_SECONDS });
+      // Minimal claims: just whose session this is. `expiresIn` is in seconds
+      // for @fastify/jwt (fast-jwt).
+      const token = app.jwt.sign({ sub: userId }, { expiresIn: SESSION_TTL_SECONDS });
 
       /*
        * The token travels two ways at once, on purpose.
@@ -69,9 +70,9 @@ export function authRoutes(config: AuthConfig): FastifyPluginAsync {
      * answered 401 if it did not hold up, so reaching the handler IS the answer.
      *
      * The body stays deliberately empty of identity. The token carries a minimal
-     * claim set on purpose (see OWNER_SUBJECT in authConfig.ts) -- there is one
-     * user, the client already knows who it logged in as, and echoing the email
-     * back would hand an attacker with a stolen token a fact they did not have.
+     * claim set on purpose -- the client already knows who it logged in as, and
+     * echoing the email back would hand an attacker with a stolen token a fact
+     * they did not have.
      */
     app.get("/auth/me", async (_request, reply) => {
       reply.status(200).send({ ok: true });

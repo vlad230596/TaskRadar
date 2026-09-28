@@ -44,12 +44,13 @@ export interface ParseLabel {
  */
 export async function linkDictationParse(
   tx: Pick<Prisma.TransactionClient, "dictationParse">,
+  userId: string,
   parseId: string,
   kinds: readonly ParseKind[],
   label: ParseLabel,
 ): Promise<void> {
   await tx.dictationParse.updateMany({
-    where: { id: parseId, linkedAt: null, kind: { in: [...kinds] } },
+    where: { id: parseId, userId, linkedAt: null, kind: { in: [...kinds] } },
     data: { ...label, linkedAt: new Date() },
   });
 }

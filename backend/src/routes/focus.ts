@@ -1,5 +1,6 @@
 import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
+import { userIdOf } from "../lib/users";
 import { idParamSchema } from "../schemas";
 import { getTaskOrThrow } from "./tasks";
 
@@ -43,9 +44,9 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
    * at because the project around it was tidied away; the archive hides
    * projects from the board, which is a different question.
    */
-  app.get("/focus", async (_request, reply) => {
+  app.get("/focus", async (request, reply) => {
     const tasks = await prisma.task.findMany({
-      where: { focusedAt: { not: null } },
+      where: { focusedAt: { not: null }, project: { scope: { userId: userIdOf(request) } } },
       orderBy: { focusedAt: "asc" },
       include: { project: { select: { id: true, name: true } } },
     });
@@ -63,7 +64,7 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
    */
   app.post("/tasks/:id/focus", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    const task = await getTaskOrThrow(id);
+    const task = await getTaskOrThrow(userIdOf(request), id);
 
     if (task.focusedAt !== null) {
       reply.send(task);
@@ -92,7 +93,7 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
    */
   app.delete("/tasks/:id/focus", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    const task = await getTaskOrThrow(id);
+    const task = await getTaskOrThrow(userIdOf(request), id);
 
     if (task.focusedAt === null) {
       reply.send(task);
