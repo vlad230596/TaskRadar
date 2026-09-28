@@ -3,16 +3,35 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { HttpError } from "../lib/errors";
 import { UpstreamModelError } from "../lib/llmClient";
+import { openEventStream, wantsEventStream } from "../lib/eventStream";
 import { DictationInput, DictationParser, DictationTrace } from "../domain/dictation";
 import { readDictationModelOverride, writeDictationModelOverride } from "../domain/dictationModel";
-import { parseDictationSchema, setDictationModelSchema } from "../schemas";
+import { ParseKind, ParsePipeline, taskPipeline } from "../domain/parsePipeline";
+import {
+  parseDictationSchema,
+  parseDictationStreamSchema,
+  setDictationModelSchema,
+} from "../schemas";
 
 /** What the dictation routes need when a model is configured. */
 export interface DictationFeature {
   parser: DictationParser;
   /** `LLM_MODEL` from `.env`: what is used when the app has not chosen one. */
   defaultModel: string;
+  /**
+   * The model call's budget in a streamed parse of [textLength] characters
+   * (`streamTimeoutFor` in `../lib/llmConfig.ts`). Absent: the parser's own
+   * default, as in the one-shot reply.
+   */
+  streamTimeoutMs?: (textLength: number) => number;
 }
+
+export interface DictationRouteOptions {
+  /** How often a streamed parse says it is still alive. */
+  heartbeatMs?: number | undefined;
+}
+
+const HEARTBEAT_MS = 5_000;
 
 /**
  * No model is configured on this server. 503, not 404: the route exists, the
@@ -76,10 +95,40 @@ async function keepSample(
  * back as `parseId`, and the task route links the row to the task when the
  * client sends it along -- see `dictationParseId` there.
  */
-export function dictationRoutes(feature: DictationFeature | null) {
+export function dictationRoutes(
+  feature: DictationFeature | null,
+  options: DictationRouteOptions = {},
+) {
+  const heartbeatMs = options.heartbeatMs ?? HEARTBEAT_MS;
+
   return async function (app: FastifyInstance): Promise<void> {
+    /*
+     * ONE ROUTE, TWO REPLIES
+     *
+     * Without `Accept: text/event-stream` -- every client released before the
+     * stream existed -- the reply is the one JSON body it always was, with the
+     * same statuses and the same `LLM_TIMEOUT_MS`.
+     *
+     * With it, the reply is a stream of events, so a parse of a long dictation
+     * can take the minute it needs without the phone taking the silence for a
+     * dead request:
+     *
+     *     accepted       {kind}                  the body was valid; work starts
+     *     model_started  {model}                 the request to the model is out
+     *     model_done     {durationMs}            the model answered
+     *     validated      {}                      its answer is usable
+     *     result         {title, ..., parseId}   the same payload as the JSON reply
+     *     error          {code, message}         instead of result; ends the stream
+     *     heartbeat      {}                      every 5 s, whatever else is said
+     *
+     * Every event's data may carry `partial` -- reserved for a model that
+     * streams its answer, sent by nothing yet. Anything that fails before
+     * `accepted` (a bad body, no session, no model configured) is still an
+     * ordinary HTTP status, so a client handles those exactly as before.
+     */
     app.post("/dictation/parse", async (request, reply) => {
-      const body = parseDictationSchema.parse(request.body);
+      const stream = wantsEventStream(request.headers.accept);
+      const body = (stream ? parseDictationStreamSchema : parseDictationSchema).parse(request.body);
       if (feature === null) throw new DictationUnavailableError();
 
       const input: DictationInput = {
@@ -87,17 +136,42 @@ export function dictationRoutes(feature: DictationFeature | null) {
         timeZone: body.timeZone,
         now: new Date(),
       };
-      const trace = await feature.parser(input);
-      const parseId = await keepSample(input, trace, request.log);
+      const pipelines: Record<ParseKind, ParsePipeline> = {
+        task: taskPipeline(
+          feature.parser,
+          (sample, trace) => keepSample(sample, trace, request.log),
+          // The reason goes to the log and the dataset, not to the client: it
+          // can name the provider's status or a fragment of its reply, which is
+          // ours to debug and nobody else's to read.
+          (reason, parseId) => request.log.warn({ reason, parseId }, "dictation model failed"),
+        ),
+      };
+      const pipeline = pipelines[body.kind];
 
-      if (trace.result === null) {
-        // The reason goes to the log and the dataset, not to the client: it can
-        // name the provider's status or a fragment of its reply, which is ours
-        // to debug and nobody else's to read.
-        request.log.warn({ reason: trace.error, parseId }, "dictation model failed");
-        throw new UpstreamModelError(trace.error ?? "unknown");
+      if (!stream) {
+        reply.send(await pipeline(input));
+        return;
       }
-      reply.send({ ...trace.result, parseId });
+
+      const events = openEventStream(reply, { heartbeatMs });
+      events.send("accepted", { kind: body.kind });
+      try {
+        const result = await pipeline(input, {
+          onStage: ({ stage, ...data }) => events.send(stage, data),
+          timeoutMs: feature.streamTimeoutMs?.(input.text.length),
+          signal: events.signal,
+        });
+        events.send("result", result);
+      } catch (error) {
+        if (error instanceof UpstreamModelError) {
+          events.send("error", { code: "model_failed", message: error.message });
+        } else {
+          request.log.error({ err: error }, "dictation parse failed");
+          events.send("error", { code: "internal", message: "Internal Server Error" });
+        }
+      } finally {
+        events.close();
+      }
     });
 
     /*

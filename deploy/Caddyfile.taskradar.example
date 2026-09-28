@@ -93,7 +93,20 @@
 		# Matches the alias and port from compose.prod.yaml. Resolution works only
 		# because the Caddy container is attached to the `taskradar-ingress`
 		# network.
-		reverse_proxy taskradar-backend:3001
+		#
+		# `flush_interval -1`: every write from the backend goes out at once.
+		# `POST /dictation/parse` can answer as an event stream (the phone's
+		# stepper while the model thinks), and a proxy that buffers it turns
+		# a minute of "still alive" into a minute of silence and then
+		# everything at once -- exactly what the stream is there to prevent.
+		# Caddy flushes `text/event-stream` on its own already; saying it here
+		# keeps that from depending on a default. The backend also sends
+		# `Cache-Control: no-transform`, which keeps `encode` above from
+		# compressing (and so batching) the stream. Harmless for the rest of
+		# the API: its bodies are small single writes.
+		reverse_proxy taskradar-backend:3001 {
+			flush_interval -1
+		}
 	}
 
 	# Everything else is the web client (F10): the `flutter build web` bundle,

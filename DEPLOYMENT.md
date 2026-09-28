@@ -259,6 +259,26 @@ F11 добавила `/focus` и `/history`, allowlist в `deploy/` обновл
 - inode на хосте и в контейнере совпадают — монтирование живое;
 - копии конфига до правок лежат рядом как `/opt/officecooking/Caddyfile.bak.*`.
 
+### Поток событий `/dictation/parse` (F14)
+
+С `Accept: text/event-stream` бэкенд отвечает на разбор диктовки потоком
+событий (стадии и heartbeat каждые 5 с), и Caddy не должен его копить. В
+шаблоне `reverse_proxy` в `handle @api` получил `flush_interval -1` — эту
+правку надо перенести в живой файл тем же способом, что и allowlist (запись в
+тот же inode, `caddy validate`, `caddy reload`). Проверка снаружи — события
+должны приходить по одному, а не пачкой в конце:
+
+```bash
+curl -N -H 'Accept: text/event-stream' -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"text":"позвонить маме","timeZone":"Europe/Moscow"}' \
+  "$APP_ORIGIN/dictation/parse"
+```
+
+Бюджет модели для потока — `LLM_STREAM_TIMEOUT_MS` (по умолчанию 90 000):
+растёт с длиной текста от `LLM_TIMEOUT_MS` до этого потолка. Старый JSON-ответ
+живёт по-прежнему в `LLM_TIMEOUT_MS`.
+
 ---
 
 ## Чем TaskRadar осознанно отличается от CashFlow

@@ -15,7 +15,7 @@ import { dictationRoutes } from "./routes/dictation";
 import { registerErrorHandler } from "./lib/errorHandler";
 import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfig";
 import { createAuthGuard } from "./lib/authGuard";
-import { loadLlmConfig } from "./lib/llmConfig";
+import { loadLlmConfig, streamTimeoutFor } from "./lib/llmConfig";
 import { createOpenAiCompatibleClient } from "./lib/llmClient";
 import { createDictationParser } from "./domain/dictation";
 import { resolveDictationModel } from "./domain/dictationModel";
@@ -35,6 +35,8 @@ export interface BuildAppOptions {
    * feature off -- when nothing does.
    */
   dictation?: DictationFeature | null;
+  /** Heartbeat of a streamed dictation parse. Tests shorten it; 5 s otherwise. */
+  dictationHeartbeatMs?: number;
 }
 
 function defaultDictation(): DictationFeature | null {
@@ -45,6 +47,7 @@ function defaultDictation(): DictationFeature | null {
     parser: createDictationParser(createOpenAiCompatibleClient(config), () =>
       resolveDictationModel(config.model),
     ),
+    streamTimeoutMs: (textLength) => streamTimeoutFor(config, textLength),
   };
 }
 
@@ -95,7 +98,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(focusRoutes);
   await app.register(historyRoutes);
   await app.register(boardRoutes);
-  await app.register(dictationRoutes(dictation));
+  await app.register(dictationRoutes(dictation, { heartbeatMs: options.dictationHeartbeatMs }));
 
   return app;
 }

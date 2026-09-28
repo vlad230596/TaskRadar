@@ -30,8 +30,37 @@ export interface LlmConfig {
    * How long one parse may take before the client is told to fall back. Kept
    * under the app's 15 s receive timeout (`app/lib/api/api_client.dart`), so
    * the phone hears a 502 from us rather than giving up on its own.
+   *
+   * This is the old, one-shot JSON reply's budget only. A streamed parse
+   * (`Accept: text/event-stream`) keeps the phone informed while it waits, so
+   * it gets [streamTimeoutFor] instead.
    */
   timeoutMs: number;
+  /**
+   * The most a streamed parse may take, however long the dictation. Ten
+   * minutes of speech is several thousand characters, and a model rewriting
+   * that into a description can need a minute; beyond this cap something is
+   * wrong with the provider rather than slow.
+   */
+  streamTimeoutMs: number;
+}
+
+/**
+ * How much of the input a model gets through per second of budget, as a
+ * rough guide: the reply of a tidy is about as long as the input, and a slow
+ * provider writes ~100 characters a second. Deliberately pessimistic -- a
+ * budget that runs out kills a parse the user has already waited for.
+ */
+const STREAM_MS_PER_INPUT_CHAR = 10;
+
+/**
+ * The timeout of one streamed parse of [textLength] characters: never less
+ * than the one-shot budget, growing with the text, and capped at
+ * [LlmConfig.streamTimeoutMs].
+ */
+export function streamTimeoutFor(config: LlmConfig, textLength: number): number {
+  const scaled = config.timeoutMs + textLength * STREAM_MS_PER_INPUT_CHAR;
+  return Math.max(config.timeoutMs, Math.min(config.streamTimeoutMs, scaled));
 }
 
 const llmEnvSchema = z.object({
@@ -42,6 +71,7 @@ const llmEnvSchema = z.object({
   LLM_API_KEY: z.string().default(""),
   LLM_MODEL: z.string().min(1, "LLM_MODEL must not be empty"),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(12_000),
+  LLM_STREAM_TIMEOUT_MS: z.coerce.number().int().positive().default(90_000),
 });
 
 /** Returns the model configuration, or `null` when none is set at all. */
@@ -64,5 +94,6 @@ export function loadLlmConfig(env: NodeJS.ProcessEnv = process.env): LlmConfig |
     apiKey: parsed.data.LLM_API_KEY,
     model: parsed.data.LLM_MODEL,
     timeoutMs: parsed.data.LLM_TIMEOUT_MS,
+    streamTimeoutMs: parsed.data.LLM_STREAM_TIMEOUT_MS,
   };
 }
