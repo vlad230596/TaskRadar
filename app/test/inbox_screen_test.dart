@@ -86,6 +86,9 @@ void main() {
             voiceModels..present = withVoiceModel,
           ),
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
+          deviceTimeZoneNameProvider.overrideWith(
+            (ref) async => 'Europe/Moscow',
+          ),
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
@@ -247,20 +250,153 @@ void main() {
       expect(find.textContaining('ещё '), findsNothing);
     });
 
-    testWidgets('filing sends only the project: the server splits long lines', (
-      tester,
-    ) async {
+    testWidgets(
+      'a long line is offered "Причесать"; "Как есть" is the server\'s split',
+      (tester) async {
+        server.addProject(name: 'Дача');
+        server.addInboxItem(text: longLine);
+        await pump(tester);
+
+        await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
+        await settle(tester);
+        expect(find.text('Причесать перед переносом?'), findsOneWidget);
+        await tester.tap(find.text('Как есть'));
+        await settle(tester);
+
+        final filed = backend.requests.lastWhere(
+          (request) => request.path.endsWith('/file'),
+        );
+        expect((filed.data as Map<String, dynamic>).keys, <String>[
+          'projectId',
+        ]);
+      },
+    );
+
+    testWidgets('backing out of the offer files nothing', (tester) async {
       server.addProject(name: 'Дача');
       server.addInboxItem(text: longLine);
       await pump(tester);
 
       await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
       await settle(tester);
+      await tester.tap(find.text('Причесать'));
+      await settle(tester);
+      // The tidy screen, closed without an answer.
+      await tester.tap(find.byTooltip('Закрыть'));
+      await settle(tester);
 
+      expect(
+        backend.requests.where((request) => request.path.endsWith('/file')),
+        isEmpty,
+      );
+    });
+
+    testWidgets(
+      '"Причесать" before filing sends the tidied title and description',
+      (tester) async {
+        final dacha = server.addProject(name: 'Дача');
+        server.addInboxItem(text: longLine);
+        final parses = modelAnswers(backend, <String, dynamic>{
+          'title': 'Разобрать слова',
+          'description': 'Все восемьдесят.',
+        });
+        await pump(tester);
+
+        await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
+        await settle(tester);
+        await tester.tap(find.text('Причесать'));
+        await settle(tester);
+
+        expect(parses.single['kind'], 'task_tidy');
+        expect(parses.single['text'], longLine);
+        expect(find.text('Результат AI'), findsOneWidget);
+        await tester.tap(find.text('Готово'));
+        await settle(tester);
+
+        final filed = backend.requests.lastWhere(
+          (request) => request.path.endsWith('/file'),
+        );
+        expect(filed.data, <String, dynamic>{
+          'projectId': dacha,
+          'title': 'Разобрать слова',
+          'description': 'Все восемьдесят.',
+        });
+      },
+    );
+
+    testWidgets('a short line is filed without asking', (tester) async {
+      server.addProject(name: 'Дача');
+      server.addInboxItem(text: 'Посмотреть налоги');
+      await pump(tester);
+
+      await tester.tap(find.widgetWithText(InkWell, 'Дача').first);
+      await settle(tester);
+
+      expect(find.text('Причесать перед переносом?'), findsNothing);
+      expect(
+        backend.requests.where((request) => request.path.endsWith('/file')),
+        hasLength(1),
+      );
+    });
+  });
+
+  group('"Причесать" on the line', () {
+    testWidgets('tidies it and files it into the suggested project, one tap', (
+      tester,
+    ) async {
+      final dacha = server.addProject(name: 'Дача');
+      server.addInboxItem(text: 'ну это купить краску на дачу');
+      final parses = modelAnswers(backend, <String, dynamic>{
+        'text': 'Купить краску на дачу',
+        'projectId': dacha,
+        'projectName': 'Дача',
+      });
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Причесать'));
+      await settle(tester);
+      expect(parses.single['kind'], 'sandbox');
+      expect(find.text('В «Дача»'), findsOneWidget);
+
+      await tester.tap(find.text('В «Дача»'));
+      await settle(tester);
+
+      // The tidied words are the line's text, saved, and then it is filed --
+      // the short line with no second offer.
+      final edit = backend.requests.lastWhere((r) => r.method == 'PATCH');
+      expect(
+        (edit.data as Map<String, dynamic>)['text'],
+        'Купить краску на дачу',
+      );
       final filed = backend.requests.lastWhere(
         (request) => request.path.endsWith('/file'),
       );
-      expect((filed.data as Map<String, dynamic>).keys, <String>['projectId']);
+      expect((filed.data as Map<String, dynamic>)['projectId'], dacha);
+      expect(find.text('Задача добавлена в «Дача».'), findsOneWidget);
+    });
+
+    testWidgets('"Готово" keeps the tidied line in the sandbox', (
+      tester,
+    ) async {
+      server.addProject(name: 'Дача');
+      server.addInboxItem(text: 'ну это купить краску');
+      modelAnswers(backend, <String, dynamic>{
+        'text': 'Купить краску',
+        'projectId': null,
+      });
+      await pump(tester);
+
+      await tester.tap(find.byTooltip('Причесать'));
+      await settle(tester);
+      expect(find.text('Проект не угадан'), findsOneWidget);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+
+      expect(openLineText(tester), 'Купить краску');
+      expect(
+        backend.requests.where((request) => request.path.endsWith('/file')),
+        isEmpty,
+      );
     });
   });
 
@@ -522,4 +658,24 @@ void main() {
       expect(server.inbox.single['text'], 'Купить');
     });
   });
+}
+
+/// The server's answer to one "Причесать": an event stream ending in [result].
+/// Returns the bodies of the requests it answered, in order.
+List<Map<String, dynamic>> modelAnswers(
+  FakeBackend backend,
+  Map<String, dynamic> result,
+) {
+  final bodies = <Map<String, dynamic>>[];
+  backend.on('POST', '/dictation/parse', (match) {
+    bodies.add(match.body);
+    return sseResponse(<String>[
+      sseEvent('accepted'),
+      sseEvent('model_started', <String, dynamic>{'model': 'm'}),
+      sseEvent('model_done'),
+      sseEvent('validated'),
+      sseEvent('result', result),
+    ]);
+  });
+  return bodies;
 }

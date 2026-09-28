@@ -91,6 +91,38 @@ class OverflowFadeText extends StatelessWidget {
   }
 }
 
+/// A fade from transparent to [colour]: "the text goes on under here", laid
+/// over the bottom edge of something that scrolls or is cut -- the sandbox's
+/// open field, a closed sandbox line. Ignores touches, so it never steals a tap
+/// meant for the text under it.
+///
+/// The painted cousin of [OverflowFadeText]'s mask: that one fades the text
+/// itself and needs to know nothing about what is behind it; this one covers
+/// the text with the colour of the card, which is what works over a
+/// `TextField`, whose text cannot be masked from outside.
+class FadeInto extends StatelessWidget {
+  const FadeInto({required this.colour, this.height = 22, super.key});
+
+  final Color colour;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: <Color>[colour.withValues(alpha: 0), colour],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// "строка", "строки" or "строк" for [count]: Russian needs three forms.
 String linesWord(int count) {
   final lastTwo = count % 100;

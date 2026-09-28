@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/api/dictation_api.dart';
-import 'package:taskradar/providers/capture_queue_providers.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
@@ -464,7 +463,6 @@ void main() {
       );
       expect(inCard('Повторить'), findsOneWidget);
     });
-
   });
 
   group('"Результат AI | Исходник"', () {
@@ -488,29 +486,30 @@ void main() {
       expect(find.text('Купить кабель USB-C'), findsOneWidget);
     });
 
-    testWidgets('"Разобрать заново" sends the words, corrected, not the answer', (
-      tester,
-    ) async {
-      modelAnswers(<String, dynamic>{'title': 'Купить кабель USB-C'});
+    testWidgets(
+      '"Разобрать заново" sends the words, corrected, not the answer',
+      (tester) async {
+        modelAnswers(<String, dynamic>{'title': 'Купить кабель USB-C'});
 
-      await dictate(tester);
-      await tidy(tester);
-      await tester.tap(find.text('Исходник'));
-      await settle(tester);
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Купить кабель'),
-        'Купить кабель HDMI',
-      );
-      await tester.tap(find.text('Разобрать заново'));
-      await settle(tester);
+        await dictate(tester);
+        await tidy(tester);
+        await tester.tap(find.text('Исходник'));
+        await settle(tester);
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Купить кабель'),
+          'Купить кабель HDMI',
+        );
+        await tester.tap(find.text('Разобрать заново'));
+        await settle(tester);
 
-      expect(parseBodies.map((body) => body['text']), <String>[
-        'Купить кабель',
-        'Купить кабель HDMI',
-      ]);
-      // Back on the answer once it is in.
-      expect(find.text('Купить кабель USB-C'), findsOneWidget);
-    });
+        expect(parseBodies.map((body) => body['text']), <String>[
+          'Купить кабель',
+          'Купить кабель HDMI',
+        ]);
+        // Back on the answer once it is in.
+        expect(find.text('Купить кабель USB-C'), findsOneWidget);
+      },
+    );
   });
 
   group('every destination', () {
@@ -533,7 +532,10 @@ void main() {
       final sent = backend.requests.where(
         (r) => r.method == 'POST' && r.path == '/inbox',
       );
-      expect((sent.single.data as Map<String, dynamic>)['text'], 'Купить кабель USB-C.');
+      expect(
+        (sent.single.data as Map<String, dynamic>)['text'],
+        'Купить кабель USB-C.',
+      );
     });
 
     testWidgets(

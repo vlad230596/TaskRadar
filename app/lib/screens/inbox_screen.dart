@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
+import '../api/dictation_api.dart';
 import '../domain/project_badge.dart';
 import '../domain/task_age.dart';
 import '../models/board_project.dart';
@@ -17,9 +18,11 @@ import '../providers/scope_providers.dart';
 import '../storage/capture_queue_store.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/ai_tidy.dart';
 import '../widgets/glance.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mutation_feedback.dart';
+import '../widgets/overflow_fade_text.dart';
 import '../widgets/project_name_dialog.dart';
 import 'dictation_screen.dart';
 
@@ -287,23 +290,138 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
     );
   }
 
-  Future<void> _file(String projectId, String projectName) async {
+  /// [offerTidy] false: the line was tidied a moment ago, on its way here,
+  /// and asking again would be asking twice.
+  Future<void> _file(
+    String projectId,
+    String projectName, {
+    bool offerTidy = true,
+  }) async {
     if (!await _commitEdit() || !mounted) return;
 
-    // Null today: the server splits a long line into title and description
-    // itself. This is where "Причесать" will hand over its tidied version --
-    // see [shapeLineForFiling].
-    final shaped = shapeLineForFiling(_text.text.trim());
+    // A long line is offered "Причесать" first; declined, the server splits it
+    // into title and description itself -- see [shapeLineForFiling].
+    final FilingDecision decision = offerTidy
+        ? await shapeLineForFiling(
+            _text.text,
+            offerTidy: (text) => _offerTidy(text, projectName),
+          )
+        : (file: true, shaped: null);
+    if (!decision.file || !mounted) return;
 
     final ok = await runMutation(
       context,
       () => ref
           .read(inboxProvider.notifier)
-          .file(widget.item, projectId: projectId, shaped: shaped),
+          .file(widget.item, projectId: projectId, shaped: decision.shaped),
       success: 'Задача добавлена в «$projectName».',
       failure: 'Не удалось перенести в проект.',
     );
     if (ok) widget.onFiled();
+  }
+
+  /// The offer made before a long line is filed: "Причесать" -- the model
+  /// makes a title and a description of it -- or "Как есть", the server's
+  /// split. Backing out of either step files nothing.
+  Future<FilingDecision> _offerTidy(String text, String projectName) async {
+    const cancelled = (file: false, shaped: null);
+    final tidy = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Причесать перед переносом?'),
+        content: const Text(
+          'Строка длинная. AI разложит её на название и описание, ничего не '
+          'добавляя. Как есть — первое предложение станет названием, '
+          'остальное описанием.',
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Как есть'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.auto_awesome_outlined, size: 18),
+            label: const Text('Причесать'),
+          ),
+        ],
+      ),
+    );
+    if (tidy == null || !mounted) return cancelled;
+    if (!tidy) return (file: true, shaped: null);
+
+    final outcome = await openAiTidy(
+      context,
+      kind: ParseKind.taskTidy,
+      source: text,
+      destination: projectName,
+    );
+    switch (outcome) {
+      case TidyAccepted(result: TidiedTask(:final title, :final description)):
+        return (file: true, shaped: (title: title, description: description));
+      case TidyKeptSource(:final source):
+        // "Как надиктовано": the line as it is, with any correction made to
+        // it on the way -- which is the line's text now, saved before filing.
+        if (source != text && source.isNotEmpty) {
+          _setText(source);
+          if (!mounted || !await _commitEdit()) return cancelled;
+        }
+        return (file: true, shaped: null);
+      default:
+        return cancelled;
+    }
+  }
+
+  /// "Причесать" on the line itself (F15): the line tidied, and the project it
+  /// most likely belongs to -- taken with one tap, which files it there.
+  /// Without a project the tidied line stays in the sandbox, saved.
+  Future<void> _tidyLine() async {
+    final text = _text.text.trim();
+    if (text.isEmpty) return;
+    final view = ref.read(boardViewProvider);
+    final projects = view is BoardReady
+        ? <TidyProject>[
+            for (final entry in view.projects)
+              (id: entry.project.id, name: entry.project.name),
+          ]
+        : const <TidyProject>[];
+
+    final outcome = await openAiTidy(
+      context,
+      kind: ParseKind.sandbox,
+      source: text,
+      projects: projects,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case TidyAccepted(
+        result: TidiedLine(text: final line),
+        :final projectId,
+        :final projectName,
+      ):
+        _setText(line);
+        if (projectId == null) {
+          await _commitEdit();
+        } else {
+          final name =
+              projectName ??
+              projects.where((p) => p.id == projectId).firstOrNull?.name ??
+              '';
+          await _file(projectId, name, offerTidy: false);
+        }
+      case TidyKeptSource(:final source) when source != text:
+        _setText(source);
+        await _commitEdit();
+      default:
+        break;
+    }
+  }
+
+  void _setText(String text) {
+    _text.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 
   /// "Задача, для которой проекта ещё нет" -- the second reason the sandbox
@@ -340,7 +458,10 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   Future<void> _dictate() async {
     final text = await AppRoutes.openDictation(
       context,
-      destination: const FieldDestination('в эту строку'),
+      destination: const FieldDestination(
+        'в эту строку',
+        kind: ParseKind.sandbox,
+      ),
     );
     if (text == null || text.isEmpty || !mounted) return;
     final combined = '${_text.text.trimRight()} $text'.trim();
@@ -406,6 +527,12 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
                   style: AppText.caption,
                 ),
               ),
+              _SquareAction(
+                icon: Icons.auto_awesome_outlined,
+                tooltip: 'Причесать',
+                onTap: () => unawaited(_tidyLine()),
+              ),
+              const SizedBox(width: 8),
               _SquareAction(
                 icon: Icons.mic_none,
                 tooltip: 'Договорить голосом',
@@ -555,7 +682,7 @@ class _GrowingFieldState extends State<_GrowingField> {
                 left: 0,
                 right: 10,
                 bottom: 0,
-                child: _FadeInto(
+                child: FadeInto(
                   key: ValueKey<String>('sandbox-field-fade'),
                   colour: AppColors.card,
                   height: 28,
@@ -624,7 +751,7 @@ class _ClampedLine extends StatelessWidget {
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  child: _FadeInto(colour: background),
+                  child: FadeInto(colour: background),
                 ),
               ],
             ),
@@ -640,43 +767,8 @@ class _ClampedLine extends StatelessWidget {
   }
 }
 
-/// A fade from transparent to [colour]: "the text goes on under here". Ignores
-/// touches, so it never steals a tap meant for the text under it.
-///
-/// Private to this screen for now; `widgets/overflow_fade_text.dart` is being
-/// introduced separately, and this should fold into it once both have landed.
-class _FadeInto extends StatelessWidget {
-  const _FadeInto({required this.colour, this.height = 22, super.key});
-
-  final Color colour;
-  final double height;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        height: height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[colour.withValues(alpha: 0), colour],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// "1 строка" / "3 строки" / "5 строк", by the same rule as `formatDays`.
-String formatLines(int count) {
-  final lastTwo = count % 100;
-  final last = count % 10;
-  if (lastTwo >= 11 && lastTwo <= 14) return '$count строк';
-  if (last == 1) return '$count строка';
-  if (last >= 2 && last <= 4) return '$count строки';
-  return '$count строк';
-}
+/// "1 строка" / "3 строки" / "5 строк".
+String formatLines(int count) => '$count ${linesWord(count)}';
 
 /// A line waiting its turn: tap it to work on it.
 class _ClosedLine extends StatelessWidget {

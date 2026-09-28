@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../api/dictation_api.dart';
 import '../navigation/app_routes.dart';
 import '../screens/dictation_screen.dart';
 import '../theme/tokens.dart';
@@ -16,12 +17,12 @@ import 'dictation.dart';
 /// literally one on the whole device; the task screen and the sandbox each have
 /// one in the same corner for the same reason.
 ///
-/// This is that same button at 44 px, for the three places F12 did not redraw:
-/// the note editor, the note composer, and the "name this project" dialog. They
-/// keep dictation because taking it away would be a regression, and they get it
-/// through the same screen as everything else -- so there is still no second
-/// gesture, no press-and-hold, and no inline recording panel anywhere in the
-/// app.
+/// This is that same button at 44 px, for the places F12 did not redraw: the
+/// note editor and the note composer. They keep dictation because taking it
+/// away would be a regression, and they get it through the same screen as
+/// everything else -- so there is still no second gesture, no press-and-hold,
+/// and no inline recording panel anywhere in the app. (The "name this project"
+/// dialog had one too; F15 took it away -- see `project_name_dialog.dart`.)
 ///
 /// When those screens are redesigned this widget should go with them.
 class DictateInto extends StatelessWidget {
@@ -29,10 +30,14 @@ class DictateInto extends StatelessWidget {
     required this.controller,
     this.label = 'в это поле',
     this.separator = ' ',
-    this.onInserted,
     this.tooltip = 'Продиктовать',
+    this.kind = ParseKind.note,
     super.key,
   });
+
+  /// What "Разобрать" on the dictation screen makes of the words -- see
+  /// [FieldDestination.kind].
+  final ParseKind kind;
 
   /// The field the words are appended to.
   final TextEditingController controller;
@@ -45,11 +50,6 @@ class DictateInto extends StatelessWidget {
   /// them into one paragraph is the one thing that would make the result worse
   /// than typing it.
   final String separator;
-
-  /// Called after the insertion, for a caller that has to react to it -- a
-  /// dialog whose confirm button reads the controller rather than listening to
-  /// it, and therefore has to be told.
-  final VoidCallback? onInserted;
 
   final String tooltip;
 
@@ -66,11 +66,10 @@ class DictateInto extends StatelessWidget {
       onPressed: () async {
         final text = await AppRoutes.openDictation(
           context,
-          destination: FieldDestination(label),
+          destination: FieldDestination(label, kind: kind),
         );
         if (text == null || text.isEmpty) return;
         appendDictated(controller, text: text, separator: separator);
-        onInserted?.call();
       },
     );
   }

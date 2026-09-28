@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/dictation_api.dart';
 import '../models/note.dart';
 import '../providers/project_providers.dart';
+import '../widgets/ai_tidy.dart';
 import '../widgets/dictate_into.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_markdown.dart';
@@ -115,6 +117,37 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     return ok;
   }
 
+  /// "Причесать": the body as paragraphs and lists, filler and repetition
+  /// gone, every fact kept (F15). Into the draft, not saved: the answer is
+  /// text like any other edit, and "Сохранить" writes it.
+  ///
+  /// The title goes along so the model knows the note has one and leaves it
+  /// alone; it proposes one only for a note whose title was emptied.
+  Future<void> _tidy() async {
+    final source = _content.text.trim();
+    if (source.isEmpty) return;
+    final title = _title.text.trim();
+
+    final outcome = await openAiTidy(
+      context,
+      kind: ParseKind.note,
+      source: source,
+      noteTitle: title.isEmpty ? null : title,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case TidyAccepted(result: TidiedNote(:final title, :final content)):
+        _content.text = content;
+        if (title != null && _title.text.trim().isEmpty) _title.text = title;
+      // "Как надиктовано" after correcting the source by hand keeps the
+      // correction.
+      case TidyKeptSource(:final source) when source != _content.text.trim():
+        _content.text = source;
+      default:
+        break;
+    }
+  }
+
   /// Intercepts the back gesture / button.
   Future<void> _onPopInvoked(bool didPop, void result) async {
     if (didPop) return;
@@ -148,6 +181,11 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 )
               : null,
           actions: [
+            IconButton(
+              tooltip: 'Причесать',
+              onPressed: _content.text.trim().isEmpty || _saving ? null : _tidy,
+              icon: const Icon(Icons.auto_awesome_outlined),
+            ),
             IconButton(
               tooltip: _preview ? 'Редактировать' : 'Просмотр',
               onPressed: () => setState(() => _preview = !_preview),

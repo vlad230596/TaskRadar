@@ -359,7 +359,12 @@ sealed class TidyOutcome {
 
 /// "Готово": [result], with whatever the user corrected in it.
 final class TidyAccepted extends TidyOutcome {
-  const TidyAccepted(super.source, this.result, {this.projectId, this.projectName});
+  const TidyAccepted(
+    super.source,
+    this.result, {
+    this.projectId,
+    this.projectName,
+  });
 
   final TidyResult result;
 
@@ -647,14 +652,11 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              switch (widget.kind) {
-                ParseKind.note => 'Причесать заметку',
-                ParseKind.sandbox => 'Причесать строку',
-                _ => 'Причесать задачу',
-              },
-              style: AppText.voiceStage,
-            ),
+            child: Text(switch (widget.kind) {
+              ParseKind.note => 'Причесать заметку',
+              ParseKind.sandbox => 'Причесать строку',
+              _ => 'Причесать задачу',
+            }, style: AppText.voiceStage),
           ),
           if (destination != null)
             Container(
@@ -695,11 +697,7 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
       Text(tidySourceHint, style: AppText.voiceNote.copyWith(fontSize: 12)),
       if (progress != null) ...<Widget>[
         const SizedBox(height: 16),
-        TidyProgressCard(
-          progress: progress,
-          onCancel: _cancel,
-          onRetry: _run,
-        ),
+        TidyProgressCard(progress: progress, onCancel: _cancel, onRetry: _run),
       ],
       if (problem != null) ...<Widget>[
         const SizedBox(height: 16),

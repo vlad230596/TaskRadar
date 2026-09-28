@@ -529,8 +529,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
                     child: TidySegment(
                       showSource: _showSource,
-                      onChanged: (value) =>
-                          setState(() => _showSource = value),
+                      onChanged: (value) => setState(() => _showSource = value),
                     ),
                   ),
                 Expanded(
@@ -792,9 +791,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                             disabledForegroundColor: AppColors.voiceLine,
                             minimumSize: const Size(0, Targets.minimum),
                           ),
-                          onPressed: value.text.trim().isEmpty
-                              ? null
-                              : _tidy,
+                          onPressed: value.text.trim().isEmpty ? null : _tidy,
                           icon: const Icon(
                             Icons.auto_awesome_outlined,
                             size: 18,
@@ -866,7 +863,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
       children: <Widget>[
         if (result is ParsedDictation || result is TidiedTask) ...<Widget>[
           const TidyLabel('НАЗВАНИЕ'),
-          TidyTextField(controller: _title, style: heading, hint: 'Что сделать'),
+          TidyTextField(
+            controller: _title,
+            style: heading,
+            hint: 'Что сделать',
+          ),
           const SizedBox(height: 20),
           const TidyLabel('ОПИСАНИЕ'),
           TidyTextField(
@@ -876,7 +877,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
           ),
         ] else ...<Widget>[
           TidyLabel(result is TidiedLine ? 'СТРОКА' : 'ТЕКСТ'),
-          TidyTextField(controller: _resultText, style: body, hint: 'Текста нет'),
+          TidyTextField(
+            controller: _resultText,
+            style: body,
+            hint: 'Текста нет',
+          ),
         ],
         if (remindDate != null && result is ParsedDictation) ...<Widget>[
           const SizedBox(height: 20),
