@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:taskradar/voice/audio_chunker.dart';
 import 'package:taskradar/voice/speech_recognizer.dart';
 import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/voice/voice_model_store.dart';
@@ -89,6 +90,15 @@ class FakeSpeechRecognizer implements SpeechRecognizer {
   /// Set to throw out of [transcribe].
   Object? transcribeFailure;
 
+  /// When set, [transcribe] behaves like a long recording cut into these
+  /// pieces: it reports progress after each one and returns them joined,
+  /// instead of returning [text].
+  List<String>? chunks;
+
+  /// Awaited before piece `index` is "decoded", so a test can stand between
+  /// two pieces and look at the screen.
+  Future<void> Function(int index)? beforeChunk;
+
   /// Set to throw out of [load] -- a corrupt download, a file the archive did
   /// not contain, an ONNX runtime that refuses the model.
   Object? loadFailure;
@@ -116,11 +126,31 @@ class FakeSpeechRecognizer implements SpeechRecognizer {
   }
 
   @override
-  Future<String> transcribe(String wavPath) async {
+  Future<String> transcribe(
+    String wavPath, {
+    void Function(TranscriptionProgress progress)? onProgress,
+  }) async {
     transcribeCount++;
     final failure = transcribeFailure;
     if (failure != null) throw failure;
-    return text;
+
+    final pieces = chunks;
+    if (pieces == null) return text;
+
+    onProgress?.call(
+      TranscriptionProgress(done: 0, total: pieces.length, text: ''),
+    );
+    for (var i = 0; i < pieces.length; i++) {
+      await beforeChunk?.call(i);
+      onProgress?.call(
+        TranscriptionProgress(
+          done: i + 1,
+          total: pieces.length,
+          text: joinChunkTexts(pieces.take(i + 1)),
+        ),
+      );
+    }
+    return joinChunkTexts(pieces);
   }
 
   @override
