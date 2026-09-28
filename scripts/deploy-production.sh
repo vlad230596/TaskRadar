@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# TaskRadar production deployment: the API image and the web client image, in
-# one approved release. Installed on the VDS as
+# TaskRadar production deployment: the API image, the web client image and the
+# schema migration image, in one approved release. Installed on the VDS as
 # /usr/local/sbin/taskradar-deploy (root:root 0755) and invoked over SSH by the
 # release workflow through the single sudo rule in
 # deploy/taskradar-deploy.sudoers.
@@ -19,15 +19,16 @@ readonly RELEASE_ENV='.release.env'
 readonly BACKUP_DIR='/var/backups/taskradar'
 readonly LOCK_FILE='/run/lock/taskradar-deploy.lock'
 
-if [[ $# -ne 4 ]]; then
-  echo 'Usage: taskradar-deploy VERSION BACKEND_IMAGE WEB_IMAGE GHCR_USER' >&2
+if [[ $# -ne 5 ]]; then
+  echo 'Usage: taskradar-deploy VERSION BACKEND_IMAGE WEB_IMAGE MIGRATE_IMAGE GHCR_USER' >&2
   exit 64
 fi
 
 readonly VERSION="$1"
 readonly BACKEND_IMAGE="$2"
 readonly WEB_IMAGE="$3"
-readonly GHCR_USER="$4"
+readonly MIGRATE_IMAGE="$4"
+readonly GHCR_USER="$5"
 
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   echo 'Version must be a SemVer core such as 1.0.0.' >&2
@@ -49,6 +50,13 @@ fi
 # has to fail here rather than start a static file server as the backend.
 if [[ ! "$WEB_IMAGE" =~ ^ghcr\.io/[a-z0-9_.-]+/taskradar-web@sha256:[a-f0-9]{64}$ ]]; then
   echo 'Web image must be an approved GHCR digest reference.' >&2
+  exit 64
+fi
+# The schema migration image: the Prisma CLI kept out of the backend image
+# (see the `migrate` target in backend/Dockerfile). Pinned by name as well, so
+# the one image allowed to change the schema cannot be swapped for another.
+if [[ ! "$MIGRATE_IMAGE" =~ ^ghcr\.io/[a-z0-9_.-]+/taskradar-migrate@sha256:[a-f0-9]{64}$ ]]; then
+  echo 'Migrate image must be an approved GHCR digest reference.' >&2
   exit 64
 fi
 if [[ ! "$GHCR_USER" =~ ^[A-Za-z0-9-]+$ ]]; then
@@ -91,6 +99,7 @@ trap cleanup EXIT
 printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io --username "$GHCR_USER" --password-stdin >/dev/null
 docker pull "$BACKEND_IMAGE"
 docker pull "$WEB_IMAGE"
+docker pull "$MIGRATE_IMAGE"
 
 # Identity of the artifact, checked from the image label before anything starts.
 # The label is set at build time by the release workflow.
@@ -121,6 +130,14 @@ if [[ "$WEB_IMAGE_VERSION" != "$VERSION" ]]; then
   exit 65
 fi
 
+# And of the migrate image: a migration from a different release than the code
+# is exactly the schema/code mismatch the separate step exists to rule out.
+readonly MIGRATE_IMAGE_VERSION="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.version" }}' "$MIGRATE_IMAGE")"
+if [[ "$MIGRATE_IMAGE_VERSION" != "$VERSION" ]]; then
+  echo "Migrate image version label ($MIGRATE_IMAGE_VERSION) does not match release $VERSION." >&2
+  exit 65
+fi
+
 # .release.env holds everything about the *current* release and is generated
 # here, never edited by hand. Keeping the previous copy is what makes a rollback
 # a one-liner: re-run Compose with .release.env.previous.
@@ -132,6 +149,7 @@ APP_VERSION=$VERSION
 BUILD_DATE=$BUILD_DATE
 BACKEND_IMAGE=$BACKEND_IMAGE
 WEB_IMAGE=$WEB_IMAGE
+MIGRATE_IMAGE=$MIGRATE_IMAGE
 EOF
 mv "${RELEASE_ENV}.next" "$RELEASE_ENV"
 
@@ -199,6 +217,36 @@ if [[ "$WEB_INDEX" != *'flutter_bootstrap.js'* ]]; then
   echo "The web client is not being served through $APP_ORIGIN/." >&2
   exit 70
 fi
+
+# Old releases are removed only now, after every check above has passed, and
+# only down to two: the release just deployed and the one in
+# .release.env.previous, which is what a rollback starts (`up --no-build` needs
+# the image locally -- the host has no registry login outside this script).
+# Without this every release left its images behind, and on a 20 GB disk shared
+# by four tenants that runs out within a few dozen deploys. Only TaskRadar's own
+# repositories are considered; other tenants' images are never touched. A
+# failure here must not turn a finished release into a failed one, hence
+# `|| true`: an image that cannot be removed now will be on the next run.
+prune_old_releases() {
+  local refs=("$BACKEND_IMAGE" "$WEB_IMAGE" "$MIGRATE_IMAGE") keep=() key ref id repo
+  if [[ -f "${RELEASE_ENV}.previous" ]]; then
+    while IFS='=' read -r key ref; do
+      [[ "$key" =~ ^(BACKEND|WEB|MIGRATE)_IMAGE$ ]] || continue
+      [[ "$ref" =~ ^ghcr\.io/[a-z0-9_.-]+/taskradar-(backend|web|migrate)@sha256:[a-f0-9]{64}$ ]] || continue
+      refs+=("$ref")
+    done <"${RELEASE_ENV}.previous"
+  fi
+  for ref in "${refs[@]}"; do
+    id="$(docker image inspect --format '{{.Id}}' "$ref" 2>/dev/null)" && keep+=("$id")
+  done
+  docker images --no-trunc --format '{{.Repository}} {{.ID}}' | sort -u |
+    while read -r repo id; do
+      [[ "$repo" =~ ^ghcr\.io/[a-z0-9_.-]+/taskradar-(backend|web|migrate)$ ]] || continue
+      [[ " ${keep[*]} " == *" $id "* ]] && continue
+      docker image rm "$id" >/dev/null 2>&1 && echo "Removed old image $repo $id" || true
+    done
+}
+prune_old_releases
 
 echo "TaskRadar $VERSION deployed successfully (built $BUILD_DATE): API and web client."
 echo "Pre-migration dump: $BACKUP_PATH"

@@ -58,8 +58,15 @@ services:
   # `profiles` keeps it out of `docker compose up`: it is started only by
   # `docker compose run --rm migrate`, which enables the profile implicitly. A
   # one-off container that exits 0 would otherwise make `up --wait` fail.
+  #
+  # It runs its own image, `taskradar-migrate`, built from the same Dockerfile
+  # (target `migrate`) and released under the same version: the Prisma CLI and
+  # its engines are ~170 MB the API never loads, so they live only here.
   migrate:
-    image: ${BACKEND_IMAGE:-taskradar-backend:local}
+    image: ${MIGRATE_IMAGE:-taskradar-migrate:local}
+    build:
+      context: ./backend
+      target: migrate
     profiles: ["migrate"]
     init: true
     read_only: true
@@ -85,6 +92,7 @@ services:
     image: ${BACKEND_IMAGE:-taskradar-backend:local}
     build:
       context: ./backend
+      target: runtime
       args:
         # These are what GET /version reports. They are build args only, and
         # deliberately NOT repeated under `environment:` below: the Dockerfile

@@ -87,4 +87,9 @@ jobs:
         # the require() smoke test at the end of the Dockerfile passes. None of
         # that can be checked on the Windows development machine, which has no
         # Docker.
-        run: docker build --pull --tag taskradar-backend:ci backend
+        # The migrate target is a separate image with its own smoke test (the
+        # CLI has to start on this base), so it is built here too.
+        run: |
+          docker build --pull --target runtime --tag taskradar-backend:ci backend
+          docker build --target migrate --tag taskradar-migrate:ci backend
+          docker image ls --format '{{.Repository}}:{{.Tag}} {{.Size}}' | grep ':ci '

@@ -114,6 +114,7 @@ jobs:
       id-token: write
     outputs:
       backend_digest: ${{ steps.backend.outputs.digest }}
+      migrate_digest: ${{ steps.migrate.outputs.digest }}
     env:
       IMAGE_NAMESPACE: ${{ github.repository_owner }}
       VERSION: ${{ needs.prepare.outputs.version }}
@@ -128,16 +129,30 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The default `docker` driver cannot export a build cache; the GHA cache
+      # below needs a BuildKit builder.
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build and publish the backend image
         id: backend
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ./backend
           file: ./backend/Dockerfile
+          target: runtime
           # The VDS is amd64; building the other architectures would only slow
           # the release down.
           platforms: linux/amd64
           push: true
+          # Without a cache every release reinstalled node_modules, and a fresh
+          # install is a new layer digest even when package-lock.json is
+          # unchanged -- so the VDS downloaded and stored ~300 MB of identical
+          # dependencies per release. With it, an unchanged lockfile reuses the
+          # layer byte for byte and a release costs the server little more than
+          # dist/. `mode=max` is what caches the intermediate deps stage, which
+          # is the one that matters.
+          cache-from: type=gha,scope=taskradar-backend
+          cache-to: type=gha,mode=max,scope=taskradar-backend
           build-args: |
             APP_VERSION=${{ env.VERSION }}
             BUILD_DATE=${{ env.BUILD_DATE }}
@@ -158,6 +173,38 @@ jobs:
         with:
           subject-name: ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-backend
           subject-digest: ${{ steps.backend.outputs.digest }}
+          push-to-registry: true
+      # The schema migration step's image: the Prisma CLI, the schema and the
+      # migrations, built from the same Dockerfile and the same cache. It is
+      # separate from the backend so that the CLI (~170 MB) is not carried by
+      # every API container; the deploy script checks its version label just
+      # like the other two, so all three always come from one release.
+      - name: Build and publish the migrate image
+        id: migrate
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          target: migrate
+          platforms: linux/amd64
+          push: true
+          cache-from: type=gha,scope=taskradar-backend
+          build-args: |
+            APP_VERSION=${{ env.VERSION }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+          tags: |
+            ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-migrate:${{ env.VERSION }}
+            ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-migrate:sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.created=${{ env.BUILD_DATE }}
+      - name: Attest the migrate image
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-name: ghcr.io/${{ env.IMAGE_NAMESPACE }}/taskradar-migrate
+          subject-digest: ${{ steps.migrate.outputs.digest }}
           push-to-registry: true
 
   publish_web:
@@ -273,6 +320,7 @@ jobs:
       # makes the deployed artifact immutable.
       BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/taskradar-backend@${{ needs.publish.outputs.backend_digest }}
       WEB_IMAGE: ghcr.io/${{ github.repository_owner }}/taskradar-web@${{ needs.publish_web.outputs.web_digest }}
+      MIGRATE_IMAGE: ghcr.io/${{ github.repository_owner }}/taskradar-migrate@${{ needs.publish.outputs.migrate_digest }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PORT: ${{ vars.VPS_PORT || '22' }}
@@ -300,4 +348,4 @@ jobs:
             -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             "$VPS_USER@$VPS_HOST" \
-            "sudo /usr/local/sbin/taskradar-deploy '$VERSION' '$BACKEND_IMAGE' '$WEB_IMAGE' '${{ github.actor }}'"
+            "sudo /usr/local/sbin/taskradar-deploy '$VERSION' '$BACKEND_IMAGE' '$WEB_IMAGE' '$MIGRATE_IMAGE' '${{ github.actor }}'"
