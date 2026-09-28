@@ -33,6 +33,27 @@ void main() {
 
       expect(Project.fromJson(json).archivedAt, '2026-09-01T00:00:00.000Z');
     });
+
+    test('noteCount is optional and read leniently (F15)', () {
+      Project withCount(Object? value) =>
+          Project.fromJson(projectWithTasksJson()..['noteCount'] = value);
+
+      expect(Project.fromJson(projectWithTasksJson()).noteCount, isNull);
+      expect(withCount(3).noteCount, 3);
+      expect(withCount(0).noteCount, 0);
+      expect(withCount(2.0).noteCount, 2);
+      // A counter is not worth failing a project list over.
+      expect(withCount('3').noteCount, isNull);
+      expect(withCount(-1).noteCount, isNull);
+      expect(withCount(null).noteCount, isNull);
+    });
+
+    test('an absent noteCount stays absent on the way back out', () {
+      // The board snapshot round-trips projects through JSON; "not told" must
+      // not turn into an explicit null the next reader has to interpret.
+      final json = Project.fromJson(projectWithTasksJson()).toJson();
+      expect(json.containsKey('noteCount'), isFalse);
+    });
   });
 
   group('Task', () {

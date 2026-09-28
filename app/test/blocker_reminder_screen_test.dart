@@ -326,7 +326,7 @@ void main() {
 
       await tester.longPress(find.byTooltip('Блокер — снять'));
       await settle(tester);
-      await tester.tap(find.text('В очереди').last);
+      await tester.tap(find.text('Открыта').last);
       await settle(tester);
 
       expect(find.text('Когда напомнить'), findsNothing);

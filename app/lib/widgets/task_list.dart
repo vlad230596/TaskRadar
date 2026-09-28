@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_error_message.dart';
 import '../domain/reminders.dart';
 import '../domain/task_age.dart';
+import '../domain/task_reorder.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
@@ -14,6 +16,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'glance.dart';
 import 'mutation_feedback.dart';
+import 'overflow_fade_text.dart';
 
 /// The task half of the project screen: rows you can read, and one way to add
 /// one (F12).
@@ -57,7 +60,28 @@ import 'mutation_feedback.dart';
 /// предсказано в комментарии F12 («a long press on the row is the obvious home
 /// for it»). Долгое нажатие по кружку статуса слева по-прежнему открывает выбор
 /// статуса: две разные мишени, два разных долгих нажатия.
-class TaskListView extends ConsumerWidget {
+///
+/// ## Разделы (F15): «в работе», «открытые», «выполнено»
+///
+/// Список больше не рисуется в серверном порядке одной лентой. Сверху — задачи
+/// из набора работы, под ними — открытые (`pending` и `blocked`, в серверном
+/// порядке), в самом низу — свёрнутая строка «Выполнено · N». Раньше взятая в
+/// работу задача ничем, кроме цвета значка, не отличалась, а сделанные
+/// занимали место среди тех, что ещё предстоит сделать.
+///
+/// **Перетаскивать можно только внутри открытых.** Порядок задач — это порядок
+/// «что делать дальше» (`isCurrent` — первая `pending`), и смысл он имеет только
+/// для открытых: задачу в работе поставили туда по другой причине, а сделанную
+/// переставлять незачем. Перетаскивание *между* разделами значило бы смену
+/// статуса или набора жестом, у которого для этого есть свои кнопки. Поэтому
+/// открытый раздел — единственный [SliverReorderableList], а его индексы
+/// переводятся в индексы всего списка через [mapSectionReorder]: сервер
+/// по-прежнему хранит один порядок на проект.
+///
+/// Раздел «выполнено» свёрнут при каждом входе на экран и не запоминается:
+/// история проекта нужна изредка, а открывать экран ради неё каждый раз —
+/// нет.
+class TaskListView extends ConsumerStatefulWidget {
   const TaskListView({
     required this.projectId,
     required this.projectName,
@@ -84,68 +108,281 @@ class TaskListView extends ConsumerWidget {
   final DateTime? now;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TaskListView> createState() => _TaskListViewState();
+}
+
+class _TaskListViewState extends ConsumerState<TaskListView> {
+  /// Свёрнут при каждом входе — см. заметку к [TaskListView].
+  bool _showDone = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final tasks = widget.tasks;
+    final sections = TaskSections.of(tasks, ref.watch(focusedTaskIdsProvider));
+
+    // A heading is worth its line only when there is another section to tell
+    // this one apart from.
+    final labelled = sections.inWork.isNotEmpty || sections.done.isNotEmpty;
+
+    Widget padded(Widget sliver) => SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
+      sliver: sliver,
+    );
+
+    Widget row(Task task, {int index = 0, bool reorderable = false}) =>
+        Padding(
+          // Keyed by id for the reorder animation.
+          key: ValueKey<String>(task.id),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: TaskRow(
+            projectId: widget.projectId,
+            projectName: widget.projectName,
+            task: task,
+            index: index,
+            reorderable: reorderable,
+            inWork: sections.inWork.contains(task),
+            isHighlighted: task.id == widget.highlightTaskId,
+            now: widget.now,
+          ),
+        );
+
     return RefreshIndicator(
       onRefresh: () =>
-          ref.read(projectTasksProvider(projectId).notifier).refresh(),
-      child: ReorderableListView.builder(
+          ref.read(projectTasksProvider(widget.projectId).notifier).refresh(),
+      // A CustomScrollView rather than `ReorderableListView`: only one of the
+      // three sections is draggable, and a [SliverReorderableList] inside the
+      // one scrollable keeps what the old list had -- scrolling, pull to
+      // refresh and auto-scroll near the edge during a drag.
+      child: CustomScrollView(
         // The list must scroll even when it is shorter than the viewport, or
         // pull-to-refresh on a two-task project does nothing.
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(
-          Insets.gutter,
-          12,
-          Insets.gutter,
-          32,
-        ),
+        slivers: <Widget>[
+          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          if (sections.inWork.isNotEmpty) ...<Widget>[
+            padded(
+              const SliverToBoxAdapter(
+                child: _SectionLabel('В РАБОТЕ', colour: AppColors.indigoLink),
+              ),
+            ),
+            padded(
+              SliverList.list(
+                children: <Widget>[
+                  for (final task in sections.inWork) row(task),
+                ],
+              ),
+            ),
+          ],
+          if (sections.open.isNotEmpty) ...<Widget>[
+            if (labelled)
+              padded(
+                const SliverToBoxAdapter(
+                  child: _SectionLabel('ОТКРЫТЫЕ', colour: AppColors.muted),
+                ),
+              ),
+            padded(
+              SliverReorderableList(
+                itemCount: sections.open.length,
+                itemBuilder: (context, index) => row(
+                  sections.open[index],
+                  index: index,
+                  reorderable: true,
+                ),
+                proxyDecorator: _liftedRow,
+                onReorder: (oldIndex, newIndex) {
+                  final full = mapSectionReorder(
+                    sections.openIndices,
+                    oldIndex,
+                    newIndex,
+                  );
+                  if (full == null) return;
+                  // No `await`, no error handling here: `move` is optimistic,
+                  // so the list has already settled into its new order by the
+                  // time this returns, and a failure rolls it back and reports
+                  // itself.
+                  runMutation(
+                    context,
+                    () => ref
+                        .read(projectTasksProvider(widget.projectId).notifier)
+                        .move(full.$1, full.$2),
+                    failure: 'Не удалось сохранить порядок задач.',
+                  );
+                },
+              ),
+            ),
+          ],
 
-        // A footer rather than a header, unlike the composer it replaces: it is
-        // no longer a field you type into repeatedly, it is the end of the
-        // list, and the end of the list is where "and one more" belongs.
-        footer: Padding(
-          padding: EdgeInsets.only(top: tasks.isEmpty ? 0 : 8),
-          child: Column(
-            children: <Widget>[
-              if (tasks.isEmpty) const _NoTasksYet(),
-              _AddTaskButton(projectId: projectId),
-            ],
+          // After the open tasks rather than at the very end: "and one more"
+          // belongs where the open work ends, not under the history.
+          padded(
+            SliverToBoxAdapter(
+              child: Column(
+                children: <Widget>[
+                  if (tasks.isEmpty) const _NoTasksYet(),
+                  _AddTaskButton(projectId: widget.projectId),
+                ],
+              ),
+            ),
+          ),
+
+          if (sections.done.isNotEmpty) ...<Widget>[
+            padded(
+              SliverToBoxAdapter(
+                child: _DoneToggle(
+                  count: sections.done.length,
+                  expanded: _showDone,
+                  onTap: () => setState(() => _showDone = !_showDone),
+                ),
+              ),
+            ),
+            if (_showDone)
+              padded(
+                SliverList.list(
+                  children: <Widget>[
+                    for (final task in sections.done) row(task),
+                  ],
+                ),
+              ),
+          ],
+          const SliverToBoxAdapter(child: SizedBox(height: 32)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The row being dragged, lifted off the list. `ReorderableListView` drew this
+/// itself; a bare [SliverReorderableList] leaves it to the caller.
+Widget _liftedRow(Widget child, int index, Animation<double> animation) {
+  return AnimatedBuilder(
+    animation: animation,
+    builder: (context, child) => Material(
+      color: Colors.transparent,
+      elevation: 6 * Curves.easeOut.transform(animation.value),
+      shadowColor: const Color(0x331B2050),
+      borderRadius: BorderRadius.circular(Radii.card),
+      child: child,
+    ),
+    child: child,
+  );
+}
+
+/// The project's tasks, split the way the screen draws them.
+///
+/// - [inWork]: in the Work-mode focus set and not done, in server order;
+/// - [open]: every other task that is not done (`pending` and `blocked`), in
+///   server order, with [openIndices] their indices in the full list;
+/// - [done]: done, in server order.
+///
+/// A done task that is somehow still in the set (the server drops it in the
+/// same transaction, but the set is re-read a moment later) is done first: the
+/// struck-through row belongs with the history, not at the top.
+class TaskSections {
+  const TaskSections._({
+    required this.inWork,
+    required this.open,
+    required this.openIndices,
+    required this.done,
+  });
+
+  factory TaskSections.of(List<Task> tasks, Set<String> focused) {
+    final inWork = <Task>[];
+    final open = <Task>[];
+    final openIndices = <int>[];
+    final done = <Task>[];
+    for (var i = 0; i < tasks.length; i++) {
+      final task = tasks[i];
+      if (task.status == TaskStatus.done) {
+        done.add(task);
+      } else if (focused.contains(task.id)) {
+        inWork.add(task);
+      } else {
+        open.add(task);
+        openIndices.add(i);
+      }
+    }
+    return TaskSections._(
+      inWork: inWork,
+      open: open,
+      openIndices: openIndices,
+      done: done,
+    );
+  }
+
+  final List<Task> inWork;
+  final List<Task> open;
+  final List<int> openIndices;
+  final List<Task> done;
+}
+
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.text, {required this.colour});
+
+  final String text;
+  final Color colour;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
+      child: Text(
+        text,
+        style: AppText.sectionLabel.copyWith(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.9,
+          color: colour,
+        ),
+      ),
+    );
+  }
+}
+
+/// "Выполнено · N" with a chevron: the done section, folded.
+class _DoneToggle extends StatelessWidget {
+  const _DoneToggle({
+    required this.count,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Semantics(
+        button: true,
+        expanded: expanded,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(Radii.card),
+          child: SizedBox(
+            height: Targets.minimum,
+            child: Row(
+              children: <Widget>[
+                const SizedBox(width: 2),
+                AnimatedRotation(
+                  turns: expanded ? 0.25 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: const Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: AppColors.muted,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Выполнено · $count',
+                  style: AppText.caption.copyWith(fontSize: 13),
+                ),
+              ],
+            ),
           ),
         ),
-
-        // Flutter's own handles are a grip on the trailing edge, added to every
-        // row. Ours is switched off for a row the server has not confirmed yet,
-        // which the default cannot express.
-        buildDefaultDragHandles: false,
-
-        itemCount: tasks.length,
-        itemBuilder: (context, index) {
-          final task = tasks[index];
-          return Padding(
-            // Keyed by id for the reorder animation.
-            key: ValueKey<String>(task.id),
-            padding: const EdgeInsets.only(bottom: 8),
-            child: TaskRow(
-              projectId: projectId,
-              projectName: projectName,
-              task: task,
-              index: index,
-              isHighlighted: task.id == highlightTaskId,
-              now: now,
-            ),
-          );
-        },
-        onReorder: (oldIndex, newIndex) {
-          // No `await`, no error handling here: `move` is optimistic, so the
-          // list has already settled into its new order by the time this
-          // returns, and a failure rolls it back and reports itself.
-          runMutation(
-            context,
-            () => ref
-                .read(projectTasksProvider(projectId).notifier)
-                .move(oldIndex, newIndex),
-            failure: 'Не удалось сохранить порядок задач.',
-          );
-        },
       ),
     );
   }
@@ -161,6 +398,8 @@ class TaskRow extends ConsumerWidget {
     required this.projectName,
     required this.task,
     required this.index,
+    this.reorderable = true,
+    this.inWork = false,
     this.isHighlighted = false,
     this.now,
     super.key,
@@ -169,7 +408,18 @@ class TaskRow extends ConsumerWidget {
   final String projectId;
   final String projectName;
   final Task task;
+
+  /// Position inside the enclosing [SliverReorderableList]; meaningless when
+  /// [reorderable] is false.
   final int index;
+
+  /// Whether a long press on the text starts a drag. Only the open section's
+  /// rows are -- see [TaskListView].
+  final bool reorderable;
+
+  /// Drawn in the "в работе" section: an indigo border, which is what makes
+  /// the section read as a different kind of row rather than a heading.
+  final bool inWork;
   final bool isHighlighted;
   final DateTime? now;
 
@@ -191,12 +441,85 @@ class TaskRow extends ConsumerWidget {
       now: now,
     );
 
+    final title = OverflowFadeText(
+      task.title,
+      maxLines: 3,
+      style: (current ? AppText.taskTitleCurrent : AppText.taskTitle).copyWith(
+        // Struck through rather than hidden: a done task is still part of the
+        // record of what happened here.
+        decoration: done ? TextDecoration.lineThrough : null,
+        color: done ? AppColors.muted : null,
+      ),
+    );
+
+    final body = InkWell(
+      onTap: _unconfirmed
+          ? null
+          : () => AppRoutes.openTask(
+              context,
+              projectId: projectId,
+              taskId: task.id,
+            ),
+      child: Container(
+        constraints: BoxConstraints(
+          minHeight: done ? Targets.minimum : Targets.row,
+        ),
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(child: title),
+                // No second line to put it on, so it rides at the end of the
+                // title -- and never wraps or shrinks. See `widgets/glance.dart`.
+                // Not on a done row: how long a finished task sat still is not
+                // a question anyone asks.
+                if (!current && !blocked && !done) ...<Widget>[
+                  const SizedBox(width: 10),
+                  AgeChip(days: age, showIcon: false),
+                ],
+              ],
+            ),
+            if (current) ...<Widget>[
+              const SizedBox(height: 6),
+              _Meta(
+                icon: Icons.arrow_forward,
+                text: 'следующая',
+                colour: AppColors.indigoLink,
+              ),
+            ] else if (blocked) ...<Widget>[
+              const SizedBox(height: 6),
+              _Meta(
+                icon: Icons.notifications_none,
+                text: _blockedLine(task, age, now),
+                colour: AppColors.waitingInk,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+
     return Container(
       decoration: BoxDecoration(
-        color: blocked ? AppColors.waitingFill : AppColors.card,
+        // A done row is a line of history, not a card: no fill, no border, the
+        // same as the reference's done list.
+        color: done
+            ? Colors.transparent
+            : blocked
+            ? AppColors.waitingFill
+            : AppColors.card,
         border: Border.all(
           color: isHighlighted
               ? AppColors.indigoLink
+              : inWork
+              ? AppColors.indigo
+              : done
+              ? Colors.transparent
               : blocked
               ? AppColors.waitingLine
               // The current task carries a heavier border rather than a tint:
@@ -205,7 +528,11 @@ class TaskRow extends ConsumerWidget {
               : current
               ? AppColors.lineStrong
               : AppColors.line,
-          width: isHighlighted ? 2 : 1,
+          width: isHighlighted
+              ? 2
+              : inWork
+              ? 1.5
+              : 1,
         ),
         borderRadius: BorderRadius.circular(Radii.card),
         // `Project.html` gives the current row `0 1px 2px rgba(27,32,80,0.06)`
@@ -228,6 +555,7 @@ class TaskRow extends ConsumerWidget {
         children: <Widget>[
           _StatusTarget(
             projectId: projectId,
+            projectName: projectName,
             task: task,
             enabled: !_unconfirmed,
             now: now,
@@ -235,80 +563,21 @@ class TaskRow extends ConsumerWidget {
           Expanded(
             // Долгое нажатие по тексту — перетаскивание. Задержанный слушатель,
             // а не обычный: обычный забирал бы жест у прокрутки списка.
-            child: ReorderableDelayedDragStartListener(
-              enabled: !_unconfirmed,
-              index: index,
-              child: InkWell(
-                onTap: _unconfirmed
-                    ? null
-                    : () => AppRoutes.openTask(
-                        context,
-                        projectId: projectId,
-                        taskId: task.id,
-                      ),
-                child: Container(
-                  constraints: const BoxConstraints(minHeight: Targets.row),
-                  alignment: Alignment.centerLeft,
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Expanded(
-                            child: Text(
-                              task.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style:
-                                  (current
-                                          ? AppText.taskTitleCurrent
-                                          : AppText.taskTitle)
-                                      .copyWith(
-                                        // Struck through rather than hidden: a
-                                        // done task is still part of the record
-                                        // of what happened here.
-                                        decoration: done
-                                            ? TextDecoration.lineThrough
-                                            : null,
-                                        color: done ? AppColors.muted : null,
-                                      ),
-                            ),
-                          ),
-                          // No second line to put it on, so it rides at the end
-                          // of the title -- and never wraps or shrinks. See
-                          // `widgets/glance.dart`.
-                          if (!current && !blocked) ...<Widget>[
-                            const SizedBox(width: 10),
-                            AgeChip(days: age, showIcon: false),
-                          ],
-                        ],
-                      ),
-                      if (current) ...<Widget>[
-                        const SizedBox(height: 6),
-                        _Meta(
-                          icon: Icons.arrow_forward,
-                          text: 'следующая',
-                          colour: AppColors.indigoLink,
-                        ),
-                      ] else if (blocked) ...<Widget>[
-                        const SizedBox(height: 6),
-                        _Meta(
-                          icon: Icons.notifications_none,
-                          text: _blockedLine(task, age, now),
-                          colour: AppColors.waitingInk,
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            child: reorderable
+                ? ReorderableDelayedDragStartListener(
+                    enabled: !_unconfirmed,
+                    index: index,
+                    child: body,
+                  )
+                : body,
           ),
-          if (_unconfirmed)
+          if (done)
+            // Nothing to take into work: the server drops a finished task from
+            // the set, so the target would be a button that undoes itself.
+            const SizedBox(width: 12)
+          else if (_unconfirmed)
             const SizedBox(
-              width: 48,
+              width: Targets.minimum,
               height: Targets.row,
               child: Center(
                 child: SizedBox(
@@ -329,10 +598,16 @@ class TaskRow extends ConsumerWidget {
 /// Мишень справа в строке: взять задачу в работу или убрать из набора.
 ///
 /// Два кольца — тот же значок, которым в приложении обозначен режим работы
-/// (`Icons.adjust`, нижняя панель и левый рельс). Взятая задача рисует его
-/// чернилами, невзятая — вторым планом; отдельной галочки нет намеренно: цвет
-/// значка, который уже означает «работа», читается быстрее, чем второй символ
-/// рядом с ним.
+/// (`Icons.adjust`, нижняя панель и левый рельс).
+///
+/// ## Почему взятая задача — плашка, а не цвет (F15)
+///
+/// До F15 два состояния отличались только цветом значка, чернила против
+/// второго плана, и человек так и не заметил, что кнопка что-то делает. Теперь
+/// невзятая задача — контурное кольцо на 44 px мишени, а взятая — залитая
+/// индиго плашка «В работе» со словом: состояние читается без сравнения с
+/// соседней строкой. Нажатие подтверждается снэкбаром, потому что строка при
+/// этом уезжает в другой раздел списка и без слов это выглядит как пропажа.
 ///
 /// Предела в пять здесь нет. Пять — правило экрана сбора, где видно весь набор
 /// сразу; здесь, внутри одного проекта, видно одну строку, и отказ «уже пять»
@@ -350,31 +625,132 @@ class _FocusTarget extends ConsumerWidget {
 
     return Tooltip(
       message: inFocus ? 'Убрать из набора' : 'Взять в работу',
-      child: InkWell(
-        onTap: () {
-          final notifier = ref.read(focusSetProvider.notifier);
-          runMutation(
-            context,
-            () => inFocus
-                ? notifier.drop(task.id)
-                : notifier.take(task, projectName: projectName),
-            failure: inFocus
-                ? 'Не удалось убрать задачу из набора.'
-                : 'Не удалось взять задачу в работу.',
-          );
-        },
-        child: SizedBox(
-          width: 48,
-          height: Targets.row,
-          child: Icon(
-            Icons.adjust,
-            size: 22,
-            color: inFocus ? AppColors.ink : AppColors.muted,
+      child: inFocus
+          ? Padding(
+              padding: const EdgeInsets.only(left: 6, right: 6),
+              child: SizedBox(
+                height: Targets.minimum,
+                child: InkWell(
+                  customBorder: const StadiumBorder(),
+                  onTap: () => unawaited(_toggle(context, ref, inFocus)),
+                  child: const Center(child: FocusPill()),
+                ),
+              ),
+            )
+          : InkWell(
+              customBorder: const CircleBorder(),
+              onTap: () => unawaited(_toggle(context, ref, inFocus)),
+              child: const SizedBox(
+                width: Targets.minimum,
+                height: Targets.row,
+                child: Icon(Icons.adjust, size: 20, color: AppColors.muted),
+              ),
+            ),
+    );
+  }
+
+  Future<void> _toggle(BuildContext context, WidgetRef ref, bool inFocus) async {
+    // Both resolved before the await: the row moves to another section the
+    // moment the optimistic write lands, and this element goes with it.
+    final messenger = ScaffoldMessenger.of(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final notifier = ref.read(focusSetProvider.notifier);
+
+    final ok = await runMutation(
+      context,
+      () => inFocus
+          ? notifier.drop(task.id)
+          : notifier.take(task, projectName: projectName),
+      failure: inFocus
+          ? 'Не удалось убрать задачу из набора.'
+          : 'Не удалось взять задачу в работу.',
+    );
+    if (!ok || !messenger.mounted) return;
+
+    if (inFocus) {
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(const SnackBar(content: Text('Убрана из работы')));
+      return;
+    }
+    _offerUndo(
+      messenger,
+      'Взята в работу',
+      () => container.read(focusSetProvider.notifier).drop(task.id),
+    );
+  }
+}
+
+/// «В работе» on indigo: the in-focus state of the row's right-hand target.
+///
+/// Public so that tests (and any other list that shows the set) can find the
+/// one shape that means "this task is in today's set".
+class FocusPill extends StatelessWidget {
+  const FocusPill({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: const ShapeDecoration(
+        color: AppColors.indigo,
+        shape: StadiumBorder(),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const Icon(Icons.adjust, size: 14, color: AppColors.onInk),
+          const SizedBox(width: 5),
+          Text(
+            'В работе',
+            style: AppText.chip.copyWith(color: AppColors.onInk),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+/// A confirmation with "Отменить" on it.
+///
+/// [undo] is run through the [ProviderContainer] rather than a widget's `ref`:
+/// by the time anyone taps the action, the row that offered it has moved to a
+/// different section and its element is gone.
+void _offerUndo(
+  ScaffoldMessengerState messenger,
+  String message,
+  Future<void> Function() undo,
+) {
+  messenger
+    ..clearSnackBars()
+    ..showSnackBar(
+      SnackBar(
+        content: Text(message),
+        // Since Flutter 3.3x a snackbar with an action stays until dismissed
+        // unless told otherwise. A confirmation that never leaves is noise.
+        persist: false,
+        action: SnackBarAction(
+          label: 'Отменить',
+          onPressed: () => unawaited(() async {
+            try {
+              await undo();
+            } catch (error) {
+              if (!messenger.mounted) return;
+              messenger
+                ..clearSnackBars()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Не удалось отменить. ${describeApiError(error)}',
+                    ),
+                  ),
+                );
+            }
+          }()),
+        ),
+      ),
+    );
 }
 
 /// "23.09 · ждёт 3 д", or just one half of it.
@@ -426,22 +802,66 @@ class _Meta extends StatelessWidget {
 /// times a day; a long press opens the full three-way choice, which happens
 /// once in a while. Putting the rare one behind the common one is the opposite
 /// of the old popup menu, where marking something done cost a menu.
-class _StatusTarget extends ConsumerWidget {
+///
+/// ## The check plays *before* the write (F15)
+///
+/// Since the list has sections, a task marked done leaves the open section for
+/// the folded "Выполнено" the moment the optimistic write lands -- so an
+/// animation played after it would be played on a row nobody can see any more.
+/// The circle therefore fills and pops first (~a quarter of a second), and only
+/// then is the status sent. What follows is "Сделано · Отменить", because a
+/// row that vanishes on a tap needs a way back that does not involve finding
+/// it in the history.
+class _StatusTarget extends ConsumerStatefulWidget {
   const _StatusTarget({
     required this.projectId,
+    required this.projectName,
     required this.task,
     required this.enabled,
     required this.now,
   });
 
   final String projectId;
+  final String projectName;
   final Task task;
   final bool enabled;
   final DateTime? now;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final circle = switch (task.status) {
+  ConsumerState<_StatusTarget> createState() => _StatusTargetState();
+}
+
+class _StatusTargetState extends ConsumerState<_StatusTarget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pop = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 240),
+  );
+
+  /// 1 -> 0.8 -> 1.15 -> 1: pressed in, then the check lands.
+  late final Animation<double> _scale = TweenSequence<double>(
+    <TweenSequenceItem<double>>[
+      TweenSequenceItem<double>(tween: Tween(begin: 1, end: 0.8), weight: 30),
+      TweenSequenceItem<double>(tween: Tween(begin: 0.8, end: 1.15), weight: 40),
+      TweenSequenceItem<double>(tween: Tween(begin: 1.15, end: 1), weight: 30),
+    ],
+  ).animate(CurvedAnimation(parent: _pop, curve: Curves.easeOut));
+
+  /// True while the check is showing ahead of the write.
+  bool _completing = false;
+
+  Task get task => widget.task;
+
+  @override
+  void dispose() {
+    _pop.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shown = _completing ? TaskStatus.done : task.status;
+    final circle = switch (shown) {
       TaskStatus.done => const Icon(
         Icons.check_circle,
         size: 26,
@@ -464,36 +884,72 @@ class _StatusTarget extends ConsumerWidget {
 
     return Tooltip(
       message: switch (task.status) {
-        TaskStatus.done => 'Сделана — вернуть в очередь',
+        TaskStatus.done => 'Сделана — открыть снова',
         TaskStatus.blocked => 'Блокер — снять',
         TaskStatus.pending => 'Отметить сделанной',
       },
       child: InkWell(
-        onTap: enabled ? () => unawaited(_toggle(context, ref)) : null,
-        onLongPress: enabled ? () => unawaited(_choose(context, ref)) : null,
+        onTap: widget.enabled && !_completing
+            ? () => unawaited(
+                _commit(
+                  task.status == TaskStatus.done
+                      ? TaskStatus.pending
+                      : TaskStatus.done,
+                ),
+              )
+            : null,
+        onLongPress: widget.enabled && !_completing
+            ? () => unawaited(_choose())
+            : null,
         child: SizedBox(
           width: 48,
           height: Targets.row,
-          child: Center(child: circle),
+          child: Center(
+            child: ScaleTransition(scale: _scale, child: circle),
+          ),
         ),
       ),
     );
   }
 
-  Future<void> _toggle(BuildContext context, WidgetRef ref) {
-    final next = task.status == TaskStatus.done
-        ? TaskStatus.pending
-        : TaskStatus.done;
-    return setTaskStatus(
+  Future<void> _commit(TaskStatus next) async {
+    final previous = task;
+    // Resolved up front: once the status lands, this row lives in another
+    // section and this element is gone -- see [_offerUndo].
+    final messenger = ScaffoldMessenger.of(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final wasInFocus = ref.read(focusedTaskIdsProvider).contains(task.id);
+
+    if (next == TaskStatus.done) {
+      setState(() => _completing = true);
+      await _pop.forward(from: 0);
+      if (!mounted) return;
+    }
+
+    final ok = await setTaskStatus(
       context,
       ref,
-      projectId: projectId,
-      task: task,
+      projectId: widget.projectId,
+      task: previous,
       status: next,
+    );
+    if (mounted && _completing) setState(() => _completing = false);
+    if (!ok || next != TaskStatus.done || !messenger.mounted) return;
+
+    _offerUndo(
+      messenger,
+      'Сделано',
+      () => _restore(
+        container,
+        projectId: widget.projectId,
+        projectName: widget.projectName,
+        previous: previous,
+        wasInFocus: wasInFocus,
+      ),
     );
   }
 
-  Future<void> _choose(BuildContext context, WidgetRef ref) async {
+  Future<void> _choose() async {
     final chosen = await showModalBottomSheet<TaskStatus>(
       context: context,
       builder: (context) => SafeArea(
@@ -517,14 +973,55 @@ class _StatusTarget extends ConsumerWidget {
         ),
       ),
     );
-    if (chosen == null || !context.mounted) return;
-    await setTaskStatus(
-      context,
-      ref,
-      projectId: projectId,
-      task: task,
-      status: chosen,
-    );
+    if (chosen == null || chosen == task.status || !mounted) return;
+    await _commit(chosen);
+  }
+}
+
+/// Puts a task back the way it was before "сделано": its status, the reminder
+/// date that leaving `blocked` cleared, and its place in the focus set that
+/// closing it cost it on the server.
+///
+/// Not [setTaskStatus]: that one needs a live `BuildContext` and `WidgetRef`,
+/// and the row that offered the undo has been disposed by the time anyone taps
+/// it. It would also ask for a date, which is the opposite of restoring one.
+Future<void> _restore(
+  ProviderContainer container, {
+  required String projectId,
+  required String projectName,
+  required Task previous,
+  required bool wasInFocus,
+}) async {
+  final tasks = container.read(projectTasksProvider(projectId).notifier);
+
+  Task? fresh() => container
+      .read(projectTasksProvider(projectId))
+      .value
+      ?.where((row) => row.id == previous.id)
+      .firstOrNull;
+
+  final now = fresh();
+  if (now == null) return;
+  await tasks.setStatus(now, previous.status);
+
+  final remindAt = previous.remindAt;
+  if (previous.status == TaskStatus.blocked &&
+      remindAt != null &&
+      remindAt.length >= 10) {
+    final blocked = fresh();
+    if (blocked != null && blocked.status == TaskStatus.blocked) {
+      // The `YYYY-MM-DD` prefix is the calendar date; see [calendarDateForApi].
+      await tasks.setRemindAt(blocked, remindAt.substring(0, 10));
+    }
+  }
+
+  if (wasInFocus) {
+    final reopened = fresh();
+    if (reopened != null) {
+      await container
+          .read(focusSetProvider.notifier)
+          .take(reopened, projectName: projectName);
+    }
   }
 }
 
@@ -538,7 +1035,7 @@ const List<TaskStatus> taskStatusOrder = <TaskStatus>[
 ];
 
 const Map<TaskStatus, String> taskStatusLabel = <TaskStatus, String>{
-  TaskStatus.pending: 'В очереди',
+  TaskStatus.pending: 'Открыта',
   TaskStatus.blocked: 'Блокер',
   TaskStatus.done: 'Сделано',
 };
@@ -550,7 +1047,10 @@ const Map<TaskStatus, String> taskStatusLabel = <TaskStatus, String>{
 /// product's rather than either screen's: "блокер" and "жду до вторника" are
 /// one thought, and splitting them is what fills the app with dateless
 /// blockers.
-Future<void> setTaskStatus(
+///
+/// Returns whether the status write itself succeeded (the date that may follow
+/// is its own write, reported on its own).
+Future<bool> setTaskStatus(
   BuildContext context,
   WidgetRef ref, {
   required String projectId,
@@ -563,6 +1063,10 @@ Future<void> setTaskStatus(
   // Читаем до записи: после неё задача может уже покинуть набор, и спросить
   // «была ли она там» будет не у кого.
   final wasInFocus = ref.read(focusedTaskIdsProvider).contains(task.id);
+  // И сам набор тоже до записи: строка, из которой это вызвано, после неё
+  // может переехать в другой раздел списка (F15), и её `ref` умрёт вместе с
+  // ней.
+  final focus = ref.read(focusSetProvider.notifier);
 
   final ok = await runMutation(
     context,
@@ -571,7 +1075,7 @@ Future<void> setTaskStatus(
         .setStatus(task, status),
     failure: 'Не удалось изменить статус.',
   );
-  if (!ok) return;
+  if (!ok) return false;
 
   /*
    * Набор мог измениться от этой записи, и не по своей воле: закрытая задача
@@ -585,17 +1089,17 @@ Future<void> setTaskStatus(
    * это стоило бы лишнего запроса на каждое «сделано».
    */
   if (wasInFocus) {
-    unawaited(ref.read(focusSetProvider.notifier).refresh());
+    unawaited(focus.refresh());
   }
 
-  if (!context.mounted) return;
-  if (status != TaskStatus.blocked || wasBlocked || hadDate) return;
+  if (!context.mounted) return true;
+  if (status != TaskStatus.blocked || wasBlocked || hadDate) return true;
 
   // Read fresh: `task` is the row from before the status change, and
   // `setRemindAt` refuses a row that is not blocked.
   final rows = ref.read(projectTasksProvider(projectId)).value;
   final fresh = rows?.where((row) => row.id == task.id).firstOrNull;
-  if (fresh == null) return;
+  if (fresh == null) return true;
 
   final picked = await showDatePicker(
     context: context,
@@ -606,7 +1110,7 @@ Future<void> setTaskStatus(
     cancelText: 'Отмена',
     confirmText: 'Готово',
   );
-  if (picked == null || !context.mounted) return;
+  if (picked == null || !context.mounted) return true;
 
   await runMutation(
     context,
@@ -615,6 +1119,7 @@ Future<void> setTaskStatus(
         .setRemindAt(fresh, calendarDateForApi(picked)),
     failure: 'Не удалось сохранить дату напоминания.',
   );
+  return true;
 }
 
 class _AddTaskButton extends StatelessWidget {
