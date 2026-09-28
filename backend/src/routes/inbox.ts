@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { NotFoundError } from "../lib/errors";
 import { computeAppendPosition } from "../domain/position";
 import { splitInboxText } from "../domain/inboxSplit";
+import { linkDictationParse } from "../domain/dictationLink";
 import {
   createInboxItemSchema,
   updateInboxItemSchema,
@@ -57,6 +58,24 @@ function isUniqueConstraintViolation(error: unknown): boolean {
     error !== null &&
     (error as { code?: unknown }).code === "P2002"
   );
+}
+
+/**
+ * A line saved from a `sandbox` answer (F15): its dataset row learns the line
+ * and its text -- see ../domain/dictationLink.ts. Not in a transaction with
+ * the write, unlike the task routes: capture is the one write in the app that
+ * must not fail for anything but the line itself, and the label is a single
+ * statement that is a no-op when it has nothing to label.
+ */
+async function labelSample(
+  parseId: string | undefined,
+  item: { id: string; text: string },
+): Promise<void> {
+  if (parseId === undefined) return;
+  await linkDictationParse(prisma, parseId, ["sandbox"], {
+    inboxItemId: item.id,
+    finalContent: item.text,
+  });
 }
 
 async function getInboxItemOrThrow(id: string) {
@@ -116,6 +135,7 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
 
     if (captureKey === undefined) {
       const item = await prisma.inboxItem.create({ data: { text: body.text } });
+      await labelSample(body.dictationParseId, item);
       reply.status(201).send(item);
       return;
     }
@@ -130,6 +150,9 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       const item = await prisma.inboxItem.create({
         data: { text: body.text, captureKey },
       });
+      // Only for a line that is new here: a replay answers with the row as
+      // it stands, and the row -- if it was dictated -- was labelled then.
+      await labelSample(body.dictationParseId, item);
       reply.status(201).send(item);
     } catch (error) {
       // Two copies of the same retry in flight at once: the check above passed
@@ -161,6 +184,7 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       where: { id },
       data: { text: body.text },
     });
+    await labelSample(body.dictationParseId, item);
     reply.send(item);
   });
 
@@ -258,6 +282,15 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       await tx.taskEvent.create({
         data: { taskId: created.id, kind: "created", toStatus: created.status },
       });
+      // A tidied line (F15): the `sandbox` answer whose project was taken, or
+      // a `task_tidy` of the line on its way here, labelled with the task.
+      if (body.dictationParseId !== undefined) {
+        await linkDictationParse(tx, body.dictationParseId, ["sandbox", "task_tidy"], {
+          taskId: created.id,
+          finalTitle: created.title,
+          finalDescription: created.description,
+        });
+      }
       await tx.inboxItem.delete({ where: { id } });
 
       return created;

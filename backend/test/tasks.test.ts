@@ -386,8 +386,13 @@ describe("POST /projects/:projectId/tasks", () => {
       where: unknown;
       data: Record<string, unknown>;
     };
-    // Only a row not linked yet: a retried request must not relabel it.
-    expect(args.where).toEqual({ id: "dp-7", taskId: null });
+    // Only a row not linked yet: a retried request must not relabel it. And
+    // only of a kind that ends as a new task.
+    expect(args.where).toEqual({
+      id: "dp-7",
+      linkedAt: null,
+      kind: { in: ["task", "sandbox", "task_tidy"] },
+    });
     expect(args.data).toMatchObject({
       taskId: created.id,
       finalTitle: "Заказать кабель USB-C",
@@ -489,6 +494,42 @@ describe("PATCH /tasks/:id", () => {
     expect(res.statusCode).toBe(500);
     expect(tasks.find((t) => t.id === "tsk-1")!.status).toBe("pending");
     expect(events.filter((e) => e.taskId === "tsk-1")).toHaveLength(1);
+  });
+
+  it("links a tidied task's sample to the task, with the text as saved (F15)", async () => {
+    prismaMock.dictationParse.updateMany.mockReset();
+    prismaMock.dictationParse.updateMany.mockResolvedValue({ count: 1 });
+
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      title: "Починить кран на кухне",
+      description: "Прокладка, 1/2 дюйма",
+      dictationParseId: "dp-9",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(tasks.find((t) => t.id === "tsk-1")!.title).toBe("Починить кран на кухне");
+    const args = prismaMock.dictationParse.updateMany.mock.calls[0]![0] as {
+      where: unknown;
+      data: Record<string, unknown>;
+    };
+    expect(args.where).toEqual({ id: "dp-9", linkedAt: null, kind: { in: ["task_tidy"] } });
+    expect(args.data).toMatchObject({
+      taskId: "tsk-1",
+      finalTitle: "Починить кран на кухне",
+      finalDescription: "Прокладка, 1/2 дюйма",
+    });
+    expect(args.data.linkedAt).toBeInstanceOf(Date);
+  });
+
+  it("touches no sample for an ordinary edit", async () => {
+    prismaMock.dictationParse.updateMany.mockReset();
+    await call("PATCH", "/tasks/tsk-1", { title: "Руками" });
+    expect(prismaMock.dictationParse.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("refuses a body that carries only the sample's id", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", { dictationParseId: "dp-9" });
+    expect(res.statusCode).toBe(400);
   });
 });
 

@@ -16,6 +16,7 @@ import {
   idParamSchema,
   projectIdParamSchema,
 } from "../schemas";
+import { linkDictationParse } from "../domain/dictationLink";
 import { getProjectOrThrow } from "./projects";
 
 export async function getTaskOrThrow(id: string) {
@@ -72,20 +73,17 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       /*
        * A dictated task (F14): link the dataset row and snapshot what was kept
        * -- the proposal after the user's corrections, the label a replay of
-       * this input is scored against. `updateMany` with `taskId: null` so that
-       * an unknown id or a row that is already linked is a no-op rather than
-       * an error: failing to label a sample must never fail creating the task.
+       * this input is scored against. A no-op for an unknown or already
+       * labelled row; see ../domain/dictationLink.ts. Three kinds end as a new
+       * task: a dictation parsed as one, a sandbox answer whose project was
+       * taken, and a draft task tidied before its first save.
        */
       if (body.dictationParseId !== undefined) {
-        await tx.dictationParse.updateMany({
-          where: { id: body.dictationParseId, taskId: null },
-          data: {
-            taskId: created.id,
-            finalTitle: created.title,
-            finalDescription: created.description,
-            finalRemindAt: created.remindAt,
-            linkedAt: new Date(),
-          },
+        await linkDictationParse(tx, body.dictationParseId, ["task", "sandbox", "task_tidy"], {
+          taskId: created.id,
+          finalTitle: created.title,
+          finalDescription: created.description,
+          finalRemindAt: created.remindAt,
         });
       }
 
@@ -148,6 +146,20 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
 
       for (const event of movement.events) {
         await tx.taskEvent.create({ data: { taskId: id, ...event } });
+      }
+
+      /*
+       * "Причесать" on this task (F15), saved: the `task_tidy` row learns the
+       * task and the text as it now stands -- the answer after the user's
+       * corrections. Same rules as for a new task; see
+       * ../domain/dictationLink.ts.
+       */
+      if (body.dictationParseId !== undefined) {
+        await linkDictationParse(tx, body.dictationParseId, ["task_tidy"], {
+          taskId: updated.id,
+          finalTitle: updated.title,
+          finalDescription: updated.description,
+        });
       }
 
       return updated;

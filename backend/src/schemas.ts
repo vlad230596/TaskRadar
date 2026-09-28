@@ -158,16 +158,26 @@ export const createTaskSchema = z.object({
   dictationParseId: z.string().min(1).max(100).optional(),
 });
 
+/**
+ * The dataset row of a parse whose answer this request saves (F14, F15):
+ * linked to what is saved, with a snapshot of it -- see
+ * `domain/dictationLink.ts`. Optional everywhere it appears.
+ */
+const dictationParseIdSchema = z.string().min(1).max(100).optional();
+
 export const updateTaskSchema = z
   .object({
     title: z.string().trim().min(1, "title is required").optional(),
     description: z.string().nullable().optional(),
     status: taskStatusSchema.optional(),
     remindAt: z.coerce.date().nullable().optional(),
+    /** A `task_tidy` answer being saved into this task (F15). */
+    dictationParseId: dictationParseIdSchema,
   })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: "At least one field must be provided",
-  });
+  .refine(
+    (body) => Object.keys(body).some((key) => key !== "dictationParseId"),
+    { message: "At least one field must be provided" },
+  );
 
 export const updateTaskPositionSchema = z
   .object({
@@ -239,11 +249,16 @@ export const createInboxItemSchema = z.object({
    * release.
    */
   captureKey: z.string().trim().min(8, "captureKey is too short").max(100).optional(),
+
+  /** A `sandbox` answer this line was captured as (F15). */
+  dictationParseId: dictationParseIdSchema,
 });
 
 /** Body of `PATCH /inbox/:id`. Only the text; the key is set once, at capture. */
 export const updateInboxItemSchema = z.object({
   text: z.string().trim().min(1, "text is required"),
+  /** A `sandbox` answer this line was rewritten to (F15). */
+  dictationParseId: dictationParseIdSchema,
 });
 
 /**
@@ -262,6 +277,12 @@ export const fileInboxItemSchema = z
     projectId: z.string().min(1, "projectId is required"),
     title: z.string().trim().min(1, "title must not be empty").optional(),
     description: z.string().trim().nullable().optional(),
+    /**
+     * The parse [title] and [description] came from (F15): a `sandbox`
+     * answer whose project was taken, or a `task_tidy` of the line on its way
+     * to the project.
+     */
+    dictationParseId: dictationParseIdSchema,
   })
   .refine((body) => body.description === undefined || body.title !== undefined, {
     message: "description needs a title",
@@ -329,13 +350,18 @@ export const setDictationModelSchema = z.object({
 export const createNoteSchema = z.object({
   title: z.string().trim().min(1, "title is required"),
   content: z.string().optional().default(""),
+  /** A `note` answer this note is made of (F15). */
+  dictationParseId: dictationParseIdSchema,
 });
 
 export const updateNoteSchema = z
   .object({
     title: z.string().trim().min(1, "title is required").optional(),
     content: z.string().optional(),
+    /** A `note` answer being saved into this note (F15). */
+    dictationParseId: dictationParseIdSchema,
   })
-  .refine((body) => Object.keys(body).length > 0, {
-    message: "At least one field must be provided",
-  });
+  .refine(
+    (body) => Object.keys(body).some((key) => key !== "dictationParseId"),
+    { message: "At least one field must be provided" },
+  );

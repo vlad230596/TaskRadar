@@ -145,8 +145,10 @@ function pipelineFor(
  * had to remember the `created` event.
  *
  * What *is* written is the dataset row: input, reply, duration. Its id goes
- * back as `parseId`, and the task route links the row to the task when the
- * client sends it along -- see `dictationParseId` there.
+ * back as `parseId`, and the route that saves the answer links the row to what
+ * was saved when the client sends it along as `dictationParseId`: the task
+ * routes (a new task, a tidied one), the note routes and the sandbox's -- see
+ * `../domain/dictationLink.ts`.
  */
 export function dictationRoutes(
   feature: DictationFeature | null,
@@ -177,9 +179,16 @@ export function dictationRoutes(
      * What `result` holds depends on the request's `kind` (`task` when absent):
      *
      *     task       {title, description, remindDate, remindTime}
-     *     task_tidy  {title, description}
-     *     note       {title, content}                 title only when the note had none
-     *     sandbox    {text, projectId, projectName}   both null without a match
+     *     task_tidy  {title, description, warnings}
+     *     note       {title, content, warnings}       title only when the note had none
+     *     sandbox    {text, title, description,       the line, and the same text as a
+     *                 projectId, projectName,         task for filing it; the project
+     *                 warnings}                       both null without a match
+     *
+     * `warnings` is a list, usually empty, of what the user should check
+     * before taking the answer -- today `{kind: "invented_date", token}`, a
+     * date the words did not say (`../domain/tidy.ts`). A warning never
+     * withholds the answer.
      *
      * Every event's data may carry `partial` -- reserved for a model that
      * streams its answer, sent by nothing yet. Anything that fails before

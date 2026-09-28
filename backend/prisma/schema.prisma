@@ -240,6 +240,8 @@ model InboxItem {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  dictationParses DictationParse[]
+
   @@index([createdAt])
   @@map("inbox_items")
 }
@@ -252,6 +254,8 @@ model Note {
   content   String   @default("")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  dictationParses DictationParse[]
 
   @@index([projectId])
   @@map("notes")
@@ -299,6 +303,12 @@ model AppSetting {
 /// may be edited later; `taskId` points at it for that, and is set to null
 /// rather than deleting the row when the task goes, because the pair "input,
 /// accepted answer" stays useful after the task is gone.
+///
+/// The tidying kinds (F15) are labelled the same way, by whichever route saves
+/// their answer (`src/domain/dictationLink.ts`): `task_tidy` with the task it
+/// tidied and `finalTitle`/`finalDescription`; `note` with `noteId`,
+/// `finalTitle` and `finalContent`; `sandbox` with the inbox item it stayed as
+/// (`inboxItemId`, `finalContent`) or the task it was filed into.
 model DictationParse {
   id String @id @default(cuid())
 
@@ -337,10 +347,22 @@ model DictationParse {
   finalRemindAt    DateTime?
   linkedAt         DateTime?
 
+  /// `note`: the note the answer was saved into.
+  noteId       String?
+  note         Note?      @relation(fields: [noteId], references: [id], onDelete: SetNull)
+  /// `sandbox`: the line the answer was saved as, while it stays a line. Set
+  /// to null when the line is filed or thrown away; `finalContent` stays.
+  inboxItemId  String?
+  inboxItem    InboxItem? @relation(fields: [inboxItemId], references: [id], onDelete: SetNull)
+  /// The saved text of a kind with one body: a note's content, a sandbox line.
+  finalContent String?
+
   createdAt DateTime @default(now())
 
   @@index([createdAt])
   @@index([kind, createdAt])
   @@index([taskId])
+  @@index([noteId])
+  @@index([inboxItemId])
   @@map("dictation_parses")
 }

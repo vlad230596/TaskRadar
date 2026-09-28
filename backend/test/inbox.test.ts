@@ -23,6 +23,7 @@ const prismaMock = vi.hoisted(() => ({
   project: { findUnique: vi.fn() },
   task: { aggregate: vi.fn(), create: vi.fn() },
   taskEvent: { create: vi.fn() },
+  dictationParse: { updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
 
@@ -127,6 +128,8 @@ beforeEach(() => {
   prismaMock.task.aggregate.mockReset();
   prismaMock.task.create.mockReset();
   prismaMock.taskEvent.create.mockReset();
+  prismaMock.dictationParse.updateMany.mockReset();
+  prismaMock.dictationParse.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.$transaction.mockReset();
 
   prismaMock.inboxItem.findMany.mockImplementation(() =>
@@ -492,5 +495,83 @@ describe("POST /inbox/:id/file", () => {
     const res = await call("POST", "/inbox/inb-1/file", { projectId: "prj-1" }, false);
     expect(res.statusCode).toBe(401);
     expect(items).toHaveLength(2);
+  });
+});
+
+/*
+ * The dataset label (F15): a line saved from a `sandbox` answer tells its
+ * sample what was kept -- the line, or the task it was filed as.
+ */
+describe("linking a dictation sample", () => {
+  const lastLink = () =>
+    prismaMock.dictationParse.updateMany.mock.lastCall![0] as {
+      where: unknown;
+      data: Record<string, unknown>;
+    };
+
+  it("labels a captured line with the line and its text", async () => {
+    const res = await call("POST", "/inbox", {
+      text: " Поменять колодки ",
+      captureKey: "8f14e45f-ceea-467a-a4c1-0f1b2c3d4e5f",
+      dictationParseId: "dp-3",
+    });
+
+    const item = res.json() as InboxRow;
+    expect(lastLink().where).toEqual({ id: "dp-3", linkedAt: null, kind: { in: ["sandbox"] } });
+    expect(lastLink().data).toMatchObject({ inboxItemId: item.id, finalContent: "Поменять колодки" });
+    // The key and the text are all the line itself stores.
+    const created = prismaMock.inboxItem.create.mock.calls[0]![0] as { data: object };
+    expect(Object.keys(created.data).sort()).toEqual(["captureKey", "text"]);
+  });
+
+  it("does not label again on a replay of the same capture", async () => {
+    const body = {
+      text: "Колодки",
+      captureKey: "8f14e45f-ceea-467a-a4c1-0f1b2c3d4e5f",
+      dictationParseId: "dp-3",
+    };
+    await call("POST", "/inbox", body);
+    await call("POST", "/inbox", body);
+    expect(prismaMock.dictationParse.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels a line rewritten in place", async () => {
+    await call("PATCH", "/inbox/inb-1", { text: "Спросить про кабель USB-C", dictationParseId: "dp-4" });
+    expect(lastLink().data).toMatchObject({
+      inboxItemId: "inb-1",
+      finalContent: "Спросить про кабель USB-C",
+    });
+  });
+
+  it("labels a filed line with the task, inside the filing transaction", async () => {
+    prismaMock.$transaction.mockImplementation((run: (tx: unknown) => unknown) => {
+      expect(prismaMock.dictationParse.updateMany).not.toHaveBeenCalled();
+      return run(prismaMock);
+    });
+    const res = await call("POST", "/inbox/inb-1/file", {
+      projectId: "prj-1",
+      title: "Спросить про кабель",
+      description: "USB-C, два метра",
+      dictationParseId: "dp-5",
+    });
+
+    const task = res.json() as TaskRow;
+    expect(lastLink().where).toEqual({
+      id: "dp-5",
+      linkedAt: null,
+      kind: { in: ["sandbox", "task_tidy"] },
+    });
+    expect(lastLink().data).toMatchObject({
+      taskId: task.id,
+      finalTitle: "Спросить про кабель",
+      finalDescription: "USB-C, два метра",
+    });
+  });
+
+  it("touches no sample for a line that was typed", async () => {
+    await call("POST", "/inbox", { text: "Руками" });
+    await call("PATCH", "/inbox/inb-1", { text: "Руками тоже" });
+    await call("POST", "/inbox/inb-2/file", { projectId: "prj-1" });
+    expect(prismaMock.dictationParse.updateMany).not.toHaveBeenCalled();
   });
 });
