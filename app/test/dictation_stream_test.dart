@@ -128,7 +128,7 @@ void main() {
         expect((events[2] as ParseModelStarted).model, 'deepseek-chat');
         expect((events[4] as ParseModelDone).durationMs, 5400);
         final done = events.last as ParseDone;
-        expect(done.result.title, 'Позвонить маме');
+        expect((done.result as ParsedDictation).title, 'Позвонить маме');
         expect(done.result.parseId, 'dp-1');
       },
     );

@@ -8,11 +8,67 @@ import 'api_client.dart';
 import 'api_exception.dart';
 import 'sse.dart';
 
-/// A dictation turned into a task by the server's language model (F14).
+/// What the server's model is asked to turn the words into -- the request's
+/// `kind` (`backend/src/domain/parsePipeline.ts`).
 ///
-/// A plain class rather than a freezed model: it is read once, on the
-/// dictation screen, and never cached, compared or copied.
-class ParsedDictation {
+/// Every kind runs from the words it is sent, never from an earlier answer:
+/// "Разобрать заново" sends the source again.
+enum ParseKind {
+  /// A new dictation as a proposed task, with a reminder: [ParsedDictation].
+  task('task'),
+
+  /// An existing task's text, tidied into its two fields: [TidiedTask].
+  taskTidy('task_tidy'),
+
+  /// A note's body as paragraphs and lists: [TidiedNote].
+  note('note'),
+
+  /// A sandbox line tidied, with a project for it: [TidiedLine].
+  sandbox('sandbox');
+
+  const ParseKind(this.wire);
+
+  /// What the request says.
+  final String wire;
+}
+
+/// One answer of the model, of whichever [ParseKind] was asked for.
+///
+/// Plain classes rather than freezed models: each is read once, on the screen
+/// that asked for it, and never cached, compared or copied.
+sealed class TidyResult {
+  const TidyResult();
+
+  /// The answer of [kind] in [json] -- the `result` of the stream. Throws when
+  /// [json] is not that shape.
+  static TidyResult fromJson(ParseKind kind, Map<String, dynamic> json) =>
+      switch (kind) {
+        ParseKind.task => ParsedDictation.fromJson(json),
+        ParseKind.taskTidy => TidiedTask(
+          title: json['title'] as String,
+          description: json['description'] as String?,
+          parseId: json['parseId'] as String?,
+        ),
+        ParseKind.note => TidiedNote(
+          title: json['title'] as String?,
+          content: json['content'] as String,
+          parseId: json['parseId'] as String?,
+        ),
+        ParseKind.sandbox => TidiedLine(
+          text: json['text'] as String,
+          projectId: json['projectId'] as String?,
+          projectName: json['projectName'] as String?,
+          parseId: json['parseId'] as String?,
+        ),
+      };
+
+  /// The server's record of this parse in its dataset, or null when it could
+  /// not keep one.
+  String? get parseId;
+}
+
+/// A dictation turned into a task by the server's language model (F14).
+class ParsedDictation extends TidyResult {
   const ParsedDictation({
     required this.title,
     required this.description,
@@ -47,6 +103,49 @@ class ParsedDictation {
   /// The server's record of this parse in its dataset, sent back when the
   /// task is created so the record gets linked to it and learns what was kept.
   /// Null when the server could not keep the record.
+  @override
+  final String? parseId;
+}
+
+/// An existing task's text, tidied: the same words, split into a title and a
+/// description, with nothing added -- no date the text did not say.
+class TidiedTask extends TidyResult {
+  const TidiedTask({required this.title, this.description, this.parseId});
+
+  final String title;
+  final String? description;
+
+  @override
+  final String? parseId;
+}
+
+/// A note's body as markdown paragraphs and lists. [title] only when the note
+/// had none to begin with.
+class TidiedNote extends TidyResult {
+  const TidiedNote({required this.content, this.title, this.parseId});
+
+  final String? title;
+  final String content;
+
+  @override
+  final String? parseId;
+}
+
+/// A sandbox line tidied, and the project it most likely belongs to -- one of
+/// the projects the server has, checked there, or null.
+class TidiedLine extends TidyResult {
+  const TidiedLine({
+    required this.text,
+    this.projectId,
+    this.projectName,
+    this.parseId,
+  });
+
+  final String text;
+  final String? projectId;
+  final String? projectName;
+
+  @override
   final String? parseId;
 }
 
@@ -90,11 +189,12 @@ final class ParseAlive extends ParseProgress {
   const ParseAlive();
 }
 
-/// The answer. Always the last event of a stream that did not fail.
+/// The answer. Always the last event of a stream that did not fail. Of the
+/// [TidyResult] subtype the stream's [ParseKind] names.
 final class ParseDone extends ParseProgress {
   const ParseDone(this.result);
 
-  final ParsedDictation result;
+  final TidyResult result;
 }
 
 /// Nothing came from the server for [silence] in the middle of a parse. A
@@ -184,10 +284,15 @@ class DictationApi {
   /// On the web the browser's XHR hands over the body only when it is
   /// complete: the stages then arrive together at the end, and liveness is
   /// told by the bytes arriving ([ParseAlive]) rather than by the events.
+  ///
+  /// [kind] picks the prompt and the shape of [ParseDone.result];
+  /// [noteTitle] is sent for [ParseKind.note] only, so the model knows the
+  /// note already has a title.
   Stream<ParseProgress> parseStream({
     required String text,
     required String timeZone,
-    String kind = 'task',
+    ParseKind kind = ParseKind.task,
+    String? noteTitle,
     CancelToken? cancelToken,
     Duration silence = const Duration(seconds: 20),
   }) {
@@ -250,9 +355,9 @@ class DictationApi {
         case 'heartbeat':
           emit(const ParseAlive());
         case 'result':
-          final ParsedDictation parsed;
+          final TidyResult parsed;
           try {
-            parsed = ParsedDictation.fromJson(data);
+            parsed = TidyResult.fromJson(kind, data);
           } catch (_) {
             fail(ApiException(null, 'Unexpected result shape', data));
             return;
@@ -282,7 +387,9 @@ class DictationApi {
           body: <String, dynamic>{
             'text': text,
             'timeZone': timeZone,
-            'kind': kind,
+            'kind': kind.wire,
+            if (kind == ParseKind.note && noteTitle != null)
+              'noteTitle': noteTitle,
           },
           headers: const <String, String>{
             'Accept': 'text/event-stream',

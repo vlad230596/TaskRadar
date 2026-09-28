@@ -125,6 +125,9 @@ abstract final class AppColors {
   /// The hairline on it.
   static const Color voiceLine = Color(0xFF39407A);
 
+  /// A sunken well on it: the track of "Результат AI | Исходник".
+  static const Color voiceWell = Color(0xFF1F2552);
+
   /// A level-meter bar that is loud.
   static const Color voiceLevelHigh = Color(0xFF6C79E8);
 
