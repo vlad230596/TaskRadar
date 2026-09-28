@@ -455,6 +455,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
   /// "Слушаю 0:12" and its three other faces.
   Widget _stage(DictationState state) {
+    if (!_tidying && _parsed == null && state is DictationRecognising) {
+      return _RecognitionCard(state);
+    }
+
     final (Widget leading, String label, String? clock) = _tidying
         ? (const _Spinner(), 'Разбираю', null)
         : _parsed != null
@@ -499,6 +503,18 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             ),
           };
 
+    // The countdown to the ceiling. On the stage rather than in the note under
+    // the words because this is where the eyes already are -- the clock -- and
+    // in the recording colour, because it is the one thing on the screen that
+    // is about to happen by itself.
+    final countdown =
+        !_tidying &&
+            _parsed == null &&
+            state is DictationRecording &&
+            state.nearCeiling
+        ? 'осталось ${formatDictationClock(state.left)}'
+        : null;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
       child: Row(
@@ -506,6 +522,27 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
           SizedBox(width: 20, child: Center(child: leading)),
           const SizedBox(width: 10),
           Expanded(child: Text(label, style: AppText.voiceStage)),
+          // In the row, not under it: a line appearing below would push the
+          // meter and the words down the screen half a minute before the end.
+          if (countdown != null)
+            Container(
+              margin: const EdgeInsets.only(right: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.voiceRecordingSoft),
+                borderRadius: BorderRadius.circular(Radii.row),
+              ),
+              child: Text(
+                countdown,
+                style: AppText.voiceNote.copyWith(
+                  color: AppColors.voiceRecordingSoft,
+                  fontWeight: FontWeight.w600,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
+              ),
+            ),
           if (clock != null) Text(clock, style: AppText.voiceClock),
         ],
       ),
@@ -516,6 +553,8 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     final note = switch (state) {
       DictationRecording(modelLoading: true) =>
         'модель ещё грузится — на запись это не влияет',
+      DictationRecording(nearCeiling: true) =>
+        'потом запись остановится сама — всё сказанное распознается',
       DictationRecording() => 'сохранится и без сети',
       DictationFailed(:final message) => message,
       // The reference page prints this one under the *recognised* text, not
@@ -529,6 +568,16 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     };
     final canTidy =
         state is DictationIdle && _destination is ProjectDestination;
+
+    // While the later pieces are still being recognised the words so far take
+    // the place of the field -- see [_partial]. No note, no tap: there is
+    // nothing to stop and nothing to edit yet.
+    if (state is DictationRecognising && state.partialText.isNotEmpty) {
+      return Padding(
+        padding: EdgeInsets.fromLTRB(20, compact ? 12 : 20, 20, 0),
+        child: _partial(state.partialText),
+      );
+    }
 
     return GestureDetector(
       // The spec's second way to finish. `opaque` so the whole half-screen is
@@ -613,6 +662,43 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// What the finished pieces said, while the rest are still being recognised.
+  ///
+  /// Not the text field: nothing has been delivered to it yet -- the sink
+  /// hears the whole text once, at the end -- and an editable field whose
+  /// contents are being replaced from underneath would lose whatever the user
+  /// typed into it. Anchored to the bottom, so the newest words stay in view
+  /// as the text grows past the screen.
+  Widget _partial(String partial) {
+    final before = _text.text.trimRight();
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        reverse: true,
+        // At least the height of the area, with the text at its top: a
+        // reversed scroll view on its own would sit a short text at the
+        // bottom, far from where the field it stands in for starts.
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: Text.rich(
+              TextSpan(
+                style: AppText.dictated,
+                children: <InlineSpan>[
+                  TextSpan(text: before.isEmpty ? partial : '$before $partial'),
+                  const TextSpan(
+                    text: ' …',
+                    style: TextStyle(color: AppColors.voiceMuted),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -911,6 +997,92 @@ class _DestinationChip extends ConsumerWidget {
       ],
       child: body,
     );
+  }
+}
+
+/// "Распознаю · 3 из 8", a bar that fills, and a guess at the rest.
+///
+/// The top card of the reference page. A card rather than the stage row with
+/// a number added, because for a long recording this *is* the screen for the
+/// better part of a minute, and the bar needs the width.
+class _RecognitionCard extends StatelessWidget {
+  const _RecognitionCard(this.state);
+
+  final DictationRecognising state;
+
+  @override
+  Widget build(BuildContext context) {
+    // One piece is a short phrase: "1 из 1" would be a count of nothing, and
+    // the bar would jump from empty to gone. It keeps the old face -- the
+    // word, and a bar that only says "working".
+    final counted = state.total > 1;
+    final remaining = state.remaining;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppColors.voiceLine),
+          borderRadius: BorderRadius.circular(Radii.card),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    counted
+                        ? 'Распознаю · ${state.done} из ${state.total}'
+                        : 'Распознаю',
+                    style: AppText.voiceStage,
+                  ),
+                ),
+                Text(
+                  formatDictationClock(state.length),
+                  style: AppText.voiceClock.copyWith(
+                    fontSize: 14,
+                    color: AppColors.voiceMuted,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                // Null is indeterminate: the bar moves without claiming a
+                // number it does not have -- the model may still be loading.
+                value: counted ? state.fraction : null,
+                minHeight: 6,
+                backgroundColor: AppColors.voiceLine,
+                color: AppColors.voiceLevelHigh,
+              ),
+            ),
+            if (counted && remaining != null) ...<Widget>[
+              const SizedBox(height: 10),
+              Text(
+                _roughly(remaining),
+                style: AppText.voiceNote.copyWith(fontSize: 13),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "осталось около 20 с", "осталось около 2 мин". A guess, rounded like
+  /// one: to five seconds under a minute, so the number does not flicker by
+  /// one every piece.
+  static String _roughly(Duration d) {
+    final seconds = d.inSeconds;
+    if (seconds < 5) return 'почти готово';
+    if (seconds < 60) return 'осталось около ${(seconds / 5).round() * 5} с';
+    return 'осталось около ${(seconds / 60).round()} мин';
   }
 }
 

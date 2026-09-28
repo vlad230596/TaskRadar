@@ -413,6 +413,109 @@ void main() {
       expect(makeContainer(modelReady: false).read(canDictateProvider), isFalse);
     });
   });
+
+  group('a long recording', () {
+    test('reports each piece as it is recognised, then delivers once', () async {
+      // Ten minutes is tens of seconds of decoding. The state says how far it
+      // has got and what has been heard so far; the sink still hears the whole
+      // text exactly once, at the end.
+      recognizer.chunks = const <String>['Первое.', 'Второе', ', третье.'];
+      final gates = <Completer<void>>[
+        Completer<void>(),
+        Completer<void>(),
+        Completer<void>(),
+      ];
+      recognizer.beforeChunk = (i) => gates[i].future;
+
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+      final seen = <DictationRecognising>[];
+      container.listen(voiceDictationProvider, (_, next) {
+        if (next is DictationRecognising) seen.add(next);
+      });
+
+      await begin(dictation);
+      final pending = dictation.finish();
+      await Future<void>.delayed(Duration.zero);
+
+      var state = container.read(voiceDictationProvider) as DictationRecognising;
+      expect((state.done, state.total), (0, 3));
+      expect(state.partialText, isEmpty);
+      expect(state.fraction, 0);
+
+      gates[0].complete();
+      await Future<void>.delayed(Duration.zero);
+      state = container.read(voiceDictationProvider) as DictationRecognising;
+      expect((state.done, state.total), (1, 3));
+      expect(state.partialText, 'Первое.');
+      expect(spoken, isEmpty);
+
+      gates[1].complete();
+      await Future<void>.delayed(Duration.zero);
+      state = container.read(voiceDictationProvider) as DictationRecognising;
+      expect(state.done, 2);
+      expect(state.partialText, 'Первое. Второе');
+
+      gates[2].complete();
+      await pending;
+
+      expect(container.read(voiceDictationProvider), isA<DictationIdle>());
+      expect(spoken, <String>['Первое. Второе, третье.']);
+      // Monotonic: the bar never goes backwards.
+      final dones = seen.map((s) => s.done).toList();
+      expect(dones, orderedEquals(<int>[...dones]..sort()));
+      expect(seen.last.done, 3);
+    });
+
+    test('the length of the recording stays on screen throughout', () async {
+      recognizer.chunks = const <String>['Раз.', 'Два.'];
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+      final lengths = <Duration>{};
+      container.listen(voiceDictationProvider, (_, next) {
+        if (next is DictationRecognising) lengths.add(next.length);
+      });
+
+      await begin(dictation);
+      await dictation.finish();
+
+      expect(lengths, hasLength(1));
+      expect(spoken, <String>['Раз. Два.']);
+    });
+
+    test('a piece that fails fails the whole, with nothing delivered', () async {
+      // Half a text delivered as if it were the whole would be the worst of
+      // the outcomes: the user would not know the rest was missing.
+      recognizer.chunks = const <String>['Первое.', 'Второе.'];
+      recognizer.beforeChunk = (i) async {
+        if (i == 1) throw StateError('onnxruntime said no');
+      };
+      final container = makeContainer();
+      final dictation = container.read(voiceDictationProvider.notifier);
+
+      await begin(dictation);
+      await dictation.finish();
+
+      expect(container.read(voiceDictationProvider), isA<DictationFailed>());
+      expect(spoken, isEmpty);
+    });
+
+    test('the ceiling is ten minutes, with a warning half a minute before', () {
+      expect(VoiceDictation.ceiling, const Duration(minutes: 10));
+
+      const early = DictationRecording(
+        elapsed: Duration(minutes: 9, seconds: 29),
+        modelLoading: false,
+      );
+      const due = DictationRecording(
+        elapsed: Duration(minutes: 9, seconds: 30),
+        modelLoading: false,
+      );
+      expect(early.nearCeiling, isFalse);
+      expect(due.nearCeiling, isTrue);
+      expect(due.left, const Duration(seconds: 30));
+    });
+  });
 }
 
 /// The installation provider with the disk probe replaced by an answer.

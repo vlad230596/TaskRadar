@@ -282,6 +282,16 @@ class DictationRecording extends DictationState {
 
   final Duration elapsed;
 
+  /// How long until [VoiceDictation.ceiling] stops the recording by itself.
+  Duration get left {
+    final left = VoiceDictation.ceiling - elapsed;
+    return left.isNegative ? Duration.zero : left;
+  }
+
+  /// Whether the screen should be counting down to the ceiling -- see
+  /// [VoiceDictation.warning].
+  bool get nearCeiling => left <= VoiceDictation.warning;
+
   /// True while the recogniser's weights are still being read.
   ///
   /// Surfaced rather than hidden because the spec asks for it in words:
@@ -294,13 +304,45 @@ class DictationRecording extends DictationState {
 }
 
 /// The recording has ended and the model is working.
+///
+/// ## Why it says how far it has got
+///
+/// Because with a ten-minute ceiling "the seconds the model takes" became
+/// tens of seconds, and a spinner that turns for forty seconds is
+/// indistinguishable from one that will turn forever. The recogniser works in
+/// pieces of half a minute or less (see `voice/audio_chunker.dart`), so there
+/// is a real count to show -- "3 из 8" and a bar that fills -- and the words of
+/// the finished pieces, which are the best proof that it is working at all.
 class DictationRecognising extends DictationState {
-  const DictationRecognising({required this.length});
+  const DictationRecognising({
+    required this.length,
+    this.done = 0,
+    this.total = 0,
+    this.partialText = '',
+    this.remaining,
+  });
 
   /// How long the recording being recognised was. Shown so the screen does not
   /// go blank in the seconds the model takes: the number the user watched
   /// counting up stays on screen instead of resetting to nothing.
   final Duration length;
+
+  /// Pieces recognised so far, out of [total]. [total] is zero until the
+  /// recording has been cut -- which includes the wait for a model that is
+  /// still loading.
+  final int done;
+  final int total;
+
+  /// The text of the [done] pieces, joined. Not yet delivered anywhere: the
+  /// sink hears the whole text once, at the end.
+  final String partialText;
+
+  /// A guess at how long the rest will take, from how long the pieces so far
+  /// took. Null until there is a piece to guess from.
+  final Duration? remaining;
+
+  /// [done] over [total], or null while the total is not known yet.
+  double? get fraction => total == 0 ? null : done / total;
 }
 
 class DictationFailed extends DictationState {
@@ -364,11 +406,22 @@ class VoiceDictation extends _$VoiceDictation {
   /// The longest a single dictation can run.
   ///
   /// With no held button there is nothing physically stopping a recording that
-  /// was started and then forgotten -- a screen left open in a pocket. Two
-  /// minutes is well past "надо не забыть" (it is around 300 words) and it
-  /// bounds both the file and the time the model spends on it, which on a phone
-  /// is several seconds per minute of audio.
-  static const Duration ceiling = Duration(minutes: 2);
+  /// was started and then forgotten -- a screen left open in a pocket.
+  ///
+  /// It was two minutes, and that turned out to be a limit on thinking out
+  /// loud: people do dictate a whole plan while walking, and the old ceiling
+  /// ended it mid-sentence. Ten minutes is about 1 500 words and 19 MB of WAV;
+  /// what made it affordable is the recogniser working in pieces off the UI
+  /// isolate (see `voice/speech_recognizer.dart`), so the minute or so the
+  /// model spends on it is a progress bar rather than a frozen screen.
+  static const Duration ceiling = Duration(minutes: 10);
+
+  /// How long before [ceiling] the screen starts counting down.
+  ///
+  /// Reaching the ceiling is not a failure -- what was said is recognised like
+  /// any other phrase -- but being stopped mid-sentence with no warning feels
+  /// like one. Half a minute is enough to finish the thought.
+  static const Duration warning = Duration(seconds: 30);
 
   @override
   DictationState build() {
@@ -535,7 +588,7 @@ class VoiceDictation extends _$VoiceDictation {
       _elapsed += const Duration(seconds: 1);
       if (_elapsed >= ceiling) {
         // Not an error and not silent: the phrase recorded so far is real and
-        // gets recognised like any other. Throwing away two minutes of speech
+        // gets recognised like any other. Throwing away ten minutes of speech
         // because the user did not notice a limit would be the worse answer.
         unawaited(finish());
         return;
@@ -645,7 +698,27 @@ class VoiceDictation extends _$VoiceDictation {
         return;
       }
 
-      final text = await ref.read(speechRecognizerProvider).transcribe(path);
+      final clock = Stopwatch()..start();
+      final text = await ref
+          .read(speechRecognizerProvider)
+          .transcribe(
+            path,
+            onProgress: (progress) {
+              if (!ref.mounted || state is! DictationRecognising) return;
+              final left = progress.total - progress.done;
+              state = DictationRecognising(
+                length: length,
+                done: progress.done,
+                total: progress.total,
+                partialText: progress.text,
+                // Pieces are of roughly equal length by construction, so the
+                // average so far is a fair price for each of the rest.
+                remaining: progress.done > 0 && left > 0
+                    ? clock.elapsed * (left / progress.done)
+                    : null,
+              );
+            },
+          );
       if (!ref.mounted) return;
 
       if (text.isEmpty) {

@@ -296,6 +296,80 @@ void main() {
     });
   });
 
+  group('a long recording', () {
+    testWidgets('recognition shows how far it has got and what it heard', (
+      tester,
+    ) async {
+      recognizer.chunks = const <String>['Первое.', 'Второе.', 'Третье.'];
+      final gates = <Completer<void>>[_gate(), _gate(), _gate()];
+      recognizer.beforeChunk = (i) => gates[i].future;
+      await open(tester);
+      await tester.pump(const Duration(seconds: 3));
+
+      await tester.tap(find.text('Готово'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Распознаю · 0 из 3'), findsOneWidget);
+      // The length the user watched counting up stays on screen.
+      expect(find.text('0:03'), findsOneWidget);
+
+      gates[0].complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('Распознаю · 1 из 3'), findsOneWidget);
+      final bar = tester.widget<LinearProgressIndicator>(
+        find.byType(LinearProgressIndicator),
+      );
+      expect(bar.value, closeTo(1 / 3, 1e-9));
+      expect(find.textContaining('Первое.'), findsOneWidget);
+      expect(find.textContaining('Второе.'), findsNothing);
+
+      gates[1].complete();
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Распознаю · 2 из 3'), findsOneWidget);
+      expect(find.textContaining('Второе.'), findsOneWidget);
+
+      gates[2].complete();
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(LinearProgressIndicator), findsNothing);
+      expect(find.text('Первое. Второе. Третье.'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('half a minute before the ceiling, the screen counts down', (
+      tester,
+    ) async {
+      await open(tester);
+
+      await tester.pump(VoiceDictation.ceiling - const Duration(seconds: 31));
+      expect(find.textContaining('осталось'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('осталось 0:30'), findsOneWidget);
+      expect(find.textContaining('остановится сама'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 10));
+      expect(find.text('осталось 0:20'), findsOneWidget);
+      expect(recorder.recording, isTrue);
+
+      // And at the ceiling: stopped, recognised, the words on screen. Not an
+      // abort -- nothing said in those ten minutes is thrown away.
+      await tester.pump(const Duration(seconds: 20));
+      await tester.pump();
+      await tester.pump();
+
+      expect(recorder.stopCount, 1);
+      expect(recorder.cancelCount, 0);
+      expect(find.textContaining('осталось'), findsNothing);
+      expect(find.text('Купить кабель'), findsOneWidget);
+    });
+  });
+
   group('inserting', () {
     test('a second phrase is added, not swapped in', () {
       // Dictating twice in a row is normal: two thoughts on the way to the same
