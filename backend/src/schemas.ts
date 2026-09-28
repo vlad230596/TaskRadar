@@ -244,10 +244,27 @@ export const updateInboxItemSchema = z.object({
   text: z.string().trim().min(1, "text is required"),
 });
 
-/** Body of `POST /inbox/:id/file`: which project the item becomes a task in. */
-export const fileInboxItemSchema = z.object({
-  projectId: z.string().min(1, "projectId is required"),
-});
+/**
+ * Body of `POST /inbox/:id/file`: which project the item becomes a task in.
+ *
+ * `title` / `description` are optional and normally absent: the server splits
+ * the item's text itself (`splitInboxText` in ./domain/inboxSplit.ts). They
+ * exist for a client that has already shaped the text -- the planned
+ * "Причесать" step, which asks a model to tidy a dictated line before it is
+ * filed -- and then they are used exactly as sent. A `description` without a
+ * `title` is refused: half an override would mean the server splitting a text
+ * whose second half the client has already replaced.
+ */
+export const fileInboxItemSchema = z
+  .object({
+    projectId: z.string().min(1, "projectId is required"),
+    title: z.string().trim().min(1, "title must not be empty").optional(),
+    description: z.string().trim().nullable().optional(),
+  })
+  .refine((body) => body.description === undefined || body.title !== undefined, {
+    message: "description needs a title",
+    path: ["description"],
+  });
 
 // ---- Dictation ----
 

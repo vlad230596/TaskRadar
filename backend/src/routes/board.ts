@@ -55,6 +55,11 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { createdAt: "asc" },
       include: {
         tasks: { orderBy: { position: "asc" } },
+        // How many notes each project has, for the counter on the planning
+        // board. A relation `_count` is one grouped `COUNT(*)` for all the
+        // projects at once, inside this same findMany -- the note bodies are
+        // never loaded, and it stays constant in the number of projects.
+        _count: { select: { notes: true } },
       },
     });
 
@@ -68,11 +73,17 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
      * The top level is a bare array for the same reason -- it is the `GET /projects`
      * payload with one extra field per row, so an envelope object here would make the
      * two responses need different parsers for no gain.
+     *
+     * The one other addition is `noteCount`, flattened out of Prisma's
+     * `_count` so the wire format does not carry an ORM's naming. It is on the
+     * board only, not on `GET /projects`: the board is what draws the counter,
+     * and a client parsing a project treats the field as optional.
      */
     reply.send(
-      projects.map((project) => ({
+      projects.map(({ _count, tasks, ...project }) => ({
         ...project,
-        tasks: annotateIsCurrent(project.tasks),
+        noteCount: _count.notes,
+        tasks: annotateIsCurrent(tasks),
       })),
     );
   });
