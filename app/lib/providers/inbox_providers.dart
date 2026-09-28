@@ -176,16 +176,31 @@ int? inboxCount(Ref ref) {
 /// `POST /inbox/:id/file` takes as its optional `title` / `description`.
 typedef FilingText = ({String title, String? description});
 
+/// Whether to file a line, and in what shape: [shaped] is the client's title
+/// and description, null for the server's split; `file: false` is the user
+/// backing out of filing altogether.
+typedef FilingDecision = ({bool file, FilingText? shaped});
+
+/// Past this length a line is offered "Причесать" before it is filed. The
+/// same number as `INBOX_TITLE_LIMIT` in `backend/src/domain/inboxSplit.ts`:
+/// up to it the server files the line whole, past it the server would cut it
+/// at its first sentence.
+const int filingTidyThreshold = 120;
+
 /// The hook between "the user pressed a project" and "the line is filed": how
-/// the client wants [text] to become a task, or null to let the server decide.
+/// [text] should become a task.
 ///
-/// Today it always answers null. The server splits a long line itself (first
-/// sentence to the title, the rest to the description --
-/// `backend/src/domain/inboxSplit.ts`), which is what every client should get
-/// by default, so the rule is not repeated here.
-///
-/// It exists as a named step so that the planned "Причесать" -- a model tidying
-/// a dictated line before it is filed -- has one obvious place to plug in: it
-/// returns the tidied title and description, and `Inbox.file` sends them as the
-/// override.
-FilingText? shapeLineForFiling(String text) => null;
+/// A short line goes as it is -- nothing to split, nothing to ask. A long one
+/// is where the server's split (first sentence to the title, the rest to the
+/// description) is at its bluntest, so the user is offered "Причесать" first
+/// through [offerTidy] (F15): the model tidies the line into a title and a
+/// description, and `Inbox.file` sends them as the override. Declining is the
+/// server's split, exactly as before.
+Future<FilingDecision> shapeLineForFiling(
+  String text, {
+  required Future<FilingDecision> Function(String text) offerTidy,
+}) async {
+  final line = text.trim();
+  if (line.length <= filingTidyThreshold) return (file: true, shaped: null);
+  return offerTidy(line);
+}

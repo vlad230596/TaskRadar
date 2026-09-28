@@ -18,6 +18,7 @@ import { createAuthGuard } from "./lib/authGuard";
 import { loadLlmConfig, streamTimeoutFor } from "./lib/llmConfig";
 import { createOpenAiCompatibleClient } from "./lib/llmClient";
 import { createDictationParser } from "./domain/dictation";
+import { createTidyParsers } from "./domain/tidy";
 import { resolveDictationModel } from "./domain/dictationModel";
 import { DictationFeature } from "./routes/dictation";
 
@@ -42,11 +43,12 @@ export interface BuildAppOptions {
 function defaultDictation(): DictationFeature | null {
   const config = loadLlmConfig();
   if (config === null) return null;
+  const complete = createOpenAiCompatibleClient(config);
+  const resolveModel = () => resolveDictationModel(config.model);
   return {
     defaultModel: config.model,
-    parser: createDictationParser(createOpenAiCompatibleClient(config), () =>
-      resolveDictationModel(config.model),
-    ),
+    parser: createDictationParser(complete, resolveModel),
+    tidiers: createTidyParsers(complete, resolveModel),
     streamTimeoutMs: (textLength) => streamTimeoutFor(config, textLength),
   };
 }

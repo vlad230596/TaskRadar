@@ -237,7 +237,7 @@ final class VoiceModelInstallationProvider
 }
 
 String _$voiceModelInstallationHash() =>
-    r'324736dafa7899dd10a22c5660a127e5656e8cb9';
+    r'4e830524b8b105141aeba25e7a009b0c130fff2f';
 
 /// Is the speech model on this device, and getting it here if not.
 
@@ -538,7 +538,7 @@ final class VoiceDictationProvider
   }
 }
 
-String _$voiceDictationHash() => r'c74c50670fbfd7937bdae2cddb0014b072ccaeaa';
+String _$voiceDictationHash() => r'984912114e85facfd1313a5385db2f678738c113';
 
 /// The dictation: start, speak, stop, get text.
 ///

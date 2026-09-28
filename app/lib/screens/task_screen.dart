@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/dictation_api.dart';
 import '../domain/reminders.dart';
 import '../domain/task_age.dart';
 import '../models/history_task_event.dart';
@@ -14,6 +15,7 @@ import '../providers/project_providers.dart';
 import 'dictation_screen.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
 import '../widgets/focus_toggle.dart';
 import '../widgets/history_charts.dart';
@@ -33,8 +35,8 @@ import '../widgets/mutation_feedback.dart';
 /// cost half the screen.
 ///
 /// Under the text, inside the same card, sit the two things done *to* the
-/// text: "Причесать" (when a tidier is wired in, see [TaskScreen.onTidy]) and
-/// the microphone, which appends. Then one full-width "Взять в работу", the
+/// text: "Причесать" (the model tidying the title and the note, see
+/// [TaskScreen.onTidy]) and the microphone, which appends. Then one full-width "Взять в работу", the
 /// three statuses as a 38 px segmented control, the note, and the life of the
 /// task folded into one line.
 ///
@@ -76,20 +78,24 @@ class TaskScreen extends ConsumerStatefulWidget {
   /// one.
   final String? taskId;
 
-  /// Rewrites the title into a tidier one: punctuation, filler words, the
-  /// shape of a dictated sentence. Returns null to leave the text as it is.
+  /// "Причесать": the task's text -- title and note -- tidied into a title and
+  /// a description: punctuation, filler words, misheard words, the shape of a
+  /// dictated sentence, and nothing added. Returns null to leave the text as
+  /// it is.
   ///
-  /// The hook for a later task. Null for now, and while it is null the
-  /// "Причесать" chip is not drawn at all -- a button that does nothing is
-  /// worse than no button.
+  /// Null, as in the app, opens [AiTidyScreen] with [ParseKind.taskTidy] and
+  /// the text as its source. A test puts its own answer here.
   final TidyText? onTidy;
 
   @override
   ConsumerState<TaskScreen> createState() => _TaskScreenState();
 }
 
+/// A task's text: what "Причесать" reads and what it gives back.
+typedef TaskText = ({String title, String? description});
+
 /// See [TaskScreen.onTidy].
-typedef TidyText = Future<String?> Function(String text);
+typedef TidyText = Future<TaskText?> Function(TaskText current);
 
 class _TaskScreenState extends ConsumerState<TaskScreen> {
   final TextEditingController _title = TextEditingController();
@@ -135,9 +141,10 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       return;
     }
 
+    final note = _note.text.trim();
     final ok = await runMutation(
       context,
-      () => _tasks.create(title),
+      () => _tasks.create(title, description: note.isEmpty ? null : note),
       failure: 'Не удалось добавить задачу.',
     );
     if (!ok || !mounted) return;
@@ -249,18 +256,69 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     if (ok && navigator.canPop()) navigator.pop();
   }
 
-  Future<void> _tidy(TidyText tidy) async {
-    final tidied = await tidy(_title.text);
+  Future<void> _tidy() async {
+    final note = _note.text.trim();
+    final current = (
+      title: _title.text.trim(),
+      description: note.isEmpty ? null : note,
+    );
+    if (current.title.isEmpty && current.description == null) return;
+
+    final tidied = await (widget.onTidy ?? _tidyWithModel)(current);
     if (tidied == null || !mounted) return;
-    _title.text = tidied;
+    setState(() {
+      _title.text = tidied.title;
+      _note.text = tidied.description ?? '';
+      // The description is half of the answer: folded away, it would look
+      // as if the model had dropped it.
+      if (_note.text.isNotEmpty) _noteOpen = true;
+    });
   }
+
+  /// "Причесать" in the app: [AiTidyScreen], from the title and the note as
+  /// they stand -- one source, the title on its first line.
+  Future<TaskText?> _tidyWithModel(TaskText current) async {
+    final source = <String>[
+      current.title,
+      ?current.description,
+    ].where((part) => part.isNotEmpty).join('\n');
+    final outcome = await openAiTidy(
+      context,
+      kind: ParseKind.taskTidy,
+      source: source,
+      destination: ref
+          .read(projectHeaderProvider(widget.projectId))
+          .value
+          ?.name,
+    );
+    switch (outcome) {
+      case TidyAccepted(result: TidiedTask(:final title, :final description)):
+        return (title: title, description: description);
+      // "Как надиктовано" after correcting the source by hand: the corrected
+      // text is what the user asked for, split back the way it was joined.
+      case TidyKeptSource(:final source) when source != _joinedSource(current):
+        final lines = source.split('\n');
+        final rest = lines.skip(1).join('\n').trim();
+        return (
+          title: lines.first.trim(),
+          description: rest.isEmpty ? null : rest,
+        );
+      default:
+        return null;
+    }
+  }
+
+  static String _joinedSource(TaskText text) => <String>[
+    text.title,
+    ?text.description,
+  ].where((part) => part.isNotEmpty).join('\n');
 
   /// Dictation into the title, appended rather than replacing -- a phrase said
   /// in two goes is one thought continued.
   Future<void> _dictate() async {
     final text = await AppRoutes.openDictation(
       context,
-      destination: const FieldDestination('в задачу'),
+      destination: const FieldDestination('в задачу', kind: ParseKind.taskTidy),
     );
     if (text == null || text.isEmpty || !mounted) return;
     appendDictated(_title, text: text);
@@ -379,7 +437,18 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-                child: _textField(dictateTooltip: 'Продиктовать'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _textField(dictateTooltip: 'Продиктовать'),
+                    // Only once there is a note to show -- "Причесать" can
+                    // give a new task its description before it exists.
+                    if (_noteOpen) ...<Widget>[
+                      const SizedBox(height: Insets.gap),
+                      _noteSection(),
+                    ],
+                  ],
+                ),
               ),
             ),
             _bottomButton('Добавить', () => unawaited(_create())),
@@ -441,8 +510,6 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
   /// The title, and under it the two things done *to* the title.
   Widget _textField({required String dictateTooltip}) {
-    final tidy = widget.onTidy;
-
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -476,14 +543,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              if (tidy != null) ...<Widget>[
-                _FieldChip(
-                  icon: Icons.auto_awesome,
-                  label: 'Причесать',
-                  onTap: () => unawaited(_tidy(tidy)),
-                ),
-                const SizedBox(width: 4),
-              ],
+              _FieldChip(
+                icon: Icons.auto_awesome,
+                label: 'Причесать',
+                onTap: () => unawaited(_tidy()),
+              ),
+              const SizedBox(width: 4),
               _FieldChip(
                 icon: Icons.mic_none,
                 tooltip: dictateTooltip,

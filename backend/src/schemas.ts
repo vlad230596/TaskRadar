@@ -175,7 +175,8 @@ export const updateTaskPositionSchema = z
     afterTaskId: z.string().min(1).nullable().optional(),
   })
   .refine((body) => body.beforeTaskId !== undefined || body.afterTaskId !== undefined, {
-    message: "At least one of beforeTaskId/afterTaskId must be provided (use null for 'no neighbour on that side')",
+    message:
+      "At least one of beforeTaskId/afterTaskId must be provided (use null for 'no neighbour on that side')",
   });
 
 // ---- History (F11) ----
@@ -285,6 +286,11 @@ export const parseDictationSchema = z.object({
   timeZone: z.string().refine(isValidTimeZone, "timeZone must be an IANA time zone"),
   /** What to parse the words into; see `domain/parsePipeline.ts`. */
   kind: z.enum(PARSE_KINDS).default("task"),
+  /**
+   * `note` only: the note's current title, so the model knows not to propose
+   * one (`domain/tidy.ts`). Ignored by the other kinds.
+   */
+  noteTitle: z.string().trim().max(500, "noteTitle is too long").optional(),
 });
 
 /**

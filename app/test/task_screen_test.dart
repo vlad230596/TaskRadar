@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/task_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
+import 'package:taskradar/widgets/ai_tidy.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
@@ -53,6 +55,9 @@ void main() {
           boardSnapshotStoreProvider.overrideWithValue(
             FakeBoardSnapshotStore(),
           ),
+          deviceTimeZoneNameProvider.overrideWith(
+            (ref) async => 'Europe/Moscow',
+          ),
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
@@ -93,33 +98,89 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('"Причесать" is hidden until a tidier is wired in', (
+  testWidgets('"Причесать" is always there, beside the microphone', (
     tester,
   ) async {
     final id = server.addTask(projectId: projectId, title: 'купить кабель');
     await pumpTask(tester, id);
 
-    expect(find.text('Причесать'), findsNothing);
+    expect(find.text('Причесать'), findsOneWidget);
     // The microphone moved from the bottom bar into the card; the bar is only
     // "Сохранить" now.
     expect(find.byTooltip('Дописать голосом'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Сохранить'), findsOneWidget);
   });
 
-  testWidgets('"Причесать" rewrites the title through the hook', (
+  testWidgets('"Причесать" rewrites the title and the note through the hook', (
     tester,
   ) async {
     final id = server.addTask(projectId: projectId, title: 'купить кабель');
-    await pumpTask(tester, id, onTidy: (text) async => 'Купить кабель.');
+    TaskText? seen;
+    await pumpTask(
+      tester,
+      id,
+      onTidy: (current) async {
+        seen = current;
+        return (title: 'Купить кабель', description: 'Два метра.');
+      },
+    );
 
     await tester.tap(find.text('Причесать'));
     await settle(tester);
 
+    expect(seen, (title: 'купить кабель', description: null));
     expect(
       tester.widget<TextField>(titleField()).controller!.text,
-      'Купить кабель.',
+      'Купить кабель',
     );
+    // The description is half the answer, so the note unfolds to show it.
+    expect(find.text('Два метра.'), findsOneWidget);
   });
+
+  testWidgets(
+    '"Причесать" in the app: the model, as task_tidy, from the text',
+    (tester) async {
+      final id = server.addTask(
+        projectId: projectId,
+        title: 'ну купить кабель',
+        description: 'два метра',
+      );
+      final parses = <Map<String, dynamic>>[];
+      backend.on('POST', '/dictation/parse', (match) {
+        parses.add(match.body);
+        return sseResponse(<String>[
+          sseEvent('accepted'),
+          sseEvent('result', <String, dynamic>{
+            'title': 'Купить кабель',
+            'description': 'Длина два метра.',
+          }),
+        ]);
+      });
+      await pumpTask(tester, id);
+
+      await tester.tap(find.text('Причесать'));
+      await settle(tester);
+      expect(parses.single['kind'], 'task_tidy');
+      // One source: the title, then the note.
+      expect(parses.single['text'], 'ну купить кабель\nдва метра');
+
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(titleField()).controller!.text,
+        'Купить кабель',
+      );
+      await settle(tester);
+      expect(find.byType(AiTidyScreen), findsNothing);
+      expect(
+        find.widgetWithText(TextField, 'Длина два метра.'),
+        findsOneWidget,
+      );
+      // Not saved behind the user's back: "Сохранить" does that.
+      expect(server.tasks.single['title'], 'ну купить кабель');
+    },
+  );
 
   testWidgets('"Взять в работу" takes the task, then offers the way back', (
     tester,

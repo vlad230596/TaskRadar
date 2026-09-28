@@ -27,7 +27,8 @@ import 'overflow_fade_text.dart';
 /// `TextField` with a microphone beside it, and it was the literal subject of
 /// complaint number one -- "в композере видно два-три слова". The brief is
 /// explicit that the new screens must not have one. Adding a task now opens
-/// `TaskScreen.draft`, which is the same 252 px field the task screen uses.
+/// `TaskScreen.draft`, which is the same field the task screen uses -- two
+/// lines at least, growing with its text.
 ///
 /// That trades one navigation for readable text, and the trade is smaller than
 /// it looks: the gesture that justified the inline field (five sentences, five

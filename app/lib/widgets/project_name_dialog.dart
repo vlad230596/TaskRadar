@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'dictate_into.dart';
-
 /// Asks for a project's name -- the new one, or a corrected one.
 ///
 /// One dialog for creating and for renaming, because `POST /projects` and
@@ -14,6 +12,13 @@ import 'dictate_into.dart';
 /// An empty name never comes back: the confirm button stays disabled instead of
 /// a validation message, because the empty field is already the whole message
 /// and the server would refuse it anyway.
+///
+/// ## No microphone, no "Причесать"
+///
+/// The one text field in the app without either, on purpose (F15). A name is
+/// two words typed in a second; dictating it costs a screen and a recognition
+/// for less than that, and a model "tidying" a name can only make it a
+/// different name.
 Future<String?> askForProjectName(
   BuildContext context, {
   required String title,
@@ -73,15 +78,15 @@ class _NameDialog extends StatefulWidget {
 }
 
 class _NameDialogState extends State<_NameDialog> {
-  late final TextEditingController _controller = TextEditingController(
-    text: widget.initialName,
-  )..selection = TextSelection(
-    // Pre-selected, so a rename can be typed over in one gesture. The name is
-    // usually being replaced rather than edited -- and when it is being edited,
-    // one tap puts the caret where the user wants it.
-    baseOffset: 0,
-    extentOffset: widget.initialName.length,
-  );
+  late final TextEditingController
+  _controller = TextEditingController(text: widget.initialName)
+    ..selection = TextSelection(
+      // Pre-selected, so a rename can be typed over in one gesture. The name is
+      // usually being replaced rather than edited -- and when it is being edited,
+      // one tap puts the caret where the user wants it.
+      baseOffset: 0,
+      extentOffset: widget.initialName.length,
+    );
 
   @override
   void dispose() {
@@ -99,37 +104,17 @@ class _NameDialogState extends State<_NameDialog> {
   Widget build(BuildContext context) {
     return AlertDialog(
       title: Text(widget.title),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.sentences,
-                  textInputAction: TextInputAction.done,
-                  decoration: InputDecoration(
-                    hintText: widget.hint,
-                    border: const OutlineInputBorder(),
-                  ),
-                  onChanged: (_) => setState(() {}),
-                  onSubmitted: (_) => _submit(),
-                ),
-              ),
-              DictateInto(
-                controller: _controller,
-                label: 'в название',
-                // `setState` as well as the insertion: the confirm button is
-                // disabled while the field is empty, and it reads the
-                // controller rather than listening to it, so dictated text has
-                // to say so.
-                onInserted: () => setState(() {}),
-              ),
-            ],
-          ),
-        ],
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textCapitalization: TextCapitalization.sentences,
+        textInputAction: TextInputAction.done,
+        decoration: InputDecoration(
+          hintText: widget.hint,
+          border: const OutlineInputBorder(),
+        ),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) => _submit(),
       ),
       actions: [
         TextButton(

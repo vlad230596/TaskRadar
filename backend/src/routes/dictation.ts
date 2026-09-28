@@ -4,9 +4,10 @@ import { prisma } from "../lib/prisma";
 import { HttpError } from "../lib/errors";
 import { UpstreamModelError } from "../lib/llmClient";
 import { openEventStream, wantsEventStream } from "../lib/eventStream";
-import { DictationInput, DictationParser, DictationTrace } from "../domain/dictation";
+import { DictationInput, DictationParser } from "../domain/dictation";
 import { readDictationModelOverride, writeDictationModelOverride } from "../domain/dictationModel";
-import { ParseKind, ParsePipeline, taskPipeline } from "../domain/parsePipeline";
+import { keptPipeline, ParseKind, ParsePipeline, ParseTrace } from "../domain/parsePipeline";
+import { SandboxInput, TidyParsers } from "../domain/tidy";
 import {
   parseDictationSchema,
   parseDictationStreamSchema,
@@ -16,6 +17,11 @@ import {
 /** What the dictation routes need when a model is configured. */
 export interface DictationFeature {
   parser: DictationParser;
+  /**
+   * The tidying kinds -- `task_tidy`, `note`, `sandbox` (`../domain/tidy.ts`).
+   * Absent: those kinds answer 503, as with no model at all.
+   */
+  tidiers?: TidyParsers;
   /** `LLM_MODEL` from `.env`: what is used when the app has not chosen one. */
   defaultModel: string;
   /**
@@ -45,6 +51,20 @@ class DictationUnavailableError extends HttpError {
 }
 
 /**
+ * The projects a sandbox line can be filed into, for the `sandbox` prompt:
+ * every one not archived, read here and never taken from the request -- see
+ * `../domain/tidy.ts`.
+ */
+async function sandboxInput(input: DictationInput): Promise<SandboxInput> {
+  const projects = await prisma.project.findMany({
+    where: { archivedAt: null },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" },
+  });
+  return { ...input, projects };
+}
+
+/**
  * Keeps one parse in the dataset (`DictationParse` in prisma/schema.prisma)
  * and returns its id, or null when it could not be kept.
  *
@@ -53,13 +73,15 @@ class DictationUnavailableError extends HttpError {
  * from the person waiting for it now.
  */
 async function keepSample(
+  kind: ParseKind,
   input: DictationInput,
-  trace: DictationTrace,
+  trace: ParseTrace<object>,
   log: FastifyBaseLogger,
 ): Promise<string | null> {
   try {
     const row = await prisma.dictationParse.create({
       data: {
+        kind,
         inputText: input.text,
         timeZone: input.timeZone,
         requestedAt: input.now,
@@ -80,8 +102,39 @@ async function keepSample(
   }
 }
 
+/**
+ * The pipeline for [kind], or null when this server has no parser for it.
+ *
+ * The reason for a failure goes to the log and the dataset, not to the client:
+ * it can name the provider's status or a fragment of its reply, which is ours
+ * to debug and nobody else's to read.
+ */
+function pipelineFor(
+  feature: DictationFeature,
+  kind: ParseKind,
+  log: FastifyBaseLogger,
+): ParsePipeline | null {
+  const keep = <I extends DictationInput>(sample: I, trace: ParseTrace<object>) =>
+    keepSample(kind, sample, trace, log);
+  const onFailure = (reason: string | null, parseId: string | null) =>
+    log.warn({ reason, parseId, kind }, "dictation model failed");
+
+  if (kind === "task") return keptPipeline(feature.parser, keep, onFailure);
+  const tidiers = feature.tidiers;
+  if (tidiers === undefined) return null;
+  switch (kind) {
+    case "task_tidy":
+      return keptPipeline(tidiers.task_tidy, keep, onFailure);
+    case "note":
+      return keptPipeline(tidiers.note, keep, onFailure);
+    case "sandbox":
+      return keptPipeline(tidiers.sandbox, keep, onFailure, sandboxInput);
+  }
+}
+
 /*
- * Dictation -> task (F14). See `../domain/dictation.ts` for what the model does.
+ * Dictation -> task (F14), and the tidying kinds beside it (F15). See
+ * `../domain/dictation.ts` and `../domain/tidy.ts` for what the model does.
  *
  * NO TASK IS WRITTEN HERE
  *
@@ -117,9 +170,16 @@ export function dictationRoutes(
      *     model_started  {model}                 the request to the model is out
      *     model_done     {durationMs}            the model answered
      *     validated      {}                      its answer is usable
-     *     result         {title, ..., parseId}   the same payload as the JSON reply
+     *     result         {..., parseId}          the same payload as the JSON reply
      *     error          {code, message}         instead of result; ends the stream
      *     heartbeat      {}                      every 5 s, whatever else is said
+     *
+     * What `result` holds depends on the request's `kind` (`task` when absent):
+     *
+     *     task       {title, description, remindDate, remindTime}
+     *     task_tidy  {title, description}
+     *     note       {title, content}                 title only when the note had none
+     *     sandbox    {text, projectId, projectName}   both null without a match
      *
      * Every event's data may carry `partial` -- reserved for a model that
      * streams its answer, sent by nothing yet. Anything that fails before
@@ -135,18 +195,10 @@ export function dictationRoutes(
         text: body.text,
         timeZone: body.timeZone,
         now: new Date(),
+        noteTitle: body.noteTitle,
       };
-      const pipelines: Record<ParseKind, ParsePipeline> = {
-        task: taskPipeline(
-          feature.parser,
-          (sample, trace) => keepSample(sample, trace, request.log),
-          // The reason goes to the log and the dataset, not to the client: it
-          // can name the provider's status or a fragment of its reply, which is
-          // ours to debug and nobody else's to read.
-          (reason, parseId) => request.log.warn({ reason, parseId }, "dictation model failed"),
-        ),
-      };
-      const pipeline = pipelines[body.kind];
+      const pipeline = pipelineFor(feature, body.kind, request.log);
+      if (pipeline === null) throw new DictationUnavailableError();
 
       if (!stream) {
         reply.send(await pipeline(input));

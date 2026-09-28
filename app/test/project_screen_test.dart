@@ -166,7 +166,7 @@ void main() {
 
       expect(find.text('Задач пока нет'), findsOneWidget);
       // No composer any more -- that one-line field was complaint number one.
-      // What is here instead is the button that opens a 252 px one, and the
+      // What is here instead is the button that opens a growing one, and the
       // microphone, which skips the screen entirely.
       expect(find.byType(TextField), findsNothing);
       expect(find.widgetWithText(OutlinedButton, 'Задача'), findsOneWidget);
@@ -737,7 +737,7 @@ void main() {
     });
 
     testWidgets('the note can be set and then cleared', (tester) async {
-      // Folded away when empty, because the screen that matters is a 252 px
+      // Folded away when empty, because the screen that matters is a growing
       // field and three status buttons -- but reachable, because eleven
       // existing tasks already carry a description and a screen that edited
       // only the title would quietly make that text unreachable.

@@ -88,6 +88,9 @@ async function main(): Promise<void> {
 
   const rows = await prisma.dictationParse.findMany({
     where: {
+      // Only `task` rows: the tidying kinds have prompts and replies of their
+      // own, and scoring them as tasks would compare unlike with unlike.
+      kind: "task",
       ...(args.all ? {} : { finalTitle: { not: null } }),
       ...(args.since === undefined ? {} : { createdAt: { gte: new Date(args.since) } }),
     },
