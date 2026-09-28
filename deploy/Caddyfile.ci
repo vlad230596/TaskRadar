@@ -24,7 +24,10 @@
 
 	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /notes/* /inbox /inbox/* /dictation/*
 	handle @api {
-		reverse_proxy backend:3001
+		# Unbuffered, as in production: see the note there.
+		reverse_proxy backend:3001 {
+			flush_interval -1
+		}
 	}
 
 	# The web client's upstream. In production this is the `taskradar-web`

@@ -214,6 +214,27 @@ ResponseBody jsonResponse(Object? body, {int statusCode = 200}) {
   );
 }
 
+/// One event of a streamed reply, written the way `backend/src/lib/eventStream.ts`
+/// writes it.
+String sseEvent(String event, [Map<String, dynamic> data = const {}]) =>
+    'event: $event\ndata: ${jsonEncode(data)}\n\n';
+
+/// A whole event stream, answered at once.
+ResponseBody sseResponse(List<String> events) =>
+    sseStreamResponse(Stream<String>.fromIterable(events));
+
+/// An event stream that arrives as [chunks] does -- for a test that has to
+/// see the screen between two events.
+ResponseBody sseStreamResponse(Stream<String> chunks) {
+  return ResponseBody(
+    chunks.map((chunk) => Uint8List.fromList(utf8.encode(chunk))),
+    200,
+    headers: <String, List<String>>{
+      Headers.contentTypeHeader: <String>['text/event-stream; charset=utf-8'],
+    },
+  );
+}
+
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter(this._handle);
 

@@ -17,6 +17,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/dictation.dart';
 import '../widgets/mutation_feedback.dart';
+import '../widgets/tidy_progress.dart';
 
 /// Where a dictation's words are going. Shown at the top of the screen, and
 /// changeable *before* "Готово" -- which is the point of showing it.
@@ -132,6 +133,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// anything else happens.
   String? _tidyProblem;
 
+  /// The stages of the "Разобрать" under way, or of the one that failed and
+  /// can be repeated -- the card under the words. Null when there is neither.
+  TidyProgress? _progress;
+
+  /// The running parse; cancelled by "Отменить", and when the screen goes.
+  StreamSubscription<ParseProgress>? _tidyRun;
+
   @override
   void initState() {
     super.initState();
@@ -143,6 +151,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
   @override
   void dispose() {
+    unawaited(_tidyRun?.cancel());
     _text.dispose();
     _textFocus.dispose();
     _title.dispose();
@@ -254,45 +263,105 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// Only for a task going into a project. The sandbox keeps the raw words:
   /// a line there has no description to put the rest into, and it gets its
   /// title when it is filed.
+  ///
+  /// ## Why the stages are shown
+  ///
+  /// A long dictation keeps the model busy for tens of seconds, and a spinner
+  /// that long cannot be told from a request that died. So the parse is a
+  /// stream of stages (`DictationApi.parseStream`), drawn as a card of steps
+  /// with their times and a line saying when the server was last heard from.
+  /// It fails only when the server has been silent for 20 s, never for being
+  /// slow, and a failure keeps the card with "Повторить".
   Future<void> _tidy() async {
     final text = _text.text.trim();
     if (text.isEmpty || _tidying) return;
     FocusScope.of(context).unfocus();
+    final progress = TidyProgress(DateTime.now());
     setState(() {
       _tidying = true;
       _tidyProblem = null;
+      _progress = progress;
     });
 
-    String? problem;
+    final String zone;
     try {
-      final zone = await ref.read(deviceTimeZoneNameProvider.future);
-      final parsed = await ref
-          .read(dictationApiProvider)
-          .parse(text: text, timeZone: zone);
-      if (!mounted) return;
-      setState(() {
-        _parsed = parsed;
-        _title.text = parsed.title;
-        _description.text = parsed.description ?? '';
-        _remindDate = parsed.remindDate;
-      });
-    } on NetworkException {
-      problem = 'Нет связи с сервером — можно сохранить как есть.';
-    } on ApiException catch (error) {
-      problem = error.statusCode == 503
-          ? 'Разбор не настроен на сервере.'
-          : 'Модель не ответила — попробуйте ещё раз.';
+      zone = await ref.read(deviceTimeZoneNameProvider.future);
     } catch (error) {
       debugPrint('Dictation parse failed: $error');
-      problem = 'Не получилось разобрать.';
-    } finally {
-      if (mounted) {
-        setState(() {
-          _tidying = false;
-          _tidyProblem = problem;
-        });
-      }
+      _tidyFailed(progress, 'Не получилось разобрать.');
+      return;
     }
+    if (!mounted || _progress != progress) return;
+
+    unawaited(_tidyRun?.cancel());
+    _tidyRun = ref
+        .read(dictationApiProvider)
+        .parseStream(text: text, timeZone: zone)
+        .listen(
+          (event) {
+            if (!mounted || _progress != progress) return;
+            if (event is ParseDone) {
+              final parsed = event.result;
+              setState(() {
+                _tidying = false;
+                _progress = null;
+                _parsed = parsed;
+                _title.text = parsed.title;
+                _description.text = parsed.description ?? '';
+                _remindDate = parsed.remindDate;
+              });
+              return;
+            }
+            setState(() => progress.record(event, DateTime.now()));
+          },
+          onError: (Object error) {
+            if (!mounted || _progress != progress) return;
+            if (error is ApiException && error.statusCode == 503) {
+              // Nothing to repeat: the server has no model. Said under the
+              // words, as before the stages existed.
+              setState(() {
+                _tidying = false;
+                _progress = null;
+                _tidyProblem = 'Разбор не настроен на сервере.';
+              });
+              return;
+            }
+            _tidyFailed(progress, _tidyFailure(error));
+          },
+        );
+  }
+
+  void _tidyFailed(TidyProgress progress, String message) {
+    if (!mounted || _progress != progress) return;
+    setState(() {
+      _tidying = false;
+      progress.fail(message, DateTime.now());
+    });
+  }
+
+  static String _tidyFailure(Object error) {
+    switch (error) {
+      case ParseSilenceException():
+        return 'Сервер замолчал — можно повторить или сохранить как есть.';
+      case NetworkException():
+        return 'Нет связи с сервером — можно сохранить как есть.';
+      case ApiException():
+        return 'Модель не ответила — попробуйте ещё раз.';
+      default:
+        debugPrint('Dictation parse failed: $error');
+        return 'Не получилось разобрать.';
+    }
+  }
+
+  /// "Отменить" on the card: the parse is dropped -- the connection with it,
+  /// so the server stops asking the model -- and the words stay as they are.
+  void _cancelTidy() {
+    unawaited(_tidyRun?.cancel());
+    _tidyRun = null;
+    setState(() {
+      _tidying = false;
+      _progress = null;
+    });
   }
 
   /// Back to the words as recognised, proposal thrown away.
@@ -443,6 +512,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                     // A proposal is a task's shape; anywhere else the words go
                     // as they are, and keeping it on screen would say otherwise.
                     if (value is! ProjectDestination) {
+                      unawaited(_tidyRun?.cancel());
+                      _tidyRun = null;
+                      _tidying = false;
+                      _progress = null;
                       _parsed = null;
                       _tidyProblem = null;
                     }
@@ -629,7 +702,16 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                 ),
               ),
             ),
-            if (note != null || canTidy)
+            if (_progress case final progress?)
+              Padding(
+                padding: EdgeInsets.only(top: compact ? 6 : 14, bottom: 4),
+                child: TidyProgressCard(
+                  progress: progress,
+                  onCancel: _cancelTidy,
+                  onRetry: () => unawaited(_tidy()),
+                ),
+              )
+            else if (note != null || canTidy)
               Padding(
                 padding: EdgeInsets.only(top: compact ? 6 : 14, bottom: 4),
                 child: Row(

@@ -14,7 +14,18 @@ export interface ChatMessage {
  * [model] is per call rather than fixed at construction: the app can switch
  * models (F14), and a client built once at boot must follow without a restart.
  */
-export type CompleteJson = (messages: ChatMessage[], model: string) => Promise<string>;
+export type CompleteJson = (
+  messages: ChatMessage[],
+  model: string,
+  options?: CompleteOptions,
+) => Promise<string>;
+
+export interface CompleteOptions {
+  /** Overrides the configured `LLM_TIMEOUT_MS` for this one call. */
+  timeoutMs?: number | undefined;
+  /** Aborts the call early -- the person waiting for it has gone. */
+  signal?: AbortSignal | undefined;
+}
 
 /**
  * The model did not produce an answer we can use: unreachable, timed out, an
@@ -46,7 +57,9 @@ export function createOpenAiCompatibleClient(
   config: LlmConfig,
   fetchImpl: typeof fetch = fetch,
 ): CompleteJson {
-  return async (messages, model) => {
+  return async (messages, model, options = {}) => {
+    const timeout = AbortSignal.timeout(options.timeoutMs ?? config.timeoutMs);
+    const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
     let response: Response;
     try {
       response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
@@ -61,9 +74,10 @@ export function createOpenAiCompatibleClient(
           temperature: 0.1,
           response_format: { type: "json_object" },
         }),
-        signal: AbortSignal.timeout(config.timeoutMs),
+        signal,
       });
     } catch (error) {
+      if (options.signal?.aborted) throw new UpstreamModelError("cancelled by the client");
       throw new UpstreamModelError(`request failed: ${(error as Error).message}`);
     }
 

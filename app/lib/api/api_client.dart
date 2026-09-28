@@ -1,3 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:dio/dio.dart';
 
 import '../config/app_config.dart';
@@ -202,6 +206,65 @@ class ApiClient {
     }
   }
 
+  /// `POST`s [body] and hands back the response body as it arrives, instead of
+  /// waiting for all of it -- for an endpoint that answers with a stream of
+  /// events (`POST /dictation/parse`).
+  ///
+  /// A non-2xx status still throws the same [ApiException] as [request], with
+  /// the error body decoded, so a 401 or a 503 means the same thing here as
+  /// anywhere. A transport failure *after* the status arrived -- the
+  /// connection dropping mid-stream -- comes out of the stream as a
+  /// [NetworkException].
+  ///
+  /// [receiveTimeout] replaces the client-wide 15 s: on a stream it is the
+  /// longest silence between two chunks rather than the length of the answer.
+  Future<Stream<List<int>>> openStream(
+    String path, {
+    Object? body,
+    Map<String, String> headers = const <String, String>{},
+    Duration? receiveTimeout,
+    CancelToken? cancelToken,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    try {
+      final response = await dio.post<ResponseBody>(
+        path,
+        data: body,
+        cancelToken: cancelToken,
+        onSendProgress: onSendProgress,
+        onReceiveProgress: onReceiveProgress,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: headers,
+          receiveTimeout: receiveTimeout,
+        ),
+      );
+      final stream = response.data?.stream ?? const Stream<Uint8List>.empty();
+      return stream.transform(
+        StreamTransformer<Uint8List, List<int>>.fromHandlers(
+          handleError: (error, stackTrace, sink) => sink.addError(
+            error is DioException ? _mapError(error) : error,
+            stackTrace,
+          ),
+        ),
+      );
+    } on DioException catch (error) {
+      // The error body is a stream too, and [_mapError] wants the `{ error,
+      // message }` object the backend put in it.
+      final response = error.response;
+      final data = response?.data;
+      if (response != null && data is ResponseBody) {
+        try {
+          response.data = jsonDecode(await utf8.decodeStream(data.stream));
+        } catch (_) {
+          response.data = null;
+        }
+      }
+      throw _mapError(error);
+    }
+  }
+
   Future<T> get<T>(
     String path, {
     Map<String, dynamic>? queryParameters,
@@ -257,7 +320,10 @@ class ApiClient {
 
     return ApiException(
       response.statusCode,
-      _extractMessage(response.data, response.statusMessage ?? 'Request failed'),
+      _extractMessage(
+        response.data,
+        response.statusMessage ?? 'Request failed',
+      ),
       response.data,
     );
   }
@@ -294,4 +360,5 @@ class ApiClient {
 
 /// Convenience constructor for the app (as opposed to tests), using the base URL
 /// baked in at build time.
-ApiClient createConfiguredApiClient() => ApiClient.forBaseUrl(AppConfig.apiBaseUrl);
+ApiClient createConfiguredApiClient() =>
+    ApiClient.forBaseUrl(AppConfig.apiBaseUrl);

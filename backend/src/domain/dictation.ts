@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient";
+import type { ParseHooks } from "./parsePipeline";
 
 /*
  * Dictation -> task (F14): the words as spoken, turned into a task as it would
@@ -64,8 +65,15 @@ export interface DictationTrace {
   durationMs: number;
 }
 
-/** Never throws for a model failure: the failure is part of the trace. */
-export type DictationParser = (input: DictationInput) => Promise<DictationTrace>;
+/**
+ * Never throws for a model failure: the failure is part of the trace. [hooks]
+ * hear the stages as they pass and bound the model call -- see
+ * `./parsePipeline.ts`.
+ */
+export type DictationParser = (
+  input: DictationInput,
+  hooks?: ParseHooks,
+) => Promise<DictationTrace>;
 
 /**
  * Which prompt a dataset row was produced with. Bump it whenever
@@ -330,13 +338,19 @@ export function createDictationParser(
   resolveModel: () => Promise<string>,
   clock: () => number = Date.now,
 ): DictationParser {
-  return async (input) => {
+  return async (input, hooks = {}) => {
     const model = await resolveModel();
+    hooks.onStage?.({ stage: "model_started", model });
     const started = clock();
     let rawReply: string | null = null;
     try {
-      rawReply = await complete(buildDictationMessages(input), model);
+      rawReply = await complete(buildDictationMessages(input), model, {
+        timeoutMs: hooks.timeoutMs,
+        signal: hooks.signal,
+      });
+      hooks.onStage?.({ stage: "model_done", durationMs: clock() - started });
       const result = interpretModelReply(rawReply, localDate(input.now, input.timeZone));
+      hooks.onStage?.({ stage: "validated" });
       return trace(model, rawReply, result, null, clock() - started);
     } catch (error) {
       if (!(error instanceof UpstreamModelError)) throw error;

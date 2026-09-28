@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HISTORY_RANGES } from "./domain/history";
 import { isValidTimeZone } from "./domain/dictation";
+import { PARSE_KINDS } from "./domain/parsePipeline";
 
 export const taskStatusSchema = z.enum(["pending", "done", "blocked"]);
 
@@ -282,6 +283,20 @@ export const fileInboxItemSchema = z
 export const parseDictationSchema = z.object({
   text: z.string().trim().min(1, "text is required").max(4000, "text is too long"),
   timeZone: z.string().refine(isValidTimeZone, "timeZone must be an IANA time zone"),
+  /** What to parse the words into; see `domain/parsePipeline.ts`. */
+  kind: z.enum(PARSE_KINDS).default("task"),
+});
+
+/**
+ * The same body when the reply is streamed (`Accept: text/event-stream`).
+ *
+ * The cap is higher because a streamed parse can take long enough for ten
+ * minutes of speech -- several thousand characters -- where the one-shot reply
+ * has to fit in the app's 15 s receive timeout and an old client could not
+ * wait for a long one anyway. It is still a cap on a paid model's input.
+ */
+export const parseDictationStreamSchema = parseDictationSchema.extend({
+  text: z.string().trim().min(1, "text is required").max(12_000, "text is too long"),
 });
 
 /**

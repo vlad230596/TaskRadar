@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,7 @@ import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/dictation_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/voice/voice_model.dart';
+import 'package:taskradar/widgets/tidy_progress.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_project_backend.dart';
@@ -33,12 +36,39 @@ void main() {
     parseBodies = <Map<String, dynamic>>[];
   });
 
+  /// The server's answer to "Разобрать". A 200 is the event stream the app
+  /// asks for, ending in [body] as the result; any other status is refused
+  /// before the stream starts, as the backend does.
   void modelAnswers(Map<String, dynamic> body, {int statusCode = 200}) {
     backend.on('POST', '/dictation/parse', (match) {
       parseBodies.add(match.body);
-      return jsonResponse(body, statusCode: statusCode);
+      if (statusCode != 200) return jsonResponse(body, statusCode: statusCode);
+      return sseResponse(<String>[
+        sseEvent('accepted', <String, dynamic>{'kind': 'task'}),
+        sseEvent('model_started', <String, dynamic>{'model': 'deepseek-chat'}),
+        sseEvent('model_done', <String, dynamic>{'durationMs': 800}),
+        sseEvent('validated'),
+        sseEvent('result', body),
+      ]);
     });
   }
+
+  /// A server that answers as [events] is fed, for a test that looks at the
+  /// screen between two events.
+  StreamController<String> modelStreams() {
+    final events = StreamController<String>();
+    addTearDown(events.close);
+    backend.on('POST', '/dictation/parse', (match) {
+      parseBodies.add(match.body);
+      return sseStreamResponse(events.stream);
+    });
+    return events;
+  }
+
+  Finder inCard(String text) => find.descendant(
+    of: find.byType(TidyProgressCard),
+    matching: find.text(text),
+  );
 
   Future<void> settle(WidgetTester tester) async {
     for (var i = 0; i < 20; i++) {
@@ -148,7 +178,11 @@ void main() {
       await tidy(tester);
 
       expect(parseBodies, <Map<String, dynamic>>[
-        <String, dynamic>{'text': 'Купить кабель', 'timeZone': 'Europe/Moscow'},
+        <String, dynamic>{
+          'text': 'Купить кабель',
+          'timeZone': 'Europe/Moscow',
+          'kind': 'task',
+        },
       ]);
       expect(find.text('Разобрано — можно править'), findsOneWidget);
       expect(find.text('Купить кабель USB-C'), findsOneWidget);
@@ -272,10 +306,26 @@ void main() {
     testWidgets('the model failing: said, so it can be tried again', (
       tester,
     ) async {
-      modelAnswers(<String, dynamic>{
-        'error': 'UpstreamModelError',
-        'message': 'Dictation model did not answer',
-      }, statusCode: 502);
+      var calls = 0;
+      backend.on('POST', '/dictation/parse', (_) {
+        calls++;
+        return sseResponse(<String>[
+          sseEvent('accepted'),
+          sseEvent('model_started', <String, dynamic>{'model': 'm'}),
+          if (calls == 1)
+            sseEvent('error', <String, dynamic>{
+              'code': 'model_failed',
+              'message': 'Dictation model did not answer',
+            })
+          else ...<String>[
+            sseEvent('model_done'),
+            sseEvent('validated'),
+            sseEvent('result', <String, dynamic>{
+              'title': 'Купить кабель USB-C',
+            }),
+          ],
+        ]);
+      });
 
       await dictate(tester);
       await tidy(tester);
@@ -284,7 +334,123 @@ void main() {
         find.text('Модель не ответила — попробуйте ещё раз.'),
         findsOneWidget,
       );
-      expect(find.text('Разобрать'), findsOneWidget);
+      // The step that was running is the one marked as failed.
+      expect(inCard('Модель думает'), findsOneWidget);
+      expect(find.byIcon(Icons.close), findsWidgets);
+
+      await tester.tap(inCard('Повторить'));
+      await settle(tester);
+
+      expect(calls, 2);
+      expect(find.text('Купить кабель USB-C'), findsOneWidget);
+      expect(find.byType(TidyProgressCard), findsNothing);
+    });
+
+    testWidgets(
+      'shows every stage while it waits, with the model and its time',
+      (tester) async {
+        final events = modelStreams();
+
+        await dictate(tester);
+        await tester.tap(find.text('Разобрать'));
+        await tester.pump();
+
+        expect(inCard('Запрос отправлен'), findsOneWidget);
+        expect(inCard('жду ответа сервера'), findsOneWidget);
+        expect(find.text('Разобрать'), findsNothing);
+
+        events
+          ..add(sseEvent('accepted', <String, dynamic>{'kind': 'task'}))
+          ..add(
+            sseEvent('model_started', <String, dynamic>{
+              'model': 'deepseek-chat',
+            }),
+          );
+        await settle(tester);
+
+        expect(inCard('Сервер принял · deepseek-chat'), findsOneWidget);
+        expect(inCard('Модель думает'), findsOneWidget);
+        expect(inCard('Проверяю ответ'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(TidyProgressCard),
+            matching: find.textContaining('связь есть · последний сигнал'),
+          ),
+          findsOneWidget,
+        );
+        expect(inCard('Отменить'), findsOneWidget);
+        // Nothing to save twice while it runs.
+        expect(
+          tester
+              .widget<FilledButton>(find.widgetWithText(FilledButton, 'Готово'))
+              .onPressed,
+          isNull,
+        );
+
+        events
+          ..add(sseEvent('model_done', <String, dynamic>{'durationMs': 4000}))
+          ..add(sseEvent('validated'))
+          ..add(
+            sseEvent('result', <String, dynamic>{
+              'title': 'Купить кабель USB-C',
+              'parseId': 'dp-9',
+            }),
+          );
+        await settle(tester);
+
+        expect(find.byType(TidyProgressCard), findsNothing);
+        expect(find.text('Разобрано — можно править'), findsOneWidget);
+        expect(find.text('Купить кабель USB-C'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '"Отменить" on the card drops the request and keeps the words',
+      (tester) async {
+        final events = modelStreams();
+
+        await dictate(tester);
+        await tidy(tester);
+        events.add(sseEvent('accepted'));
+        await settle(tester);
+        expect(events.hasListener, isTrue);
+
+        await tester.tap(inCard('Отменить'));
+        await settle(tester);
+
+        expect(find.byType(TidyProgressCard), findsNothing);
+        expect(events.hasListener, isFalse);
+        expect(find.text('Купить кабель'), findsOneWidget);
+        expect(find.text('Разобрать'), findsOneWidget);
+      },
+    );
+
+    testWidgets('a silent server is given up on after 20 s, not a slow one', (
+      tester,
+    ) async {
+      final events = modelStreams();
+
+      await dictate(tester);
+      await tidy(tester);
+      events.add(sseEvent('accepted'));
+      await settle(tester);
+
+      // Half a minute of thinking, a heartbeat every 5 s: still waiting.
+      for (var i = 0; i < 6; i++) {
+        events.add(sseEvent('heartbeat'));
+        await tester.pump(const Duration(seconds: 5));
+      }
+      expect(inCard('Модель думает'), findsOneWidget);
+      expect(find.textContaining('Сервер замолчал'), findsNothing);
+
+      await tester.pump(const Duration(seconds: 21));
+      await tester.pump();
+
+      expect(
+        find.text('Сервер замолчал — можно повторить или сохранить как есть.'),
+        findsOneWidget,
+      );
+      expect(inCard('Повторить'), findsOneWidget);
     });
 
     testWidgets('not offered for the sandbox', (tester) async {
