@@ -374,10 +374,10 @@ void main() {
       await pumpProject(tester);
 
       await openDraft(tester);
-      // The field this screen exists for: 252 px of it, at 20 px type.
+      // The field this screen exists for: sized to its text, at 16.5 px.
       expect(find.byType(TaskScreen), findsOneWidget);
       final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.style?.fontSize, 20);
+      expect(field.style?.fontSize, 16.5);
       expect(field.maxLines, isNull);
 
       await tester.enterText(find.byType(TextField), 'Позвонить прорабу');

@@ -267,10 +267,6 @@ abstract final class Targets {
 
   /// The desktop rail.
   static const double railWidth = 76;
-
-  /// The task text area on the task screen. **The** number of this iteration:
-  /// the answer to "в композере видно два-три слова".
-  static const double taskField = 252;
 }
 
 /// Standard gaps. Only the ones that repeat; a one-off distance stays a literal

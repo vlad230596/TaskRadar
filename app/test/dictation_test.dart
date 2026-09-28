@@ -147,7 +147,7 @@ void main() {
       expect(find.text('Купить кабель'), findsOneWidget);
     });
 
-    testWidgets('the recognised text is 25 px, which is the point', (
+    testWidgets('the recognised text is 20 px, which is the point', (
       tester,
     ) async {
       // Complaint number one, on the screen where it hurt most: a dictated
@@ -158,7 +158,7 @@ void main() {
       await tester.pump();
 
       final field = tester.widget<TextField>(find.byType(TextField));
-      expect(field.style?.fontSize, 25);
+      expect(field.style?.fontSize, 20);
     });
 
     testWidgets('the second "Готово" hands the text back and leaves', (

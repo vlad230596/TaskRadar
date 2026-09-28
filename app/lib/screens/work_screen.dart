@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/mode_navigation.dart';
+import '../widgets/mode_title.dart';
 import '../widgets/mutation_feedback.dart';
 import 'pick_screen.dart';
 import 'shell_screen.dart';
@@ -87,18 +88,27 @@ class WorkHeader extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
       child: Row(
         children: <Widget>[
-          Text(AppMode.work.title, style: AppText.mode),
-          const SizedBox(width: 12),
-          // Пустой набор не рисует ряд пустых слотов: точки описывают набор,
-          // а его пока нет, и об этом говорит само тело экрана.
-          if (tasks.isNotEmpty)
-            FocusSlots(
-              taken: tasks.length,
-              current: tasks.indexWhere((task) => task.id == _headOf(tasks).id),
-              size: wide ? 12 : 11,
-              gap: wide ? 7 : 6,
+          // Название и точки набора делят то, что осталось от кнопок справа;
+          // не влезает — сжимается название, а не переносится посреди слова.
+          Expanded(
+            child: Row(
+              children: <Widget>[
+                Flexible(child: ModeTitle(AppMode.work.title)),
+                const SizedBox(width: 12),
+                // Пустой набор не рисует ряд пустых слотов: точки описывают
+                // набор, а его пока нет, и об этом говорит само тело экрана.
+                if (tasks.isNotEmpty)
+                  FocusSlots(
+                    taken: tasks.length,
+                    current: tasks.indexWhere(
+                      (task) => task.id == _headOf(tasks).id,
+                    ),
+                    size: wide ? 12 : 11,
+                    gap: wide ? 7 : 6,
+                  ),
+              ],
             ),
-          const Spacer(),
+          ),
           _PickButton(empty: tasks.isEmpty),
           const ShellOverflowButton(),
         ],

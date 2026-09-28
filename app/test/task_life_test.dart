@@ -53,6 +53,13 @@ void main() {
     }
   }
 
+  /// Блок свёрнут в одну строку (вариант A); разбивка — по тапу на неё.
+  Future<void> expand(WidgetTester tester) async {
+    await tester.ensureVisible(find.byType(SpanBar));
+    await tester.tap(find.byType(SpanBar));
+    await settle(tester);
+  }
+
   Future<void> pumpTask(WidgetTester tester) async {
     await tester.pumpWidget(
       ProviderScope(
@@ -70,15 +77,50 @@ void main() {
       ),
     );
     await settle(tester);
+    await expand(tester);
   }
+
+  testWidgets('свёрнутый блок — одна строка про текущую фазу', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          apiClientProvider.overrideWithValue(backend.client),
+          boardSnapshotStoreProvider.overrideWithValue(
+            FakeBoardSnapshotStore(),
+          ),
+        ],
+        child: MaterialApp(
+          theme: buildAppTheme(),
+          home: TaskScreen(projectId: projectId, taskId: taskId),
+          onGenerateRoute: AppRoutes.onGenerateRoute,
+        ),
+      ),
+    );
+    await settle(tester);
+
+    final since = DateTime.now().subtract(const Duration(days: 3));
+    final stamp =
+        '${since.day.toString().padLeft(2, '0')}.'
+        '${since.month.toString().padLeft(2, '0')}';
+
+    expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsNothing);
+    expect(find.text('ждёт 3 дня · с $stamp'), findsOneWidget);
+
+    // Тап раскрывает прежнюю карточку, тап по её заголовку — сворачивает.
+    await expand(tester);
+    expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsOneWidget);
+    await tester.tap(find.text('ЖИЗНЬ ЗАДАЧИ'));
+    await settle(tester);
+    expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsNothing);
+  });
 
   testWidgets('разбивка по фазам берётся из журнала', (tester) async {
     await pumpTask(tester);
 
     expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsOneWidget);
-    // Восемь дней жизни: четыре в очереди, один в работе, три в блокере.
+    // Восемь дней жизни: четыре открыта, один в работе, три в блокере.
     expect(find.text('8 дней'), findsOneWidget);
-    expect(find.text('лежала в очереди'), findsOneWidget);
+    expect(find.text('была открыта'), findsOneWidget);
     expect(find.text('была в работе'), findsOneWidget);
     expect(find.text('4 д'), findsOneWidget);
     expect(find.text('1 д'), findsOneWidget);
@@ -126,7 +168,7 @@ void main() {
     // показывает, а не прячется.
     expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsOneWidget);
     expect(find.textContaining('ждёт с '), findsOneWidget);
-    expect(find.text('лежала в очереди'), findsNothing);
+    expect(find.text('была открыта'), findsNothing);
   });
 
   testWidgets('пока журнал едет — блок говорит, что считает', (tester) async {
@@ -137,7 +179,12 @@ void main() {
     final rerouted = FakeBackend();
     FakeProjectBackend(rerouted)
       ..addProject(name: 'Дом', id: projectId)
-      ..addTask(projectId: projectId, id: taskId, title: 'x', status: 'blocked');
+      ..addTask(
+        projectId: projectId,
+        id: taskId,
+        title: 'x',
+        status: 'blocked',
+      );
     rerouted.on('GET', '/tasks/:id/events', (_) => inFlight.future);
 
     await tester.pumpWidget(
@@ -157,6 +204,11 @@ void main() {
     );
     await settle(tester);
 
+    // Свёрнутая строка говорит то же коротко...
+    expect(find.textContaining('считаем…'), findsOneWidget);
+    await expand(tester);
+
+    // ...а раскрытая карточка — полностью.
     expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsOneWidget);
     expect(find.textContaining('Считаем по журналу'), findsOneWidget);
 
@@ -178,7 +230,7 @@ void main() {
   });
 
   test('фазы и подписи разведены по времени', () {
-    expect(phaseLabel(TaskLifePhase.queued), 'лежала в очереди');
+    expect(phaseLabel(TaskLifePhase.queued), 'была открыта');
     expect(phaseLabel(TaskLifePhase.working), 'была в работе');
     expect(phaseColour(TaskLifePhase.done), AppColors.done);
     expect(TaskStatus.values, contains(TaskStatus.blocked));

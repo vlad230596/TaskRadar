@@ -22,7 +22,7 @@ import '../theme/tokens.dart';
 
 /// Цвет фазы жизни задачи. Одно место на всё приложение.
 ///
-/// Серый — очередь, индиго — работа, янтарный — блокер, зелёный — закрыто. Так
+/// Серый — открыта, индиго — работа, янтарный — блокер, зелёный — закрыто. Так
 /// и на эталонных страницах, и цвета здесь не новые: это те же токены, что у
 /// статусов в остальном интерфейсе, — сегмент полоски и точка статуса в списке
 /// задач обязаны означать одно и то же, иначе графика вместо текста ничего не
@@ -40,7 +40,7 @@ Color phaseColour(TaskLifePhase phase) => switch (phase) {
 /// то есть про то, что уже было. Текущая фаза получает приписку «с 18.09» —
 /// см. `Edit.html` и экран задачи.
 String phaseLabel(TaskLifePhase phase) => switch (phase) {
-  TaskLifePhase.queued => 'лежала в очереди',
+  TaskLifePhase.queued => 'была открыта',
   TaskLifePhase.working => 'была в работе',
   TaskLifePhase.blocked => 'ждала',
   TaskLifePhase.done => 'закрыта',
@@ -48,7 +48,7 @@ String phaseLabel(TaskLifePhase phase) => switch (phase) {
 
 /// Короткая подпись фазы — для легенды широкого экрана.
 String phaseShortLabel(TaskLifePhase phase) => switch (phase) {
-  TaskLifePhase.queued => 'в очереди',
+  TaskLifePhase.queued => 'открыта',
   TaskLifePhase.working => 'в работе',
   TaskLifePhase.blocked => 'блокер',
   TaskLifePhase.done => 'закрыто',
