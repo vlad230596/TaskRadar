@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import { constantTimeEquals, normaliseEmail, verifyCredentials, verifyPassword } from "../src/lib/credentials";
-import type { AuthConfig } from "../src/lib/authConfig";
 
 /**
  * Known-value fixtures for a TEST-ONLY password. These are not the real owner
@@ -14,13 +13,6 @@ const HASH_COST_12 = "$2b$12$z7Qc2.CvoVgGEjBfsFNQN.BRa5/FbH9mM62TpBkICjtNY46RM4y
 
 /** Same password at cost 4, used where a test only needs a valid hash quickly. */
 const HASH_COST_4 = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
-
-const config: AuthConfig = {
-  email: "owner@example.com",
-  passwordHash: HASH_COST_4,
-  jwtSecret: "a".repeat(64),
-  cookieSecure: false,
-};
 
 describe("verifyPassword", () => {
   it("accepts the correct password against a known cost-12 bcrypt hash", async () => {
@@ -67,49 +59,53 @@ describe("constantTimeEquals", () => {
 });
 
 describe("verifyCredentials", () => {
-  it("accepts the correct email and password", async () => {
-    await expect(verifyCredentials("owner@example.com", TEST_PASSWORD, config)).resolves.toBe(true);
+  const user = { id: "user-1", passwordHash: HASH_COST_4, disabledAt: null };
+
+  it("returns the user's id for the correct password", async () => {
+    await expect(verifyCredentials(user, TEST_PASSWORD)).resolves.toBe("user-1");
   });
 
-  it("accepts the correct email in a different case and with padding", async () => {
-    await expect(verifyCredentials("  OWNER@Example.com  ", TEST_PASSWORD, config)).resolves.toBe(true);
+  it("returns null for a wrong password", async () => {
+    await expect(verifyCredentials(user, "nope")).resolves.toBeNull();
   });
 
-  it("rejects a wrong password with the right email", async () => {
-    await expect(verifyCredentials("owner@example.com", "nope", config)).resolves.toBe(false);
+  it("returns null when there is no such user", async () => {
+    await expect(verifyCredentials(null, TEST_PASSWORD)).resolves.toBeNull();
   });
 
-  it("rejects a wrong email with the right password", async () => {
-    await expect(verifyCredentials("someone.else@example.com", TEST_PASSWORD, config)).resolves.toBe(false);
+  it("returns null for a disabled user even with the correct password", async () => {
+    const disabled = { ...user, disabledAt: new Date(0) };
+    await expect(verifyCredentials(disabled, TEST_PASSWORD)).resolves.toBeNull();
   });
 
-  it("rejects when both are wrong", async () => {
-    await expect(verifyCredentials("someone.else@example.com", "nope", config)).resolves.toBe(false);
-  });
-
-  it("still performs the bcrypt comparison when the email is wrong", async () => {
+  it("still performs the bcrypt comparison when there is no user or the user is disabled", async () => {
     /*
      * Guards the timing property that makes the generic 401 meaningful: if the
-     * implementation short-circuited on a wrong email it would skip bcrypt and
-     * return almost instantly, letting an attacker distinguish "unknown email"
-     * from "wrong password" by response time alone.
+     * implementation short-circuited on a missing or disabled user it would skip
+     * bcrypt and return almost instantly, letting an attacker distinguish
+     * "unknown email" from "wrong password" by response time alone.
      *
      * Uses a cost-12 hash so the real work is unmistakably slow, then asserts that
-     * a wrong-email attempt costs a comparable amount of time to a wrong-password
+     * the fast-path candidates cost a comparable amount of time to a wrong-password
      * attempt rather than being effectively free.
      */
-    const cost12Config: AuthConfig = { ...config, passwordHash: HASH_COST_12 };
+    const cost12 = { ...user, passwordHash: HASH_COST_12 };
 
     const startWrongPassword = performance.now();
-    await verifyCredentials("owner@example.com", "nope", cost12Config);
+    await verifyCredentials(cost12, "nope");
     const wrongPasswordMs = performance.now() - startWrongPassword;
 
-    const startWrongEmail = performance.now();
-    await verifyCredentials("someone.else@example.com", TEST_PASSWORD, cost12Config);
-    const wrongEmailMs = performance.now() - startWrongEmail;
+    const startNoUser = performance.now();
+    await verifyCredentials(null, TEST_PASSWORD);
+    const noUserMs = performance.now() - startNoUser;
+
+    const startDisabled = performance.now();
+    await verifyCredentials({ ...cost12, disabledAt: new Date(0) }, TEST_PASSWORD);
+    const disabledMs = performance.now() - startDisabled;
 
     // A skipped bcrypt compare would be sub-millisecond; a real one at cost 12 is
-    // tens to hundreds of ms. Assert the wrong-email path is not a fast path.
-    expect(wrongEmailMs).toBeGreaterThan(wrongPasswordMs / 4);
+    // tens to hundreds of ms. Assert neither path is a fast path.
+    expect(noUserMs).toBeGreaterThan(wrongPasswordMs / 4);
+    expect(disabledMs).toBeGreaterThan(wrongPasswordMs / 4);
   });
 });

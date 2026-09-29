@@ -18,6 +18,12 @@ class TokenStorage {
   /// Namespaced so it cannot collide with anything a future feature stores.
   static const String tokenKey = 'taskradar.session_token';
 
+  /// Which user the on-device data (board snapshot, capture queue, selected
+  /// scope) belongs to. Deliberately separate from the token and *not* removed by
+  /// [clear]: it has to outlive a sign-out, otherwise the next sign-in could not
+  /// tell "the same person again" from "somebody else".
+  static const String lastUserIdKey = 'taskradar.last_user_id';
+
   final FlutterSecureStorage _storage;
 
   /// Returns the stored token, or null if there is none.
@@ -54,5 +60,22 @@ class TokenStorage {
     } catch (error) {
       debugPrint('TokenStorage.clear failed: $error');
     }
+  }
+
+  /// The id of the user the local data belongs to, or null if unknown (a fresh
+  /// install, or one from before this was tracked). Like [read], a platform
+  /// failure reads as null: unknown makes the caller wipe, which is the safe side.
+  Future<String?> readLastUserId() async {
+    try {
+      final id = await _storage.read(key: lastUserIdKey);
+      return (id == null || id.isEmpty) ? null : id;
+    } catch (error) {
+      debugPrint('TokenStorage.readLastUserId failed: $error');
+      return null;
+    }
+  }
+
+  Future<void> writeLastUserId(String userId) {
+    return _storage.write(key: lastUserIdKey, value: userId);
   }
 }

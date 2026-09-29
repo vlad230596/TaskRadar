@@ -31,6 +31,7 @@ class FakeSettingsStore implements SettingsStore {
   Object? writeFailure;
 
   int readCount = 0;
+  int scopeClearCount = 0;
   final List<ReminderTime> writes = <ReminderTime>[];
   final List<String> scopeWrites = <String>[];
   final List<String> modeWrites = <String>[];
@@ -62,6 +63,12 @@ class FakeSettingsStore implements SettingsStore {
     if (failure != null) throw failure;
     scopeWrites.add(scopeId);
     selectedScopeId = scopeId;
+  }
+
+  @override
+  Future<void> clearSelectedScopeId() async {
+    scopeClearCount++;
+    selectedScopeId = null;
   }
 
   @override

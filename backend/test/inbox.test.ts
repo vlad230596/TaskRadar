@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vites
 import type { FastifyInstance } from "fastify";
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { inMemoryUsers, tokenFor, USER_A, USER_B } from "./support/users";
 
 /*
  * The sandbox routes (F8).
@@ -15,12 +16,13 @@ import type { BuildAppOptions } from "../src/app";
 const prismaMock = vi.hoisted(() => ({
   inboxItem: {
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
   },
-  project: { findUnique: vi.fn() },
+  project: { findFirst: vi.fn() },
   task: { aggregate: vi.fn(), create: vi.fn() },
   taskEvent: { create: vi.fn() },
   dictationParse: { updateMany: vi.fn() },
@@ -31,8 +33,7 @@ vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
 
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4. */
+/** bcrypt hash of the test password at cost 4 (see test/support/users.ts). */
 const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
 
 const baseConfig: AuthConfig = {
@@ -44,6 +45,7 @@ const baseConfig: AuthConfig = {
 
 interface InboxRow {
   id: string;
+  userId: string;
   text: string;
   captureKey?: string | null;
   createdAt: Date;
@@ -71,15 +73,17 @@ const T0 = new Date("2026-01-01T00:00:00.000Z");
 let items: InboxRow[] = [];
 let tasks: TaskRow[] = [];
 let events: EventRow[] = [];
-let projects: string[] = [];
+/** Projects by id, with the user who owns their scope. */
+let projects: { id: string; userId: string }[] = [];
 let nextId = 0;
 
 function seed(): void {
   nextId = 0;
   items = [
-    { id: "inb-1", text: "Спросить про кабель", createdAt: T0, updatedAt: T0 },
+    { id: "inb-1", userId: USER_A.id, text: "Спросить про кабель", createdAt: T0, updatedAt: T0 },
     {
       id: "inb-2",
+      userId: USER_A.id,
       text: "Посмотреть налоги",
       createdAt: new Date(T0.getTime() + 60_000),
       updatedAt: T0,
@@ -87,34 +91,41 @@ function seed(): void {
   ];
   tasks = [{ id: "tsk-1", projectId: "prj-1", title: "Уже есть", position: 1000, status: "pending" }];
   events = [];
-  projects = ["prj-1"];
+  projects = [{ id: "prj-1", userId: USER_A.id }];
 }
 
 let buildApp: (options?: BuildAppOptions) => Promise<FastifyInstance>;
 let app: FastifyInstance;
+/** USER_A's token: who every test acts as unless it says otherwise. */
 let token: string;
+let tokenB: string;
 
-function call(method: string, url: string, payload?: unknown, withToken = true) {
+function send(bearer: string | null, method: string, url: string, payload?: unknown) {
   return app.inject({
     method: method as "GET",
     url,
-    headers: withToken ? { authorization: `Bearer ${token}` } : {},
+    headers: bearer === null ? {} : { authorization: `Bearer ${bearer}` },
     ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
   });
+}
+
+function call(method: string, url: string, payload?: unknown, withToken = true) {
+  return send(withToken ? token : null, method, url, payload);
+}
+
+/** The same, as USER_B. */
+function callAsB(method: string, url: string, payload?: unknown) {
+  return send(tokenB, method, url, payload);
 }
 
 beforeAll(async () => {
   const appModule = await import("../src/app");
   buildApp = appModule.buildApp;
-  app = await buildApp({ authConfig: baseConfig, logger: false });
+  app = await buildApp({ authConfig: baseConfig, logger: false, users: inMemoryUsers() });
   await app.ready();
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/auth/login",
-    payload: { email: baseConfig.email, password: TEST_PASSWORD },
-  });
-  token = (login.json() as { token: string }).token;
+  token = await tokenFor(app, USER_A.email);
+  tokenB = await tokenFor(app, USER_B.email);
 });
 
 afterAll(async () => {
@@ -124,7 +135,7 @@ afterAll(async () => {
 beforeEach(() => {
   seed();
   for (const fn of Object.values(prismaMock.inboxItem)) fn.mockReset();
-  prismaMock.project.findUnique.mockReset();
+  prismaMock.project.findFirst.mockReset();
   prismaMock.task.aggregate.mockReset();
   prismaMock.task.create.mockReset();
   prismaMock.taskEvent.create.mockReset();
@@ -132,37 +143,57 @@ beforeEach(() => {
   prismaMock.dictationParse.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.$transaction.mockReset();
 
-  prismaMock.inboxItem.findMany.mockImplementation(() =>
-    [...items].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
+  // Every read filters on the owner, and the fake evaluates it: a route that
+  // forgot `userId` would show another user's rows here instead of passing.
+  prismaMock.inboxItem.findMany.mockImplementation((args: { where: { userId: string } }) =>
+    items
+      .filter((i) => i.userId === args.where.userId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
   );
-  // `where` is either `{ id }` or -- since F8.1 -- `{ captureKey }`, and the
+  prismaMock.inboxItem.findFirst.mockImplementation(
+    (args: { where: { id: string; userId: string } }) =>
+      items.find((i) => i.id === args.where.id && i.userId === args.where.userId) ?? null,
+  );
+  // `where` is either `{ id }` or -- since F8.1 -- the compound key
+  // `{ userId_captureKey }` (a key is unique per user, not globally), and the
   // fake has to answer both, because the idempotent capture path is a lookup by
   // key followed by a create.
   prismaMock.inboxItem.findUnique.mockImplementation(
-    (args: { where: { id?: string; captureKey?: string } }) =>
-      items.find((i) =>
-        args.where.id === undefined
-          ? i.captureKey === args.where.captureKey
-          : i.id === args.where.id,
-      ) ?? null,
+    (args: {
+      where: { id?: string; userId_captureKey?: { userId: string; captureKey: string } };
+    }) => {
+      const compound = args.where.userId_captureKey;
+      if (compound === undefined && args.where.id === undefined) {
+        throw new Error(`findUnique where the fake does not know: ${JSON.stringify(args.where)}`);
+      }
+      return (
+        items.find((i) =>
+          compound === undefined
+            ? i.id === args.where.id
+            : i.userId === compound.userId && i.captureKey === compound.captureKey,
+        ) ?? null
+      );
+    },
   );
   prismaMock.inboxItem.create.mockImplementation(
-    (args: { data: { text: string; captureKey?: string } }) => {
-      // The unique index on `captureKey`, which is the only thing standing
-      // between a retried capture and a duplicate line. Modelled here because
-      // the route has a branch that exists purely for losing that race.
+    (args: { data: { userId: string; text: string; captureKey?: string } }) => {
+      // The unique index on (`userId`, `captureKey`), which is the only thing
+      // standing between a retried capture and a duplicate line. Modelled here
+      // because the route has a branch that exists purely for losing that race.
+      // Per user: two people's phones may well generate the same key.
       if (
         args.data.captureKey !== undefined &&
-        items.some((i) => i.captureKey === args.data.captureKey)
+        items.some((i) => i.userId === args.data.userId && i.captureKey === args.data.captureKey)
       ) {
         throw Object.assign(new Error("Unique constraint failed"), {
           code: "P2002",
-          meta: { target: ["captureKey"] },
+          meta: { target: ["userId", "captureKey"] },
         });
       }
 
       const row: InboxRow = {
         id: `inb-new-${++nextId}`,
+        userId: args.data.userId,
         text: args.data.text,
         captureKey: args.data.captureKey ?? null,
         createdAt: new Date(T0.getTime() + 3_600_000),
@@ -186,10 +217,12 @@ beforeEach(() => {
     return items.splice(index, 1)[0]!;
   });
 
-  prismaMock.project.findUnique.mockImplementation((args: { where: { id: string } }) =>
-    projects.includes(args.where.id)
-      ? { id: args.where.id, name: "Проект", scopeId: "scope_main", archivedAt: null }
-      : null,
+  // A project belongs to whoever owns its scope: `{ id, scope: { userId } }`.
+  prismaMock.project.findFirst.mockImplementation(
+    (args: { where: { id: string; scope: { userId: string } } }) =>
+      projects.some((p) => p.id === args.where.id && p.userId === args.where.scope.userId)
+        ? { id: args.where.id, name: "Проект", scopeId: "scope_main", archivedAt: null }
+        : null,
   );
   prismaMock.task.aggregate.mockImplementation((args: { where: { projectId: string } }) => {
     const positions = tasks
@@ -267,7 +300,9 @@ describe("POST /inbox", () => {
     const args = prismaMock.inboxItem.create.mock.calls[0]![0] as {
       data: Record<string, unknown>;
     };
-    expect(Object.keys(args.data)).toEqual(["text"]);
+    // The owner is put there by the route, from the session -- never the body.
+    expect(Object.keys(args.data).sort()).toEqual(["text", "userId"]);
+    expect(args.data.userId).toBe(USER_A.id);
   });
 });
 
@@ -499,6 +534,91 @@ describe("POST /inbox/:id/file", () => {
 });
 
 /*
+ * Several people on one server: every inbox row belongs to one user, and to
+ * anyone else it does not exist -- 404, never 403, so an id gives nothing away.
+ */
+describe("inbox isolation between users", () => {
+  const KEY = "8f14e45f-ceea-467a-a4c1-0f1b2c3d4e5f";
+
+  beforeEach(() => {
+    items.push({
+      id: "inb-b1",
+      userId: USER_B.id,
+      text: "Чужая мысль",
+      createdAt: new Date(T0.getTime() + 120_000),
+      updatedAt: T0,
+    });
+    projects.push({ id: "prj-b", userId: USER_B.id });
+  });
+
+  it("lists only the caller's own items", async () => {
+    const asA = (await call("GET", "/inbox")).json() as InboxRow[];
+    const asB = (await callAsB("GET", "/inbox")).json() as InboxRow[];
+
+    expect(asA.map((i) => i.id)).toEqual(["inb-1", "inb-2"]);
+    expect(asB.map((i) => i.id)).toEqual(["inb-b1"]);
+  });
+
+  it("404s when B edits A's item, and leaves the text alone", async () => {
+    const res = await callAsB("PATCH", "/inbox/inb-1", { text: "Взлом" });
+
+    expect(res.statusCode).toBe(404);
+    expect(items.find((i) => i.id === "inb-1")!.text).toBe("Спросить про кабель");
+    expect(prismaMock.inboxItem.update).not.toHaveBeenCalled();
+  });
+
+  it("404s when B deletes A's item, and leaves it in place", async () => {
+    const res = await callAsB("DELETE", "/inbox/inb-1");
+
+    expect(res.statusCode).toBe(404);
+    expect(items.map((i) => i.id)).toContain("inb-1");
+    expect(prismaMock.inboxItem.delete).not.toHaveBeenCalled();
+  });
+
+  it("404s when B files A's item, even into B's own project", async () => {
+    const res = await callAsB("POST", "/inbox/inb-1/file", { projectId: "prj-b" });
+
+    expect(res.statusCode).toBe(404);
+    expect(items.map((i) => i.id)).toContain("inb-1");
+    expect(tasks).toHaveLength(1);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("404s when A files their own item into B's project, and files nothing", async () => {
+    const res = await call("POST", "/inbox/inb-1/file", { projectId: "prj-b" });
+
+    expect(res.statusCode).toBe(404);
+    expect((res.json() as { message: string }).message).toMatch(/project/i);
+    expect(items.map((i) => i.id)).toContain("inb-1");
+    expect(tasks).toHaveLength(1);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("gives two users the same capture key without a collision", async () => {
+    const a = await call("POST", "/inbox", { text: "Мысль А", captureKey: KEY });
+    const b = await callAsB("POST", "/inbox", { text: "Мысль Б", captureKey: KEY });
+
+    // Two phones may well generate the same key; the index is per user, so
+    // neither capture is taken for a replay of the other.
+    expect(a.statusCode).toBe(201);
+    expect(b.statusCode).toBe(201);
+    expect((a.json() as InboxRow).id).not.toBe((b.json() as InboxRow).id);
+    expect(items.find((i) => i.userId === USER_A.id && i.captureKey === KEY)!.text).toBe("Мысль А");
+    expect(items.find((i) => i.userId === USER_B.id && i.captureKey === KEY)!.text).toBe("Мысль Б");
+  });
+
+  it("still answers the same user's replay with the original row and a 200", async () => {
+    await callAsB("POST", "/inbox", { text: "Мысль Б", captureKey: KEY });
+    const first = await call("POST", "/inbox", { text: "Мысль А", captureKey: KEY });
+    const replay = await call("POST", "/inbox", { text: "Мысль А", captureKey: KEY });
+
+    expect(replay.statusCode).toBe(200);
+    expect((replay.json() as InboxRow).id).toBe((first.json() as InboxRow).id);
+    expect(items.filter((i) => i.captureKey === KEY)).toHaveLength(2);
+  });
+});
+
+/*
  * The dataset label (F15): a line saved from a `sandbox` answer tells its
  * sample what was kept -- the line, or the task it was filed as.
  */
@@ -517,11 +637,16 @@ describe("linking a dictation sample", () => {
     });
 
     const item = res.json() as InboxRow;
-    expect(lastLink().where).toEqual({ id: "dp-3", linkedAt: null, kind: { in: ["sandbox"] } });
+    expect(lastLink().where).toEqual({
+      id: "dp-3",
+      userId: USER_A.id,
+      linkedAt: null,
+      kind: { in: ["sandbox"] },
+    });
     expect(lastLink().data).toMatchObject({ inboxItemId: item.id, finalContent: "Поменять колодки" });
     // The key and the text are all the line itself stores.
     const created = prismaMock.inboxItem.create.mock.calls[0]![0] as { data: object };
-    expect(Object.keys(created.data).sort()).toEqual(["captureKey", "text"]);
+    expect(Object.keys(created.data).sort()).toEqual(["captureKey", "text", "userId"]);
   });
 
   it("does not label again on a replay of the same capture", async () => {
@@ -558,6 +683,7 @@ describe("linking a dictation sample", () => {
     const task = res.json() as TaskRow;
     expect(lastLink().where).toEqual({
       id: "dp-5",
+      userId: USER_A.id,
       linkedAt: null,
       kind: { in: ["sandbox", "task_tidy"] },
     });

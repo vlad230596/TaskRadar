@@ -7,6 +7,7 @@ import { isPublicRoute } from "../src/lib/authGuard";
 // (and therefore do not construct a Prisma client) before DATABASE_URL is set below.
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { TEST_HASH, TEST_PASSWORD, USER_A, USER_B, USER_DISABLED, inMemoryUsers } from "./support/users";
 
 /*
  * The route modules construct a Prisma client at import time, which requires
@@ -15,10 +16,6 @@ import type { BuildAppOptions } from "../src/app";
  * runs on a machine with no database configured.
  */
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
-
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4 -- fast, since these tests log in repeatedly. */
-const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
 
 const baseConfig: AuthConfig = {
   email: "owner@example.com",
@@ -33,21 +30,26 @@ const PROTECTED_TEST_ROUTE = "/__test/protected";
 let buildApp: (options?: BuildAppOptions) => Promise<FastifyInstance>;
 let SESSION_COOKIE_NAME: string;
 let app: FastifyInstance;
+/** The users behind `app`; `disable()` switches one off mid-test. */
+let users: ReturnType<typeof inMemoryUsers>;
 
 /** Builds an app with a test-only protected route registered alongside the real ones. */
-async function buildTestApp(config: AuthConfig): Promise<FastifyInstance> {
-  const instance = await buildApp({ authConfig: config, logger: false });
+async function buildTestApp(
+  config: AuthConfig,
+  store: ReturnType<typeof inMemoryUsers> = inMemoryUsers(),
+): Promise<FastifyInstance> {
+  const instance = await buildApp({ authConfig: config, users: store, logger: false });
   instance.get(PROTECTED_TEST_ROUTE, async () => ({ reached: true }));
   await instance.ready();
   return instance;
 }
 
 /** Logs in and returns the token as the native client would read it: from the body. */
-async function loginForBodyToken(instance: FastifyInstance): Promise<string> {
+async function loginForBodyToken(instance: FastifyInstance, email: string = USER_A.email): Promise<string> {
   const res = await instance.inject({
     method: "POST",
     url: "/auth/login",
-    payload: { email: "owner@example.com", password: TEST_PASSWORD },
+    payload: { email, password: TEST_PASSWORD },
   });
   expect(res.statusCode).toBe(200);
   const body = res.json() as { token?: unknown };
@@ -119,7 +121,8 @@ beforeAll(async () => {
   const configModule = await import("../src/lib/authConfig");
   buildApp = appModule.buildApp;
   SESSION_COOKIE_NAME = configModule.SESSION_COOKIE_NAME;
-  app = await buildTestApp(baseConfig);
+  users = inMemoryUsers();
+  app = await buildTestApp(baseConfig, users);
 });
 
 afterAll(async () => {
@@ -204,7 +207,7 @@ describe("auth guard", () => {
 
   it("rejects a structurally valid token signed with the wrong secret", async () => {
     const otherApp = await buildTestApp({ ...baseConfig, jwtSecret: "a-completely-different-secret-value-x" });
-    const foreignToken = otherApp.jwt.sign({ sub: "owner" }, { expiresIn: 3600 });
+    const foreignToken = otherApp.jwt.sign({ sub: USER_A.id }, { expiresIn: 3600 });
     await otherApp.close();
 
     const res = await app.inject({
@@ -228,7 +231,7 @@ describe("auth guard", () => {
   });
 
   it("rejects an expired token", async () => {
-    const expired = app.jwt.sign({ sub: "owner" }, { expiresIn: -60 });
+    const expired = app.jwt.sign({ sub: USER_A.id }, { expiresIn: -60 });
     const res = await app.inject({
       method: "GET",
       url: PROTECTED_TEST_ROUTE,
@@ -394,6 +397,87 @@ describe("POST /auth/login", () => {
   });
 });
 
+describe("POST /auth/login -- several users", () => {
+  /** The `sub` claim of a JWT, read without verifying it -- the test only needs to see it. */
+  function subOf(token: string): unknown {
+    const payload = JSON.parse(Buffer.from(token.split(".")[1] as string, "base64url").toString("utf8")) as {
+      sub?: unknown;
+    };
+    return payload.sub;
+  }
+
+  it("issues a token whose subject is the user who logged in", async () => {
+    const token = await loginForBodyToken(app, USER_B.email);
+    expect(subOf(token)).toBe(USER_B.id);
+    expect(subOf(await loginForBodyToken(app))).toBe(USER_A.id);
+  });
+
+  it("gives a disabled account, an unknown email and a wrong password the identical 401", async () => {
+    const wrongPassword = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: USER_A.email, password: "wrong-password" },
+    });
+    const disabled = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      // The right password: only the account state may be the reason for refusing.
+      payload: { email: USER_DISABLED.email, password: TEST_PASSWORD },
+    });
+    const unknown = await app.inject({
+      method: "POST",
+      url: "/auth/login",
+      payload: { email: "nobody@example.com", password: TEST_PASSWORD },
+    });
+
+    expect(wrongPassword.statusCode).toBe(401);
+    for (const res of [disabled, unknown]) {
+      expect(res.statusCode).toBe(401);
+      expect(res.body).toBe(wrongPassword.body);
+      expect(res.headers["set-cookie"]).toBeUndefined();
+    }
+  });
+});
+
+describe("auth guard -- account state", () => {
+  it("rejects the token of a user disabled after logging in", async () => {
+    const localUsers = inMemoryUsers();
+    const localApp = await buildTestApp(baseConfig, localUsers);
+    const token = await loginForBodyToken(localApp, USER_B.email);
+    const headers = { authorization: `Bearer ${token}` };
+
+    const before = await localApp.inject({ method: "GET", url: PROTECTED_TEST_ROUTE, headers });
+    expect(before.statusCode).toBe(200);
+
+    localUsers.disable(USER_B.id);
+
+    const after = await localApp.inject({ method: "GET", url: PROTECTED_TEST_ROUTE, headers });
+    expect(after.statusCode).toBe(401);
+    expect(after.json()).toEqual({ error: "Unauthorized", message: "Unauthorized" });
+    await localApp.close();
+  });
+
+  it("rejects a validly signed token whose subject is not in the store", async () => {
+    const token = app.jwt.sign({ sub: "user-that-was-removed" }, { expiresIn: 3600 });
+    const res = await app.inject({
+      method: "GET",
+      url: PROTECTED_TEST_ROUTE,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it("rejects a validly signed token of a disabled account", async () => {
+    const token = app.jwt.sign({ sub: USER_DISABLED.id }, { expiresIn: 3600 });
+    const res = await app.inject({
+      method: "GET",
+      url: PROTECTED_TEST_ROUTE,
+      cookies: { [SESSION_COOKIE_NAME]: token },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});
+
 describe("POST /auth/login -- token in the response body (native clients)", () => {
   it("returns the token and its lifetime alongside ok", async () => {
     const res = await app.inject({
@@ -519,7 +603,7 @@ describe("GET /auth/me", () => {
   });
 
   it("rejects an expired token", async () => {
-    const expired = app.jwt.sign({ sub: "owner" }, { expiresIn: -60 });
+    const expired = app.jwt.sign({ sub: USER_A.id }, { expiresIn: -60 });
     const res = await app.inject({
       method: "GET",
       url: "/auth/me",
@@ -539,6 +623,7 @@ describe("GET /auth/me", () => {
     });
     expect(res.body).not.toContain(baseConfig.email);
     expect(res.body).not.toContain("owner");
+    expect(res.body).not.toContain(USER_A.id);
   });
 });
 
@@ -569,16 +654,16 @@ describe("POST /auth/logout", () => {
 
 describe("session token round-trip", () => {
   it("signs and verifies a token with the configured secret", async () => {
-    const token = app.jwt.sign({ sub: "owner" }, { expiresIn: 3600 });
+    const token = app.jwt.sign({ sub: USER_A.id }, { expiresIn: 3600 });
     const payload = app.jwt.verify<{ sub: string; iat: number; exp: number }>(token);
-    expect(payload.sub).toBe("owner");
+    expect(payload.sub).toBe(USER_A.id);
     expect(payload.exp - payload.iat).toBe(3600);
   });
 
   it("issues login tokens that expire in exactly 30 days", async () => {
     const token = await login(app);
     const payload = app.jwt.verify<{ sub: string; iat: number; exp: number }>(token);
-    expect(payload.sub).toBe("owner");
+    expect(payload.sub).toBe(USER_A.id);
     expect(payload.exp - payload.iat).toBe(2592000);
   });
 
@@ -590,7 +675,7 @@ describe("session token round-trip", () => {
   });
 
   it("fails to verify a tampered token", async () => {
-    const token = app.jwt.sign({ sub: "owner" }, { expiresIn: 3600 });
+    const token = app.jwt.sign({ sub: USER_A.id }, { expiresIn: 3600 });
     const tampered = tamperWithSignature(token);
     expect(() => app.jwt.verify(tampered)).toThrow();
   });
@@ -603,7 +688,7 @@ describe("session token round-trip", () => {
      */
     let token: string | undefined;
     for (let nonce = 0; nonce < 500 && token === undefined; nonce++) {
-      const candidate = app.jwt.sign({ sub: "owner", nonce }, { expiresIn: 3600 });
+      const candidate = app.jwt.sign({ sub: USER_A.id, nonce }, { expiresIn: 3600 });
       if (candidate.endsWith("A")) {
         token = candidate;
       }
@@ -620,13 +705,13 @@ describe("session token round-trip", () => {
   });
 
   it("fails to verify an expired token", async () => {
-    const expired = app.jwt.sign({ sub: "owner" }, { expiresIn: -60 });
+    const expired = app.jwt.sign({ sub: USER_A.id }, { expiresIn: -60 });
     expect(() => app.jwt.verify(expired)).toThrow();
   });
 
   it("fails to verify a token signed with a different secret", async () => {
     const otherApp = await buildTestApp({ ...baseConfig, jwtSecret: "yet-another-distinct-secret-value-abc" });
-    const foreignToken = otherApp.jwt.sign({ sub: "owner" }, { expiresIn: 3600 });
+    const foreignToken = otherApp.jwt.sign({ sub: USER_A.id }, { expiresIn: 3600 });
     await otherApp.close();
 
     expect(() => app.jwt.verify(foreignToken)).toThrow();

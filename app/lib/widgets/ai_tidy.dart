@@ -166,6 +166,9 @@ String tidyFailureMessage(Object error) {
       return 'Сервер замолчал — можно повторить или сохранить как есть.';
     case NetworkException():
       return 'Нет связи с сервером — можно сохранить как есть.';
+    case ApiException(statusCode: 429):
+      return 'Дневной лимит AI-запросов исчерпан — до 00:00 UTC можно '
+          'сохранить как есть.';
     case ApiException():
       return 'Модель не ответила — попробуйте ещё раз.';
     default:

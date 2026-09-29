@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 // (and therefore do not construct a Prisma client) before the mock below is in place.
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { inMemoryUsers } from "./support/users";
 
 /*
  * There is no database in this environment, so the Prisma client is replaced
@@ -68,7 +69,7 @@ const ORIGINAL_BUILD_DATE = process.env.BUILD_DATE;
 beforeAll(async () => {
   const appModule = await import("../src/app");
   buildApp = appModule.buildApp;
-  app = await buildApp({ authConfig: baseConfig, logger: false });
+  app = await buildApp({ authConfig: baseConfig, users: inMemoryUsers(), logger: false });
   await app.ready();
 });
 

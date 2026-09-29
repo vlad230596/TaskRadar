@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
-import type { AuthConfig } from "../src/lib/authConfig";
+import { OWNER_SUBJECT, type AuthConfig } from "../src/lib/authConfig";
+import { inMemoryUsers, tokenFor, USER_A, USER_B } from "./support/users";
 import {
   buildDictationMessages,
   createDictationParser,
@@ -30,7 +31,21 @@ import { resolveDictationModel } from "../src/domain/dictationModel";
 const settings = vi.hoisted(() => new Map<string, string>());
 /** Rows written to `dictation_parses`, in order. */
 const samples = vi.hoisted(() => [] as Record<string, unknown>[]);
+/** `ai_usage` rows as `"userId|day" -> count`: what the daily limit reads and writes. */
+const aiUsage = vi.hoisted(() => new Map<string, number>());
 const prismaMock = vi.hoisted(() => ({
+  aiUsage: {
+    // The atomic upsert-and-increment `consumeAiQuota` relies on: answers the
+    // count *after* this request, so the limit check sees what the real row would.
+    upsert: vi.fn(
+      async (args: { where: { userId_day: { userId: string; day: string } } }) => {
+        const { userId, day } = args.where.userId_day;
+        const count = (aiUsage.get(`${userId}|${day}`) ?? 0) + 1;
+        aiUsage.set(`${userId}|${day}`, count);
+        return { count };
+      },
+    ),
+  },
   dictationParse: {
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
       samples.push(args.data);
@@ -53,8 +68,7 @@ const prismaMock = vi.hoisted(() => ({
 vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4. */
+/** bcrypt hash of the test password at cost 4 (see test/support/users.ts). */
 const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
 
 const authConfig: AuthConfig = {
@@ -63,6 +77,16 @@ const authConfig: AuthConfig = {
   jwtSecret: "test-jwt-secret-".repeat(4),
   cookieSecure: false,
 };
+
+/**
+ * The users store the route tests pass to `buildApp`: USER_A and USER_B, and
+ * the server's owner (`OWNER_SUBJECT`), who is not either of them -- the model
+ * setting checks the id, and a token for it is signed directly.
+ */
+function usersWithOwner() {
+  const base = inMemoryUsers();
+  return { ...base, isActive: async (id: string) => id === OWNER_SUBJECT || base.isActive(id) };
+}
 
 /** Wednesday 23 September 2026, 22:30 UTC -- already Thursday in Moscow. */
 const NOW = new Date("2026-09-23T22:30:00.000Z");
@@ -431,37 +455,51 @@ describe("streamTimeoutFor", () => {
 describe("POST /dictation/parse", () => {
   let app: FastifyInstance;
   let offApp: FastifyInstance;
+  /** A server whose users get two AI requests a day. */
+  let limitedApp: FastifyInstance;
+  /** USER_A's token: who every test acts as unless it says otherwise. */
   let token: string;
+  let tokenB: string;
+  let ownerToken: string;
   const parser = vi.fn<DictationParser>();
   const streamTimeoutMs = vi.fn((textLength: number) => 10_000 + textLength);
 
   beforeAll(async () => {
     const { buildApp } = await import("../src/app");
+    const users = usersWithOwner();
     app = await buildApp({
       authConfig,
       logger: false,
+      users,
       dictation: { parser, defaultModel: "env-model", streamTimeoutMs },
       dictationHeartbeatMs: 20,
     });
-    offApp = await buildApp({ authConfig, logger: false, dictation: null });
-    const login = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: authConfig.email, password: TEST_PASSWORD },
+    offApp = await buildApp({ authConfig, logger: false, users, dictation: null });
+    limitedApp = await buildApp({
+      authConfig,
+      logger: false,
+      users,
+      aiDailyLimit: 2,
+      dictation: { parser, defaultModel: "env-model", streamTimeoutMs },
+      dictationHeartbeatMs: 20,
     });
-    token = (login.json() as { token: string }).token;
+    token = await tokenFor(app, USER_A.email);
+    tokenB = await tokenFor(app, USER_B.email);
+    // All apps share one JWT secret (from authConfig), so this works on each.
+    ownerToken = app.jwt.sign({ sub: OWNER_SUBJECT });
   });
 
   afterAll(async () => {
     await app?.close();
     await offApp?.close();
+    await limitedApp?.close();
   });
 
-  const post = (target: FastifyInstance, payload: unknown, withToken = true) =>
+  const post = (target: FastifyInstance, payload: unknown, withToken = true, bearer = token) =>
     target.inject({
       method: "POST",
       url: "/dictation/parse",
-      headers: withToken ? { authorization: `Bearer ${token}` } : {},
+      headers: withToken ? { authorization: `Bearer ${bearer}` } : {},
       payload: payload as Record<string, unknown>,
     });
 
@@ -477,6 +515,8 @@ describe("POST /dictation/parse", () => {
 
   beforeEach(() => {
     samples.length = 0;
+    aiUsage.clear();
+    prismaMock.aiUsage.upsert.mockClear();
   });
 
   it("answers with the proposal and the id of the sample it kept", async () => {
@@ -515,6 +555,16 @@ describe("POST /dictation/parse", () => {
     });
     // The prompt's calendar is built from this moment, so a replay needs it.
     expect(samples[0]!.requestedAt).toBeInstanceOf(Date);
+  });
+
+  it("keeps the sample under the caller, whoever that is", async () => {
+    parser.mockResolvedValueOnce(traceOf({}));
+    parser.mockResolvedValueOnce(traceOf({}));
+
+    await post(app, { text: "x", timeZone: "UTC" });
+    await post(app, { text: "y", timeZone: "UTC" }, true, tokenB);
+
+    expect(samples.map((sample) => sample.userId)).toEqual([USER_A.id, USER_B.id]);
   });
 
   it("still answers when the sample cannot be kept", async () => {
@@ -562,12 +612,81 @@ describe("POST /dictation/parse", () => {
     expect(res.statusCode).toBe(503);
   });
 
-  describe("as an event stream", () => {
-    const postStream = (target: FastifyInstance, payload: unknown) =>
+  describe("the daily AI limit", () => {
+    const streamOf = (target: FastifyInstance, bearer = token) =>
       target.inject({
         method: "POST",
         url: "/dictation/parse",
-        headers: { authorization: `Bearer ${token}`, accept: "text/event-stream" },
+        headers: { authorization: `Bearer ${bearer}`, accept: "text/event-stream" },
+        payload: { text: "x", timeZone: "UTC" },
+      });
+
+    it("answers 429 with a readable message once the day's requests are spent", async () => {
+      parser.mockReset();
+      parser.mockResolvedValue(traceOf({}));
+      try {
+        const answers = [];
+        for (let i = 0; i < 3; i++) answers.push(await post(limitedApp, { text: "x", timeZone: "UTC" }));
+
+        expect(answers.map((res) => res.statusCode)).toEqual([200, 200, 429]);
+        expect((answers[2]!.json() as { message: string }).message).toMatch(/limit.*\(2\)/i);
+        // The refused request never reached the model, and left no sample.
+        expect(parser).toHaveBeenCalledTimes(2);
+        expect(samples).toHaveLength(2);
+      } finally {
+        parser.mockReset();
+      }
+    });
+
+    it("counts per user: a different one is unaffected", async () => {
+      parser.mockResolvedValue(traceOf({}));
+      try {
+        for (let i = 0; i < 3; i++) await post(limitedApp, { text: "x", timeZone: "UTC" });
+
+        const other = await post(limitedApp, { text: "x", timeZone: "UTC" }, true, tokenB);
+        expect(other.statusCode).toBe(200);
+      } finally {
+        parser.mockReset();
+      }
+    });
+
+    it("is not spent by a request refused for its body", async () => {
+      for (let i = 0; i < 5; i++) {
+        expect((await post(limitedApp, { text: " ", timeZone: "UTC" })).statusCode).toBe(400);
+      }
+      expect(prismaMock.aiUsage.upsert).not.toHaveBeenCalled();
+    });
+
+    it("is not spent when the feature is switched off", async () => {
+      for (let i = 0; i < 3; i++) {
+        expect((await post(offApp, { text: "x", timeZone: "UTC" })).statusCode).toBe(503);
+      }
+      expect(prismaMock.aiUsage.upsert).not.toHaveBeenCalled();
+    });
+
+    it("answers a plain HTTP 429 to the streaming variant too, before any event", async () => {
+      parser.mockResolvedValue(traceOf({}));
+      try {
+        await streamOf(limitedApp);
+        await streamOf(limitedApp);
+        const refused = await streamOf(limitedApp);
+
+        expect(refused.statusCode).toBe(429);
+        expect(refused.headers["content-type"]).toMatch(/json/);
+        expect(refused.payload).not.toContain("event:");
+        expect((refused.json() as { message: string }).message).toMatch(/limit/i);
+      } finally {
+        parser.mockReset();
+      }
+    });
+  });
+
+  describe("as an event stream", () => {
+    const postStream = (target: FastifyInstance, payload: unknown, bearer = token) =>
+      target.inject({
+        method: "POST",
+        url: "/dictation/parse",
+        headers: { authorization: `Bearer ${bearer}`, accept: "text/event-stream" },
         payload: payload as Record<string, unknown>,
       });
 
@@ -707,11 +826,18 @@ describe("POST /dictation/parse", () => {
   });
 
   describe("the model, from the app", () => {
-    const model = (target: FastifyInstance, method: "GET" | "PUT", payload?: unknown) =>
+    // The setting is the owner's to change, so the writes below act as the owner
+    // unless a test says otherwise; reading is open to every user.
+    const model = (
+      target: FastifyInstance,
+      method: "GET" | "PUT",
+      payload?: unknown,
+      bearer = ownerToken,
+    ) =>
       target.inject({
         method,
         url: "/dictation/model",
-        headers: { authorization: `Bearer ${token}` },
+        headers: { authorization: `Bearer ${bearer}` },
         ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
       });
 
@@ -754,6 +880,29 @@ describe("POST /dictation/parse", () => {
     ])("refuses %s with a 400", async (_label, value) => {
       const res = await model(app, "PUT", value === undefined ? {} : { model: value });
       expect(res.statusCode).toBe(400);
+    });
+
+    it("is readable by any user", async () => {
+      const res = await model(app, "GET", undefined, token);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ model: "env-model" });
+    });
+
+    it("refuses a change from anyone but the owner, and stores nothing", async () => {
+      for (const bearer of [token, tokenB]) {
+        const res = await model(app, "PUT", { model: "vendor/other" }, bearer);
+        expect(res.statusCode).toBe(403);
+      }
+      expect(settings.has("dictation.model")).toBe(false);
+    });
+
+    it("lets the owner change it, and every user then sees the new one", async () => {
+      const put = await model(app, "PUT", { model: "vendor/other" });
+      expect(put.statusCode).toBe(200);
+      expect((await model(app, "GET", undefined, tokenB)).json()).toMatchObject({
+        model: "vendor/other",
+        override: "vendor/other",
+      });
     });
 
     it("answers 503 on both when no model is configured", async () => {

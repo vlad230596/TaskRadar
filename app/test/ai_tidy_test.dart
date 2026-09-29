@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskradar/api/api_exception.dart';
 import 'package:taskradar/api/dictation_api.dart';
 import 'package:taskradar/models/note.dart';
 import 'package:taskradar/providers/dependencies.dart';
@@ -564,6 +565,22 @@ void main() {
           matching: find.byIcon(Icons.auto_awesome_outlined),
         ),
         findsNothing,
+      );
+    });
+  });
+
+  group('tidyFailureMessage', () {
+    test('names the daily limit when the server refuses with 429', () {
+      expect(
+        tidyFailureMessage(ApiException(429, 'Daily AI request limit reached')),
+        contains('лимит'),
+      );
+    });
+
+    test('keeps "Модель не ответила" for other server errors', () {
+      expect(
+        tidyFailureMessage(ApiException(502, 'Bad gateway')),
+        'Модель не ответила — попробуйте ещё раз.',
       );
     });
   });

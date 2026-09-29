@@ -13,6 +13,7 @@ import 'package:taskradar/screens/splash_screen.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
+import 'support/fake_capture_queue_store.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_settings_store.dart';
 import 'support/fake_token_storage.dart';
@@ -42,6 +43,9 @@ void main() {
           // through `path_provider` -- a platform channel the test VM does not
           // have.
           boardSnapshotStoreProvider.overrideWithValue(snapshots),
+          // Signing in wipes the per-user local data (the capture queue too), and
+          // the real store would reach for `path_provider` here as well.
+          captureQueueStoreProvider.overrideWithValue(FakeCaptureQueueStore()),
           // Likewise: the board screen brings the reminder bridge up, which
           // initialises the notification plugin. The real gateway degrades to
           // "this platform cannot do reminders" in the test VM, but these tests

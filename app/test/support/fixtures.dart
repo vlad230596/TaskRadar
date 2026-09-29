@@ -7,6 +7,8 @@
 /// that notices.
 library;
 
+import 'dart:convert';
+
 /// One project with three tasks: a done one, the current one, and a blocked one
 /// carrying a reminder date. Task order is `position` ascending, as the server
 /// guarantees.
@@ -231,3 +233,12 @@ Map<String, dynamic> scopeJson({
 List<dynamic> defaultScopesJson() => <dynamic>[
   scopeJson(id: defaultScopeId, name: 'Основной'),
 ];
+
+/// An unsigned JWT-shaped string whose payload carries `sub`, base64url without
+/// padding as a real one would. Enough for anything that only reads the claim.
+String fakeJwt(String? sub) {
+  String segment(Object json) =>
+      base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
+  return '${segment(<String, dynamic>{'alg': 'HS256'})}.'
+      '${segment(<String, dynamic>{'sub': ?sub})}.sig';
+}

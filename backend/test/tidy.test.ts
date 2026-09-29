@@ -19,6 +19,7 @@ import {
 } from "../src/domain/tidy";
 import { DICTATION_PROMPT_VERSION, type DictationParser } from "../src/domain/dictation";
 import type { ParseTrace } from "../src/domain/parsePipeline";
+import { inMemoryUsers, tokenFor, USER_A, USER_B } from "./support/users";
 
 /*
  * "Причесать" (F15): the kinds `task_tidy`, `note` and `sandbox` of
@@ -30,9 +31,16 @@ import type { ParseTrace } from "../src/domain/parsePipeline";
 
 /** Rows written to `dictation_parses`, in order. */
 const samples = vi.hoisted(() => [] as Record<string, unknown>[]);
-/** What `projects` holds: the only list the sandbox prompt may see. */
-const projects = vi.hoisted(() => [] as { id: string; name: string; archivedAt: Date | null }[]);
+/**
+ * What `projects` holds -- with the user who owns each one's scope: the only
+ * list the sandbox prompt may see.
+ */
+const projects = vi.hoisted(
+  () => [] as { id: string; name: string; userId: string; archivedAt: Date | null }[],
+);
 const prismaMock = vi.hoisted(() => ({
+  // The daily limit's counter; nothing in this file runs into it.
+  aiUsage: { upsert: vi.fn(async () => ({ count: 1 })) },
   dictationParse: {
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
       samples.push(args.data);
@@ -40,10 +48,17 @@ const prismaMock = vi.hoisted(() => ({
     }),
   },
   project: {
-    findMany: vi.fn(async (args: { where: { archivedAt: null } }) =>
-      projects
-        .filter((project) => args.where.archivedAt !== null || project.archivedAt === null)
-        .map(({ id, name }) => ({ id, name })),
+    // Evaluates both halves of the filter: not archived, and owned by the
+    // caller. A route that dropped either would show up in the prompt.
+    findMany: vi.fn(
+      async (args: { where: { archivedAt: null; scope: { userId: string } } }) =>
+        projects
+          .filter(
+            (project) =>
+              project.userId === args.where.scope.userId &&
+              (args.where.archivedAt !== null || project.archivedAt === null),
+          )
+          .map(({ id, name }) => ({ id, name })),
     ),
   },
   appSetting: {
@@ -360,7 +375,6 @@ describe("createTidyParsers", () => {
 });
 
 describe("POST /dictation/parse, the tidying kinds", () => {
-  const TEST_PASSWORD = "test-password-not-the-real-one";
   const authConfig: AuthConfig = {
     email: "owner@example.com",
     passwordHash: "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO",
@@ -370,7 +384,9 @@ describe("POST /dictation/parse, the tidying kinds", () => {
 
   let app: FastifyInstance;
   let bareApp: FastifyInstance;
+  /** USER_A's token: who every test acts as unless it says otherwise. */
   let token: string;
+  let tokenB: string;
   const parser = vi.fn<DictationParser>();
   const tidiers = {
     task_tidy: vi.fn(),
@@ -389,9 +405,11 @@ describe("POST /dictation/parse, the tidying kinds", () => {
 
   beforeAll(async () => {
     const { buildApp } = await import("../src/app");
+    const users = inMemoryUsers();
     app = await buildApp({
       authConfig,
       logger: false,
+      users,
       dictation: {
         parser,
         tidiers: tidiers as unknown as TidyParsers,
@@ -402,14 +420,11 @@ describe("POST /dictation/parse, the tidying kinds", () => {
     bareApp = await buildApp({
       authConfig,
       logger: false,
+      users,
       dictation: { parser, defaultModel: "env-model" },
     });
-    const login = await app.inject({
-      method: "POST",
-      url: "/auth/login",
-      payload: { email: authConfig.email, password: TEST_PASSWORD },
-    });
-    token = (login.json() as { token: string }).token;
+    token = await tokenFor(app, USER_A.email);
+    tokenB = await tokenFor(app, USER_B.email);
   });
 
   afterAll(async () => {
@@ -423,11 +438,11 @@ describe("POST /dictation/parse, the tidying kinds", () => {
     vi.clearAllMocks();
   });
 
-  const post = (target: FastifyInstance, payload: Record<string, unknown>) =>
+  const post = (target: FastifyInstance, payload: Record<string, unknown>, bearer = token) =>
     target.inject({
       method: "POST",
       url: "/dictation/parse",
-      headers: { authorization: `Bearer ${token}` },
+      headers: { authorization: `Bearer ${bearer}` },
       payload,
     });
 
@@ -468,8 +483,8 @@ describe("POST /dictation/parse, the tidying kinds", () => {
 
   it("sandbox: the projects come from the database, never from the request", async () => {
     projects.push(
-      { id: "prj_home", name: "Дом", archivedAt: null },
-      { id: "prj_old", name: "Старое", archivedAt: new Date() },
+      { id: "prj_home", name: "Дом", userId: USER_A.id, archivedAt: null },
+      { id: "prj_old", name: "Старое", userId: USER_A.id, archivedAt: new Date() },
     );
     tidiers.sandbox.mockResolvedValueOnce(
       traceOf({ text: "Колодки", projectId: null, projectName: null }, SANDBOX_PROMPT_VERSION),
@@ -487,9 +502,39 @@ describe("POST /dictation/parse, the tidying kinds", () => {
     expect(res.json()).toMatchObject({ text: "Колодки", projectId: null });
     expect(tidiers.sandbox.mock.lastCall![0].projects).toEqual([{ id: "prj_home", name: "Дом" }]);
     expect(prismaMock.project.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { archivedAt: null } }),
+      expect.objectContaining({ where: { archivedAt: null, scope: { userId: USER_A.id } } }),
     );
     expect(samples[0]).toMatchObject({ kind: "sandbox" });
+  });
+
+  it("sandbox: lists only the caller's own projects, never another user's", async () => {
+    projects.push(
+      { id: "prj_home", name: "Дом", userId: USER_A.id, archivedAt: null },
+      { id: "prj_old", name: "Старое", userId: USER_A.id, archivedAt: new Date() },
+      { id: "prj_b", name: "Чужой проект", userId: USER_B.id, archivedAt: null },
+    );
+    const answer = traceOf({ text: "Колодки", projectId: null, projectName: null }, SANDBOX_PROMPT_VERSION);
+    tidiers.sandbox.mockResolvedValueOnce(answer).mockResolvedValueOnce(answer);
+
+    await post(app, { text: "колодки", timeZone: "UTC", kind: "sandbox" });
+    await post(app, { text: "колодки", timeZone: "UTC", kind: "sandbox" }, tokenB);
+
+    // A's list holds neither B's project nor their own archived one; B's holds
+    // only B's -- their names never reach the other person's prompt.
+    expect(tidiers.sandbox.mock.calls[0]![0].projects).toEqual([{ id: "prj_home", name: "Дом" }]);
+    expect(tidiers.sandbox.mock.calls[1]![0].projects).toEqual([
+      { id: "prj_b", name: "Чужой проект" },
+    ]);
+  });
+
+  it("keeps each sample under the user who asked", async () => {
+    const answer = traceOf({ title: "Позвонить маме", description: null }, TASK_TIDY_PROMPT_VERSION);
+    tidiers.task_tidy.mockResolvedValueOnce(answer).mockResolvedValueOnce(answer);
+
+    await post(app, { text: "x", timeZone: "UTC", kind: "task_tidy" });
+    await post(app, { text: "y", timeZone: "UTC", kind: "task_tidy" }, tokenB);
+
+    expect(samples.map((sample) => sample.userId)).toEqual([USER_A.id, USER_B.id]);
   });
 
   it("keeps a failed tidy as a sample of its kind, and answers 502", async () => {

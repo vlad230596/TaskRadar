@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 // (and therefore do not construct a Prisma client) before the mock below is in place.
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { inMemoryUsers, tokenFor, TEST_PASSWORD, USER_A, USER_B } from "./support/users";
 
 /*
  * No database in this environment, so Prisma is replaced wholesale. `update` is
@@ -13,11 +14,11 @@ import type { BuildAppOptions } from "../src/app";
  * are unanswerable against a stub that echoes whatever it is handed.
  */
 const prismaMock = vi.hoisted(() => ({
-  project: { findUnique: vi.fn(), update: vi.fn(), create: vi.fn() },
+  project: { findFirst: vi.fn(), findMany: vi.fn(), update: vi.fn(), create: vi.fn(), delete: vi.fn() },
   // F7: creating a project resolves its scope, and moving one checks that the
   // target exists. Both are plain lookups, so a pair of fakes over the same
   // fixture rows is enough.
-  scope: { findUnique: vi.fn(), findFirst: vi.fn() },
+  scope: { findFirst: vi.fn() },
 }));
 
 vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
@@ -26,8 +27,7 @@ vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
 // client is constructed instead, and it demands DATABASE_URL at import time.
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4 -- fast, since these tests log in repeatedly. */
+/** bcrypt hash of the shared test password at cost 4 (see test/support/users.ts). */
 const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
 
 const baseConfig: AuthConfig = {
@@ -48,6 +48,7 @@ interface ProjectRow {
 
 interface ScopeRow {
   id: string;
+  userId: string;
   name: string;
   position: number;
 }
@@ -62,15 +63,55 @@ function seed(): void {
   rows = [
     { id: "p-active", name: "Active", scopeId: "s-first", archivedAt: null, createdAt: T0, updatedAt: T0 },
     { id: "p-archived", name: "Archived", scopeId: "s-first", archivedAt: ARCHIVED_AT, createdAt: T0, updatedAt: T0 },
+    // Somebody else's projects, in somebody else's scope.
+    { id: "p-b", name: "Boris", scopeId: "s-b", archivedAt: null, createdAt: T0, updatedAt: T0 },
+    { id: "p-b-archived", name: "Boris old", scopeId: "s-b", archivedAt: ARCHIVED_AT, createdAt: T0, updatedAt: T0 },
   ];
   scopeRows = [
-    { id: "s-first", name: "Первый", position: 1000 },
-    { id: "s-second", name: "Второй", position: 2000 },
+    { id: "s-first", userId: USER_A.id, name: "Первый", position: 1000 },
+    { id: "s-second", userId: USER_A.id, name: "Второй", position: 2000 },
+    // Positioned first overall, so an unfiltered "default scope" lookup would pick it.
+    { id: "s-b", userId: USER_B.id, name: "Борисов", position: 500 },
   ];
 }
 
-function fakeFindUnique(args: { where: { id: string } }): ProjectRow | null {
-  return rows.find((p) => p.id === args.where.id) ?? null;
+/** Scope `where`s the project routes use: `{ id }`, `{ userId }` or both. */
+function scopeMatches(row: ScopeRow, where: Record<string, unknown> = {}): boolean {
+  for (const [key, value] of Object.entries(where)) {
+    if (key !== "id" && key !== "userId") throw new Error(`fake: unsupported scope where key "${key}"`);
+    if (row[key] !== value) return false;
+  }
+  return true;
+}
+
+/**
+ * Project `where`s the routes use: `id`, `scopeId`, `archivedAt` and the
+ * ownership relation `scope: { userId }`. The relation is evaluated against the
+ * scope rows, so a missing owner filter really returns somebody else's project.
+ */
+function projectMatches(row: ProjectRow, where: Record<string, unknown> = {}): boolean {
+  for (const [key, value] of Object.entries(where)) {
+    if (key === "id" || key === "scopeId") {
+      if (row[key] !== value) return false;
+    } else if (key === "archivedAt") {
+      const wantsArchived = value !== null;
+      if (wantsArchived !== (row.archivedAt !== null)) return false;
+    } else if (key === "scope") {
+      const scope = scopeRows.find((s) => s.id === row.scopeId);
+      if (!scope || !scopeMatches(scope, value as Record<string, unknown>)) return false;
+    } else {
+      throw new Error(`fake: unsupported project where key "${key}"`);
+    }
+  }
+  return true;
+}
+
+function fakeFindFirst(args: { where: Record<string, unknown> }): ProjectRow | null {
+  return rows.find((p) => projectMatches(p, args.where)) ?? null;
+}
+
+function fakeFindMany(args: { where: Record<string, unknown> }): ProjectRow[] {
+  return rows.filter((p) => projectMatches(p, args.where));
 }
 
 function fakeUpdate(args: { where: { id: string }; data: Partial<ProjectRow> }): ProjectRow {
@@ -91,13 +132,14 @@ function fakeUpdate(args: { where: { id: string }; data: Partial<ProjectRow> }):
 let buildApp: (options?: BuildAppOptions) => Promise<FastifyInstance>;
 let app: FastifyInstance;
 let token: string;
+let tokenB: string;
 
-/** Calls PATCH /projects/:id as the native client would: token in a header. */
-async function rename(id: string, payload: unknown, withToken = true) {
+/** Calls PATCH /projects/:id as the native client would: token in a header (USER_A's unless `bearer` is given). */
+async function rename(id: string, payload: unknown, withToken = true, bearer?: string) {
   return app.inject({
     method: "PATCH",
     url: `/projects/${id}`,
-    headers: withToken ? { authorization: `Bearer ${token}` } : {},
+    headers: withToken ? { authorization: `Bearer ${bearer ?? token}` } : {},
     payload: payload as Record<string, unknown>,
   });
 }
@@ -105,15 +147,11 @@ async function rename(id: string, payload: unknown, withToken = true) {
 beforeAll(async () => {
   const appModule = await import("../src/app");
   buildApp = appModule.buildApp;
-  app = await buildApp({ authConfig: baseConfig, logger: false });
+  app = await buildApp({ authConfig: baseConfig, users: inMemoryUsers(), logger: false });
   await app.ready();
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/auth/login",
-    payload: { email: baseConfig.email, password: TEST_PASSWORD },
-  });
-  token = (login.json() as { token: string }).token;
+  token = await tokenFor(app, USER_A.email);
+  tokenB = await tokenFor(app, USER_B.email);
 });
 
 afterAll(async () => {
@@ -122,13 +160,20 @@ afterAll(async () => {
 
 beforeEach(() => {
   seed();
-  prismaMock.project.findUnique.mockReset();
+  prismaMock.project.findFirst.mockReset();
+  prismaMock.project.findMany.mockReset();
   prismaMock.project.update.mockReset();
   prismaMock.project.create.mockReset();
-  prismaMock.scope.findUnique.mockReset();
+  prismaMock.project.delete.mockReset();
   prismaMock.scope.findFirst.mockReset();
 
-  prismaMock.project.findUnique.mockImplementation(fakeFindUnique);
+  prismaMock.project.findFirst.mockImplementation(fakeFindFirst);
+  prismaMock.project.findMany.mockImplementation(fakeFindMany);
+  prismaMock.project.delete.mockImplementation((args: { where: { id: string } }) => {
+    const index = rows.findIndex((p) => p.id === args.where.id);
+    if (index === -1) throw new Error("delete against no row");
+    return rows.splice(index, 1)[0]!;
+  });
   prismaMock.project.update.mockImplementation(fakeUpdate);
   prismaMock.project.create.mockImplementation(
     (args: { data: { name: string; scopeId: string } }) => {
@@ -144,12 +189,13 @@ beforeEach(() => {
       return { ...row };
     },
   );
-  prismaMock.scope.findUnique.mockImplementation(
-    (args: { where: { id: string } }) => scopeRows.find((s) => s.id === args.where.id) ?? null,
-  );
-  // "First by position" is the route's own definition of the default scope.
+  // Serves both the lookup by id and the default scope: "first by position" is
+  // the route's own definition of the latter. The owner filter is evaluated.
   prismaMock.scope.findFirst.mockImplementation(
-    () => [...scopeRows].sort((a, b) => a.position - b.position)[0] ?? null,
+    (args: { where: Record<string, unknown>; orderBy?: { position: "asc" } }) =>
+      scopeRows
+        .filter((s) => scopeMatches(s, args.where))
+        .sort((a, b) => a.position - b.position)[0] ?? null,
   );
 });
 
@@ -324,7 +370,7 @@ describe("PATCH /projects/:id -- access", () => {
     expect(res.statusCode).toBe(401);
     expect(res.json()).toEqual({ error: "Unauthorized", message: "Unauthorized" });
     // Rejected by the guard before the handler, so the database is never touched.
-    expect(prismaMock.project.findUnique).not.toHaveBeenCalled();
+    expect(prismaMock.project.findFirst).not.toHaveBeenCalled();
     expect(prismaMock.project.update).not.toHaveBeenCalled();
   });
 
@@ -464,5 +510,101 @@ describe("PATCH /projects/:id -- moving between scopes (F7)", () => {
   it("rejects an empty scopeId with 400", async () => {
     expect((await rename("p-active", { scopeId: "" })).statusCode).toBe(400);
     expect(prismaMock.project.update).not.toHaveBeenCalled();
+  });
+
+  it("answers 404 for another user's scope, and does not move the project", async () => {
+    // A cannot push their project into B's scope.
+    const res = await rename("p-active", { scopeId: "s-b" });
+    expect(res.statusCode).toBe(404);
+    expect(prismaMock.project.update).not.toHaveBeenCalled();
+    expect(rows.find((p) => p.id === "p-active")!.scopeId).toBe("s-first");
+  });
+});
+
+describe("one user cannot see or touch another's projects", () => {
+  function as(bearer: string, method: string, url: string, payload?: unknown) {
+    return app.inject({
+      method: method as "GET",
+      url,
+      headers: { authorization: `Bearer ${bearer}` },
+      ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+    });
+  }
+
+  it("lists only the caller's projects, active and archived alike", async () => {
+    const aActive = (await as(token, "GET", "/projects")).json() as ProjectRow[];
+    expect(aActive.map((p) => p.id)).toEqual(["p-active"]);
+    const aArchived = (await as(token, "GET", "/projects?archived=true")).json() as ProjectRow[];
+    expect(aArchived.map((p) => p.id)).toEqual(["p-archived"]);
+
+    const bActive = (await as(tokenB, "GET", "/projects")).json() as ProjectRow[];
+    expect(bActive.map((p) => p.id)).toEqual(["p-b"]);
+    const bArchived = (await as(tokenB, "GET", "/projects?archived=true")).json() as ProjectRow[];
+    expect(bArchived.map((p) => p.id)).toEqual(["p-b-archived"]);
+  });
+
+  it("does not leak A's projects through the scopeId filter", async () => {
+    const res = await as(tokenB, "GET", "/projects?scopeId=s-first");
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([]);
+  });
+
+  it("answers 404, not 403, for GET of another user's project, same as a missing one", async () => {
+    const foreign = await as(tokenB, "GET", "/projects/p-active");
+    const missing = await as(tokenB, "GET", "/projects/p-nope");
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json()).toEqual(missing.json());
+  });
+
+  it("answers 404 for PATCH, archive, unarchive and DELETE of another user's project, changing nothing", async () => {
+    const attempts: [string, string, unknown?][] = [
+      ["PATCH", "/projects/p-active", { name: "Hijacked" }],
+      ["PATCH", "/projects/p-active", { scopeId: "s-b" }],
+      ["POST", "/projects/p-active/archive"],
+      ["POST", "/projects/p-archived/unarchive"],
+      ["DELETE", "/projects/p-archived"],
+    ];
+    for (const [method, url, payload] of attempts) {
+      const res = await as(tokenB, method, url, payload);
+      expect(res.statusCode, `${method} ${url}`).toBe(404);
+    }
+    expect(prismaMock.project.update).not.toHaveBeenCalled();
+    expect(prismaMock.project.delete).not.toHaveBeenCalled();
+    expect(rows.find((p) => p.id === "p-active")).toMatchObject({ name: "Active", scopeId: "s-first", archivedAt: null });
+    expect(rows.find((p) => p.id === "p-archived")!.archivedAt).toEqual(ARCHIVED_AT);
+  });
+
+  it("still lets the owner do the same things", async () => {
+    expect((await as(token, "POST", "/projects/p-active/archive")).statusCode).toBe(200);
+    expect((await as(token, "DELETE", "/projects/p-archived")).statusCode).toBe(204);
+    expect(rows.some((p) => p.id === "p-archived")).toBe(false);
+    expect(rows.some((p) => p.id === "p-b-archived")).toBe(true);
+  });
+
+  it("refuses to create a project in another user's scope with 404", async () => {
+    const res = await as(tokenB, "POST", "/projects", { name: "Sneaky", scopeId: "s-first" });
+    expect(res.statusCode).toBe(404);
+    expect(prismaMock.project.create).not.toHaveBeenCalled();
+  });
+
+  it("puts a project created without a scope into the caller's own default scope", async () => {
+    // B's scope is the first overall by position; A's default must still be A's.
+    const a = await as(token, "POST", "/projects", { name: "Anna new" });
+    expect((a.json() as ProjectRow).scopeId).toBe("s-first");
+    const b = await as(tokenB, "POST", "/projects", { name: "Boris new" });
+    expect((b.json() as ProjectRow).scopeId).toBe("s-b");
+  });
+
+  it("answers 409 when the caller has no scope at all, whoever else does", async () => {
+    scopeRows = scopeRows.filter((s) => s.userId !== USER_B.id);
+    const res = await as(tokenB, "POST", "/projects", { name: "Boris new" });
+    expect(res.statusCode).toBe(409);
+    expect(prismaMock.project.create).not.toHaveBeenCalled();
+  });
+
+  it("lets the caller move a project between their own scopes only", async () => {
+    const bad = await as(tokenB, "PATCH", "/projects/p-b", { scopeId: "s-second" });
+    expect(bad.statusCode).toBe(404);
+    expect(rows.find((p) => p.id === "p-b")!.scopeId).toBe("s-b");
   });
 });

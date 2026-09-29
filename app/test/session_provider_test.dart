@@ -4,8 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/api/api_exception.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/session_provider.dart';
+import 'package:taskradar/storage/board_snapshot_store.dart';
+import 'package:taskradar/storage/capture_queue_store.dart';
 
 import 'support/fake_backend.dart';
+import 'support/fake_board_snapshot_store.dart';
+import 'support/fake_capture_queue_store.dart';
+import 'support/fake_settings_store.dart';
 import 'support/fake_token_storage.dart';
 import 'support/fixtures.dart';
 
@@ -18,10 +23,16 @@ import 'support/fixtures.dart';
 void main() {
   late FakeBackend backend;
   late FakeTokenStorage storage;
+  late FakeBoardSnapshotStore snapshots;
+  late FakeCaptureQueueStore queue;
+  late FakeSettingsStore settings;
 
   setUp(() {
     backend = FakeBackend();
     storage = FakeTokenStorage();
+    snapshots = FakeBoardSnapshotStore();
+    queue = FakeCaptureQueueStore();
+    settings = FakeSettingsStore();
   });
 
   ProviderContainer makeContainer() {
@@ -29,6 +40,9 @@ void main() {
       overrides: [
         apiClientProvider.overrideWithValue(backend.client),
         tokenStorageProvider.overrideWithValue(storage),
+        boardSnapshotStoreProvider.overrideWithValue(snapshots),
+        captureQueueStoreProvider.overrideWithValue(queue),
+        settingsStoreProvider.overrideWithValue(settings),
       ],
     );
     addTearDown(container.dispose);
@@ -77,17 +91,20 @@ void main() {
       expect(storage.token, 'stored.jwt');
     });
 
-    test('stored token + 401 -> login screen, and the dead token is deleted', () async {
-      storage.token = 'expired.jwt';
-      backend.alwaysRespond(unauthorizedJson(), statusCode: 401);
+    test(
+      'stored token + 401 -> login screen, and the dead token is deleted',
+      () async {
+        storage.token = 'expired.jwt';
+        backend.alwaysRespond(unauthorizedJson(), statusCode: 401);
 
-      final container = makeContainer();
-      final status = await container.read(sessionProvider.future);
+        final container = makeContainer();
+        final status = await container.read(sessionProvider.future);
 
-      expect(status, SessionStatus.signedOut);
-      expect(storage.token, isNull);
-      expect(storage.clearCount, greaterThan(0));
-    });
+        expect(status, SessionStatus.signedOut);
+        expect(storage.token, isNull);
+        expect(storage.clearCount, greaterThan(0));
+      },
+    );
 
     test('unreachable server -> stay signed in and keep the token', () async {
       // A network failure disproves nothing about the token. Signing out here
@@ -131,7 +148,10 @@ void main() {
           .signIn(email: 'owner@example.com', password: 'secret');
 
       expect(storage.token, 'fresh.jwt');
-      expect(await container.read(sessionProvider.future), SessionStatus.signedIn);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedIn,
+      );
     });
 
     test('the new token is used by the very next request', () async {
@@ -151,22 +171,25 @@ void main() {
       expect(backend.lastRequest.headers['Authorization'], 'Bearer fresh.jwt');
     });
 
-    test('trims the email, because a phone keyboard likes to add a space', () async {
-      respondByPath(<String, ResponseBody Function()>{
-        '/auth/login': () => jsonResponse(loginOkJson()),
-      });
+    test(
+      'trims the email, because a phone keyboard likes to add a space',
+      () async {
+        respondByPath(<String, ResponseBody Function()>{
+          '/auth/login': () => jsonResponse(loginOkJson()),
+        });
 
-      final container = makeContainer();
-      await container.read(sessionProvider.future);
-      // Trimming lives in LoginController (the UI concern); signIn itself passes
-      // through what it is given, so this asserts the raw pass-through.
-      await container
-          .read(sessionProvider.notifier)
-          .signIn(email: 'owner@example.com', password: 'secret');
+        final container = makeContainer();
+        await container.read(sessionProvider.future);
+        // Trimming lives in LoginController (the UI concern); signIn itself passes
+        // through what it is given, so this asserts the raw pass-through.
+        await container
+            .read(sessionProvider.notifier)
+            .signIn(email: 'owner@example.com', password: 'secret');
 
-      final body = backend.lastRequest.data as Map<String, dynamic>;
-      expect(body['email'], 'owner@example.com');
-    });
+        final body = backend.lastRequest.data as Map<String, dynamic>;
+        expect(body['email'], 'owner@example.com');
+      },
+    );
 
     test('a wrong password throws and leaves the user signed out', () async {
       respondByPath(<String, ResponseBody Function()>{
@@ -188,7 +211,147 @@ void main() {
 
       expect(storage.token, isNull);
       expect(storage.writeCount, 0);
-      expect(await container.read(sessionProvider.future), SessionStatus.signedOut);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedOut,
+      );
+    });
+  });
+
+  group('per-user local data', () {
+    /// Puts something in every store the wipe is meant to reach.
+    void seedLocalData() {
+      snapshots.snapshot = BoardSnapshot(
+        projects: const [],
+        savedAt: DateTime.utc(2026, 9, 1),
+      );
+      queue.queue = <PendingCapture>[
+        PendingCapture(
+          key: 'k1',
+          text: 'buy milk',
+          capturedAt: DateTime.utc(2026, 9, 1),
+        ),
+      ];
+      settings.selectedScopeId = 'scope_of_someone';
+    }
+
+    Future<ProviderContainer> signInWith(String? sub) async {
+      respondByPath(<String, ResponseBody Function()>{
+        '/auth/login': () => jsonResponse(loginOkJson(token: fakeJwt(sub))),
+      });
+      final container = makeContainer();
+      await container.read(sessionProvider.future);
+      await container
+          .read(sessionProvider.notifier)
+          .signIn(email: 'a@example.com', password: 'secret');
+      return container;
+    }
+
+    test(
+      'the same person signing in again keeps snapshot, queue and scope',
+      () async {
+        storage.lastUserId = 'owner';
+        seedLocalData();
+
+        await signInWith('owner');
+
+        expect(snapshots.snapshot, isNotNull);
+        expect(queue.queue, hasLength(1));
+        expect(settings.selectedScopeId, 'scope_of_someone');
+        expect(snapshots.clearCount, 0);
+        expect(queue.clearCount, 0);
+        expect(settings.scopeClearCount, 0);
+      },
+    );
+
+    test(
+      'a different person wipes snapshot, queue and scope, and is remembered',
+      () async {
+        storage.lastUserId = 'owner';
+        seedLocalData();
+
+        await signInWith('usr_2');
+
+        expect(snapshots.snapshot, isNull);
+        expect(queue.queue, isEmpty);
+        expect(settings.selectedScopeId, isNull);
+        expect(storage.lastUserId, 'usr_2');
+      },
+    );
+
+    test('no remembered user counts as different', () async {
+      seedLocalData();
+
+      await signInWith('owner');
+
+      expect(snapshots.snapshot, isNull);
+      expect(queue.queue, isEmpty);
+      expect(settings.selectedScopeId, isNull);
+      expect(storage.lastUserId, 'owner');
+    });
+
+    test('a token without a readable sub wipes and records nothing', () async {
+      storage.lastUserId = 'owner';
+      seedLocalData();
+
+      await signInWith(null);
+
+      expect(snapshots.snapshot, isNull);
+      expect(queue.queue, isEmpty);
+      expect(storage.lastUserId, 'owner');
+    });
+
+    test('the remembered user survives a sign-out', () async {
+      storage.token = fakeJwt('owner');
+      storage.lastUserId = 'owner';
+      respondByPath(<String, ResponseBody Function()>{
+        '/auth/me': () => jsonResponse(<String, dynamic>{'ok': true}),
+        '/auth/logout': () => jsonResponse(<String, dynamic>{'ok': true}),
+      });
+
+      final container = makeContainer();
+      await container.read(sessionProvider.future);
+      await container.read(sessionProvider.notifier).signOut();
+
+      expect(storage.token, isNull);
+      expect(storage.lastUserId, 'owner');
+    });
+
+    test(
+      'upgrade: a stored token with no remembered user adopts its sub at startup',
+      () async {
+        storage.token = fakeJwt('owner');
+        backend.alwaysRespond(<String, dynamic>{'ok': true});
+
+        final container = makeContainer();
+        await container.read(sessionProvider.future);
+
+        expect(storage.lastUserId, 'owner');
+
+        // ...so the owner signing in again afterwards does not lose the cache.
+        seedLocalData();
+        respondByPath(<String, ResponseBody Function()>{
+          '/auth/login': () =>
+              jsonResponse(loginOkJson(token: fakeJwt('owner'))),
+        });
+        await container
+            .read(sessionProvider.notifier)
+            .signIn(email: 'a@example.com', password: 'secret');
+
+        expect(snapshots.snapshot, isNotNull);
+        expect(queue.queue, hasLength(1));
+      },
+    );
+
+    test('startup does not overwrite an already remembered user', () async {
+      storage.token = fakeJwt('usr_2');
+      storage.lastUserId = 'owner';
+      backend.alwaysRespond(<String, dynamic>{'ok': true});
+
+      final container = makeContainer();
+      await container.read(sessionProvider.future);
+
+      expect(storage.lastUserId, 'owner');
     });
   });
 
@@ -204,7 +367,10 @@ void main() {
       });
 
       final container = makeContainer();
-      expect(await container.read(sessionProvider.future), SessionStatus.signedIn);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedIn,
+      );
 
       await expectLater(
         container.read(boardApiProvider).fetchBoard(),
@@ -215,7 +381,10 @@ void main() {
       // cleanup a turn of the event loop.
       await pumpEventQueue();
 
-      expect(await container.read(sessionProvider.future), SessionStatus.signedOut);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedOut,
+      );
       expect(storage.token, isNull);
     });
 
@@ -236,7 +405,10 @@ void main() {
       ]);
       await pumpEventQueue();
 
-      expect(await container.read(sessionProvider.future), SessionStatus.signedOut);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedOut,
+      );
       // One clear from the first 401; the second is short-circuited because the
       // session is already signed out.
       expect(storage.clearCount, 1);
@@ -257,7 +429,10 @@ void main() {
       await container.read(sessionProvider.notifier).signOut();
 
       expect(storage.token, isNull);
-      expect(await container.read(sessionProvider.future), SessionStatus.signedOut);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedOut,
+      );
     });
 
     test('still works when the server cannot be reached', () async {
@@ -280,7 +455,10 @@ void main() {
       await container.read(sessionProvider.notifier).signOut();
 
       expect(storage.token, isNull);
-      expect(await container.read(sessionProvider.future), SessionStatus.signedOut);
+      expect(
+        await container.read(sessionProvider.future),
+        SessionStatus.signedOut,
+      );
     });
 
     test('a later request no longer carries the old token', () async {

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import type { FastifyInstance } from "fastify";
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { inMemoryUsers, tokenFor, USER_A, USER_B } from "./support/users";
 
 /*
  * Tasks, the working set and the history aggregates (F11), through the routes.
@@ -16,15 +17,23 @@ import type { BuildAppOptions } from "../src/app";
  *   transaction that changed the task would survive a failure and describe a
  *   change that never happened -- and a fake that could not fail would leave it
  *   untested;
- * - the `findMany` fakes understand only the `where` shapes the routes actually
- *   send, and throw on anything else. A fake that quietly ignored an unknown
- *   filter would answer a future query with every row in the table and let a
- *   broken route pass.
+ * - the fakes understand only the `where` shapes the routes actually send, and
+ *   throw on anything else. A fake that quietly ignored an unknown filter would
+ *   answer a future query with every row in the table and let a broken route
+ *   pass.
+ *
+ * Data is separated per user: ownership lives on the scope, and a task is owned
+ * through project -> scope -> userId. The fakes EVALUATE those owner filters
+ * against the rows (see `ownedBy`) rather than skipping them, and the seed holds
+ * a second user's project, tasks and events next to the first user's -- so the
+ * unchanged expectations about the first user's data double as proof that
+ * nothing of the second user's leaks into it.
  */
 const prismaMock = vi.hoisted(() => ({
-  project: { findUnique: vi.fn() },
+  project: { findFirst: vi.fn() },
   task: {
     findUnique: vi.fn(),
+    findFirst: vi.fn(),
     findMany: vi.fn(),
     aggregate: vi.fn(),
     create: vi.fn(),
@@ -40,13 +49,9 @@ vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
 
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4. */
-const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
-
 const baseConfig: AuthConfig = {
-  email: "owner@example.com",
-  passwordHash: TEST_HASH,
+  email: USER_A.email,
+  passwordHash: "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO",
   jwtSecret: "test-jwt-secret-".repeat(4),
   cookieSecure: false,
 };
@@ -77,8 +82,23 @@ interface EventRow {
 
 interface ProjectRow {
   id: string;
+  scopeId: string;
   name: string;
   archivedAt: Date | null;
+}
+
+interface ScopeRow {
+  id: string;
+  userId: string;
+}
+
+interface ParseRow {
+  id: string;
+  userId: string;
+  kind: string;
+  linkedAt: Date | null;
+  taskId?: string;
+  finalTitle?: string | null;
 }
 
 /** The clock every expectation below is written against. */
@@ -88,7 +108,9 @@ function at(iso: string): Date {
   return new Date(iso);
 }
 
+let scopes: ScopeRow[] = [];
 let projects: ProjectRow[] = [];
+let parses: ParseRow[] = [];
 let tasks: TaskRow[] = [];
 let events: EventRow[] = [];
 let nextId = 0;
@@ -112,9 +134,19 @@ function event(row: Partial<EventRow> & Pick<EventRow, "taskId" | "kind" | "at">
 
 function seed(): void {
   nextId = 0;
+  scopes = [
+    { id: "scp-a", userId: USER_A.id },
+    { id: "scp-b", userId: USER_B.id },
+  ];
   projects = [
-    { id: "prj-1", name: "Дом", archivedAt: null },
-    { id: "prj-2", name: "Авоська", archivedAt: at("2026-07-01T00:00:00.000Z") },
+    { id: "prj-1", scopeId: "scp-a", name: "Дом", archivedAt: null },
+    { id: "prj-2", scopeId: "scp-a", name: "Авоська", archivedAt: at("2026-07-01T00:00:00.000Z") },
+    // Somebody else's: nothing below may show it to user A, or A's to user B.
+    { id: "prj-b", scopeId: "scp-b", name: "Гараж", archivedAt: null },
+  ];
+  parses = [
+    { id: "dp-a", userId: USER_A.id, kind: "task", linkedAt: null },
+    { id: "dp-b", userId: USER_B.id, kind: "task", linkedAt: null },
   ];
   tasks = [
     // Waiting since the beginning of the month.
@@ -142,6 +174,22 @@ function seed(): void {
     task({ id: "tsk-4", projectId: "prj-2", title: "Заброшено", createdAt: at("2026-06-01T00:00:00.000Z"), position: 1000 }),
     // Opened inside the last week.
     task({ id: "tsk-5", projectId: "prj-1", title: "Свежая", createdAt: at("2026-09-19T00:00:00.000Z"), position: 4000 }),
+    // User B's: one open and in B's working set, one closed inside the week.
+    task({
+      id: "tsk-b1",
+      projectId: "prj-b",
+      title: "Сменить масло",
+      createdAt: at("2026-09-18T00:00:00.000Z"),
+      focusedAt: at("2026-09-20T08:00:00.000Z"),
+    }),
+    task({
+      id: "tsk-b2",
+      projectId: "prj-b",
+      title: "Помыть",
+      status: "done",
+      createdAt: at("2026-09-17T00:00:00.000Z"),
+      position: 2000,
+    }),
   ];
   events = [
     event({ taskId: "tsk-1", kind: "created", toStatus: "pending", at: at("2026-09-01T00:00:00.000Z") }),
@@ -164,18 +212,83 @@ function seed(): void {
     }),
     event({ taskId: "tsk-4", kind: "created", toStatus: "pending", at: at("2026-06-01T00:00:00.000Z") }),
     event({ taskId: "tsk-5", kind: "created", toStatus: "pending", at: at("2026-09-19T00:00:00.000Z") }),
+    event({ taskId: "tsk-b1", kind: "created", toStatus: "pending", at: at("2026-09-18T00:00:00.000Z") }),
+    event({ taskId: "tsk-b1", kind: "focused", at: at("2026-09-20T08:00:00.000Z") }),
+    event({ taskId: "tsk-b2", kind: "created", toStatus: "pending", at: at("2026-09-17T00:00:00.000Z") }),
+    event({
+      taskId: "tsk-b2",
+      kind: "status",
+      fromStatus: "pending",
+      toStatus: "done",
+      at: at("2026-09-20T11:00:00.000Z"),
+    }),
   ];
+}
+
+/** Does the project belong to this user, through its scope? */
+function ownedBy(project: ProjectRow, userId: string): boolean {
+  return scopes.find((s) => s.id === project.scopeId)?.userId === userId;
+}
+
+/** A project `where` (`{ id?, archivedAt?, scope: { userId } }`), evaluated against a row. */
+function projectMatches(project: ProjectRow | undefined, filter: Record<string, unknown>): boolean {
+  if (!project) return false;
+  for (const [key, value] of Object.entries(filter)) {
+    if (key === "id") {
+      if (project.id !== value) return false;
+    } else if (key === "archivedAt") {
+      if (value !== null) throw new Error(`unexpected archivedAt filter ${JSON.stringify(value)}`);
+      if (project.archivedAt !== null) return false;
+    } else if (key === "scope") {
+      const userId = (value as { userId?: unknown }).userId;
+      if (typeof userId !== "string") throw new Error(`unexpected scope filter ${JSON.stringify(value)}`);
+      if (!ownedBy(project, userId)) return false;
+    } else {
+      throw new Error(`unexpected project filter key ${key}`);
+    }
+  }
+  return true;
+}
+
+/** Evaluates a task `where` against a row. Unknown keys throw, see the top of the file. */
+function taskMatches(t: TaskRow, where: Record<string, unknown>): boolean {
+  for (const [key, value] of Object.entries(where)) {
+    switch (key) {
+      case "id":
+      case "projectId":
+        if (t[key] !== value) return false;
+        break;
+      case "focusedAt":
+        if (JSON.stringify(value) !== '{"not":null}') throw new Error("unexpected focusedAt filter");
+        if (t.focusedAt === null) return false;
+        break;
+      case "status":
+        if (JSON.stringify(value) !== '{"not":"done"}') throw new Error("unexpected status filter");
+        if (t.status === "done") return false;
+        break;
+      case "project":
+        if (!projectMatches(projects.find((p) => p.id === t.projectId), value as Record<string, unknown>)) {
+          return false;
+        }
+        break;
+      default:
+        throw new Error(`task where: unexpected key ${key}`);
+    }
+  }
+  return true;
 }
 
 let buildApp: (options?: BuildAppOptions) => Promise<FastifyInstance>;
 let app: FastifyInstance;
+/** User A's token -- what `call` sends unless told otherwise. */
 let token: string;
+let tokenB: string;
 
-function call(method: string, url: string, payload?: unknown, withToken = true) {
+function call(method: string, url: string, payload?: unknown, withToken = true, bearer?: string) {
   return app.inject({
     method: method as "GET",
     url,
-    headers: withToken ? { authorization: `Bearer ${token}` } : {},
+    headers: withToken ? { authorization: `Bearer ${bearer ?? token}` } : {},
     ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
   });
 }
@@ -183,15 +296,11 @@ function call(method: string, url: string, payload?: unknown, withToken = true) 
 beforeAll(async () => {
   const appModule = await import("../src/app");
   buildApp = appModule.buildApp;
-  app = await buildApp({ authConfig: baseConfig, logger: false });
+  app = await buildApp({ authConfig: baseConfig, users: inMemoryUsers(), logger: false });
   await app.ready();
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/auth/login",
-    payload: { email: baseConfig.email, password: TEST_PASSWORD },
-  });
-  token = (login.json() as { token: string }).token;
+  token = await tokenFor(app, USER_A.email);
+  tokenB = await tokenFor(app, USER_B.email);
 });
 
 afterAll(async () => {
@@ -206,20 +315,49 @@ beforeEach(() => {
   seed();
   for (const fn of Object.values(prismaMock.task)) fn.mockReset();
   for (const fn of Object.values(prismaMock.taskEvent)) fn.mockReset();
-  prismaMock.project.findUnique.mockReset();
+  prismaMock.project.findFirst.mockReset();
+  prismaMock.dictationParse.updateMany.mockReset();
   prismaMock.$transaction.mockReset();
 
-  prismaMock.project.findUnique.mockImplementation(
-    (args: { where: { id: string } }) => projects.find((p) => p.id === args.where.id) ?? null,
+  prismaMock.project.findFirst.mockImplementation(
+    (args: { where: Record<string, unknown> }) =>
+      projects.find((p) => projectMatches(p, args.where)) ?? null,
   );
 
+  // Only used for a neighbour in `PATCH /tasks/:id/position`, always by id.
   prismaMock.task.findUnique.mockImplementation(
     (args: { where: { id: string } }) => tasks.find((t) => t.id === args.where.id) ?? null,
   );
 
+  prismaMock.task.findFirst.mockImplementation(
+    (args: { where: Record<string, unknown> }) =>
+      tasks.find((t) => taskMatches(t, args.where)) ?? null,
+  );
+
   /*
-   * Only the three `where` shapes the routes send, and a loud failure for
-   * anything else -- see the note at the top of this file.
+   * Labels the parse rows the way the database would: `where` is evaluated
+   * against them, so a parse of another user simply matches nothing.
+   */
+  prismaMock.dictationParse.updateMany.mockImplementation(
+    (args: {
+      where: { id: string; userId: string; linkedAt: null; kind: { in: string[] } };
+      data: Partial<ParseRow>;
+    }) => {
+      const hit = parses.filter(
+        (p) =>
+          p.id === args.where.id &&
+          p.userId === args.where.userId &&
+          p.linkedAt === null &&
+          args.where.kind.in.includes(p.kind),
+      );
+      for (const p of hit) Object.assign(p, args.data);
+      return { count: hit.length };
+    },
+  );
+
+  /*
+   * The `where` shapes the routes send, evaluated against the rows, and a loud
+   * failure for anything else -- see the note at the top of this file.
    */
   prismaMock.task.findMany.mockImplementation(
     (args: {
@@ -227,22 +365,7 @@ beforeEach(() => {
       orderBy?: Record<string, string>;
       include?: Record<string, unknown>;
     }) => {
-      const where = args.where ?? {};
-      let rows: TaskRow[];
-
-      if (typeof where.projectId === "string") {
-        rows = tasks.filter((t) => t.projectId === where.projectId);
-      } else if (where.focusedAt !== undefined) {
-        rows = tasks.filter((t) => t.focusedAt !== null);
-      } else if (where.status !== undefined) {
-        rows = tasks.filter(
-          (t) =>
-            t.status !== "done" &&
-            projects.find((p) => p.id === t.projectId)?.archivedAt === null,
-        );
-      } else {
-        throw new Error(`task.findMany: unexpected where ${JSON.stringify(where)}`);
-      }
+      let rows = tasks.filter((t) => taskMatches(t, args.where ?? {}));
 
       if (args.orderBy?.position) rows = [...rows].sort((a, b) => a.position - b.position);
       if (args.orderBy?.focusedAt) {
@@ -319,10 +442,14 @@ beforeEach(() => {
         rows = events.filter((e) => e.taskId === where.taskId);
       } else if (Array.isArray(where.OR)) {
         const gte = (where.at as { gte?: Date } | undefined)?.gte;
+        // The history aggregate is always scoped to one user's tasks.
+        const owner = where.task as { project: Record<string, unknown> } | undefined;
+        if (!owner) throw new Error("taskEvent.findMany: aggregate without an owner filter");
         rows = events.filter(
           (e) =>
             (e.kind === "created" || (e.kind === "status" && e.toStatus === "done")) &&
-            (gte === undefined || e.at.getTime() >= gte.getTime()),
+            (gte === undefined || e.at.getTime() >= gte.getTime()) &&
+            taskMatches(tasks.find((t) => t.id === e.taskId)!, owner),
         );
       } else {
         throw new Error(`taskEvent.findMany: unexpected where ${JSON.stringify(where)}`);
@@ -356,11 +483,13 @@ beforeEach(() => {
   prismaMock.$transaction.mockImplementation(async (run: (tx: unknown) => Promise<unknown>) => {
     const tasksBefore = tasks.map((t) => ({ ...t }));
     const eventsBefore = events.map((e) => ({ ...e }));
+    const parsesBefore = parses.map((p) => ({ ...p }));
     try {
       return await run(prismaMock);
     } catch (error) {
       tasks = tasksBefore;
       events = eventsBefore;
+      parses = parsesBefore;
       throw error;
     }
   });
@@ -390,6 +519,7 @@ describe("POST /projects/:projectId/tasks", () => {
     // only of a kind that ends as a new task.
     expect(args.where).toEqual({
       id: "dp-7",
+      userId: USER_A.id,
       linkedAt: null,
       kind: { in: ["task", "sandbox", "task_tidy"] },
     });
@@ -432,11 +562,12 @@ describe("POST /projects/:projectId/tasks", () => {
   });
 
   it("writes nothing at all for an unknown project", async () => {
+    const eventsBefore = events.length;
     const res = await call("POST", "/projects/prj-nope/tasks", { title: "Новая задача" });
 
     expect(res.statusCode).toBe(404);
     expect(prismaMock.$transaction).not.toHaveBeenCalled();
-    expect(events).toHaveLength(8);
+    expect(events).toHaveLength(eventsBefore);
   });
 });
 
@@ -512,7 +643,12 @@ describe("PATCH /tasks/:id", () => {
       where: unknown;
       data: Record<string, unknown>;
     };
-    expect(args.where).toEqual({ id: "dp-9", linkedAt: null, kind: { in: ["task_tidy"] } });
+    expect(args.where).toEqual({
+      id: "dp-9",
+      userId: USER_A.id,
+      linkedAt: null,
+      kind: { in: ["task_tidy"] },
+    });
     expect(args.data).toMatchObject({
       taskId: "tsk-1",
       finalTitle: "Починить кран на кухне",
@@ -617,7 +753,7 @@ describe("the working set", () => {
     const sixth = (res.json() as { id: string }).id;
 
     expect((await call("POST", `/tasks/${sixth}/focus`)).statusCode).toBe(200);
-    expect(tasks.filter((t) => t.focusedAt !== null)).toHaveLength(6);
+    expect(tasks.filter((t) => t.focusedAt !== null && t.projectId !== "prj-b")).toHaveLength(6);
   });
 
   it("404s for an unknown task", async () => {
@@ -734,5 +870,126 @@ describe("GET /history", () => {
 
   it("requires a session", async () => {
     expect((await call("GET", "/history", undefined, false)).statusCode).toBe(401);
+  });
+});
+
+describe("one user's tasks are invisible to another", () => {
+  /*
+   * 404, not 403: a 403 would confirm that the id exists, and ids are all a
+   * stranger needs to start guessing. Every attempt below also checks that the
+   * data did not move, so a route that answered 404 after writing would fail.
+   */
+  const asB = (method: string, url: string, payload?: unknown) =>
+    call(method, url, payload, true, tokenB);
+
+  it("404s for B on every route of A's task, and changes nothing", async () => {
+    const tasksBefore = JSON.stringify(tasks);
+    const eventsBefore = JSON.stringify(events);
+
+    const attempts: [string, string, unknown?][] = [
+      ["PATCH", "/tasks/tsk-1", { title: "Чужое", status: "done" }],
+      ["PATCH", "/tasks/tsk-1/position", { afterTaskId: "tsk-5" }],
+      ["GET", "/tasks/tsk-1/events"],
+      ["DELETE", "/tasks/tsk-1"],
+      ["POST", "/tasks/tsk-1/focus"],
+      // tsk-2 is in A's working set: B must not be able to take it out either.
+      ["DELETE", "/tasks/tsk-2/focus"],
+    ];
+    for (const [method, url, payload] of attempts) {
+      const res = await asB(method, url, payload);
+      expect(res.statusCode, `${method} ${url}`).toBe(404);
+    }
+
+    expect(JSON.stringify(tasks)).toBe(tasksBefore);
+    expect(JSON.stringify(events)).toBe(eventsBefore);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.task.delete).not.toHaveBeenCalled();
+  });
+
+  it("404s for A on B's task just the same", async () => {
+    expect((await call("GET", "/tasks/tsk-b1/events")).statusCode).toBe(404);
+    expect((await call("PATCH", "/tasks/tsk-b1", { title: "Чужое" })).statusCode).toBe(404);
+    expect((await call("DELETE", "/tasks/tsk-b1/focus")).statusCode).toBe(404);
+    expect(tasks.find((t) => t.id === "tsk-b1")!.focusedAt).not.toBeNull();
+  });
+
+  it("will not create or list tasks in someone else's project", async () => {
+    const eventsBefore = events.length;
+
+    expect((await asB("POST", "/projects/prj-1/tasks", { title: "Подкинуто" })).statusCode).toBe(404);
+    expect((await asB("GET", "/projects/prj-1/tasks")).statusCode).toBe(404);
+
+    expect(tasks.some((t) => t.title === "Подкинуто")).toBe(false);
+    expect(events).toHaveLength(eventsBefore);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    // ...while the owner still can.
+    expect((await call("GET", "/projects/prj-1/tasks")).statusCode).toBe(200);
+  });
+
+  it("does not link a sample of another user when a task is created with its id", async () => {
+    // B saves a task in B's own project, carrying the id of A's parse.
+    const res = await asB("POST", "/projects/prj-b/tasks", { title: "Свой", dictationParseId: "dp-a" });
+
+    expect(res.statusCode).toBe(201);
+    expect(prismaMock.dictationParse.updateMany).toHaveBeenCalledTimes(1);
+    expect(prismaMock.dictationParse.updateMany.mock.results[0]!.value).toEqual({ count: 0 });
+    const parse = parses.find((p) => p.id === "dp-a")!;
+    expect(parse.linkedAt).toBeNull();
+    expect(parse.taskId).toBeUndefined();
+    expect(parse.finalTitle).toBeUndefined();
+
+    // Control: B's own parse is labelled by the same route.
+    await asB("POST", "/projects/prj-b/tasks", { title: "Опять свой", dictationParseId: "dp-b" });
+    expect(parses.find((p) => p.id === "dp-b")!.finalTitle).toBe("Опять свой");
+  });
+
+  it("does not link a sample of another user when a task is edited with its id", async () => {
+    // A tidies A's task with B's parse id; the kind is right, the owner is not.
+    parses.find((p) => p.id === "dp-b")!.kind = "task_tidy";
+
+    const res = await call("PATCH", "/tasks/tsk-1", { title: "Причёсано", dictationParseId: "dp-b" });
+
+    expect(res.statusCode).toBe(200);
+    expect(tasks.find((t) => t.id === "tsk-1")!.title).toBe("Причёсано");
+    expect(parses.find((p) => p.id === "dp-b")!.linkedAt).toBeNull();
+  });
+
+  it("gives each user only their own working set", async () => {
+    const listA = (await call("GET", "/focus")).json() as { id: string }[];
+    const listB = (await asB("GET", "/focus")).json() as { id: string; project: { name: string } }[];
+
+    expect(listA.map((t) => t.id)).toEqual(["tsk-2"]);
+    expect(listB.map((t) => t.id)).toEqual(["tsk-b1"]);
+    expect(listB[0]!.project.name).toBe("Гараж");
+  });
+
+  it("builds each user's history from their own events only", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOW);
+    interface Body {
+      closedTotal: number;
+      closedByDay: { date: string; count: number }[];
+      projects: { projectId: string; opened: number; closed: number }[];
+      stale: { id: string }[];
+    }
+
+    const b = (await asB("GET", "/history?range=7d")).json() as Body;
+    // B opened two tasks and closed one, all in B's project.
+    expect(b.projects).toEqual([{ projectId: "prj-b", name: "Гараж", opened: 2, closed: 1 }]);
+    expect(b.closedTotal).toBe(1);
+    expect(b.closedByDay.find((d) => d.date === "2026-09-20")!.count).toBe(1);
+    expect(b.stale.map((t) => t.id)).toEqual(["tsk-b1"]);
+
+    // A's numbers are the ones the history tests above expect, unchanged by B's rows.
+    const a = (await call("GET", "/history?range=7d")).json() as Body;
+    expect(a.projects).toEqual([{ projectId: "prj-1", name: "Дом", opened: 1, closed: 1 }]);
+    expect(a.closedTotal).toBe(1);
+    expect(a.stale.map((t) => t.id)).toEqual(["tsk-2", "tsk-1", "tsk-5"]);
+
+    // And over all time: no project of the other user in either list.
+    const allA = (await call("GET", "/history?range=all")).json() as Body;
+    expect(allA.projects.map((p) => p.projectId).sort()).toEqual(["prj-1", "prj-2"]);
+    const allB = (await asB("GET", "/history?range=all")).json() as Body;
+    expect(allB.projects.map((p) => p.projectId)).toEqual(["prj-b"]);
   });
 });

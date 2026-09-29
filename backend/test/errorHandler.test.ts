@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 // (and therefore do not construct a Prisma client) before DATABASE_URL is set below.
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { TEST_HASH, TEST_PASSWORD, inMemoryUsers } from "./support/users";
 
 /*
  * The route modules construct a Prisma client at import time, which requires
@@ -13,9 +14,6 @@ import type { BuildAppOptions } from "../src/app";
  */
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4 -- fast, since these tests log in repeatedly. */
-const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
 
 const baseConfig: AuthConfig = {
   email: "owner@example.com",
@@ -57,7 +55,7 @@ class StatusCarryingError extends Error {
 beforeAll(async () => {
   const appModule = await import("../src/app");
   buildApp = appModule.buildApp;
-  app = await buildApp({ authConfig: baseConfig, logger: false });
+  app = await buildApp({ authConfig: baseConfig, users: inMemoryUsers(), logger: false });
 
   app.post(ROUTES.echo, async (request) => ({ got: request.body }));
   // 16 bytes is below every payload this suite sends on that route.

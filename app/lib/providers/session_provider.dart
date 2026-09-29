@@ -4,8 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/api_exception.dart';
+import '../storage/jwt_subject.dart';
+import 'archive_providers.dart';
 import 'board_providers.dart';
+import 'capture_queue_providers.dart';
 import 'dependencies.dart';
+import 'history_providers.dart';
+import 'inbox_providers.dart';
+import 'scope_providers.dart';
 
 part 'session_provider.g.dart';
 
@@ -56,6 +62,18 @@ class Session extends _$Session {
 
     api.setToken(token);
 
+    /*
+     * An install from before per-user wipes existed has a token but no
+     * remembered owner. Adopt the token's user as the owner now, so that the
+     * next sign-in of that same person is recognized and keeps the cached board
+     * and offline queue instead of wiping them as "unknown".
+     */
+    final storage = ref.read(tokenStorageProvider);
+    if (await storage.readLastUserId() == null) {
+      final subject = jwtSubject(token);
+      if (subject != null) await storage.writeLastUserId(subject);
+    }
+
     try {
       await ref.read(authApiProvider).me();
       return SessionStatus.signedIn;
@@ -101,25 +119,49 @@ class Session extends _$Session {
     ref.read(apiClientProvider).setToken(result.token);
 
     /*
-     * Drop the cached board before letting the app back in.
+     * The device may hold another person's data: the backend is multi-user, and
+     * the board snapshot, the offline capture queue (unsent inbox lines) and the
+     * selected scope id all belong to whoever last used it. Uploading their
+     * queued lines into this person's inbox, or showing their board for a moment
+     * on a cold start, would be a leak, so anything not provably the same user's
+     * is wiped -- including "no remembered user" and an unreadable token.
      *
-     * `Board` is keepAlive, and a provider that already holds a value does not
+     * The same person signing in again (expired token, explicit logout) keeps
+     * everything: their last good board drawn instantly on the next cold start is
+     * the entire reason the snapshot exists, and their queued lines are theirs.
+     */
+    final storage = ref.read(tokenStorageProvider);
+    final subject = jwtSubject(result.token);
+    final sameUser =
+        subject != null && subject == await storage.readLastUserId();
+    if (!sameUser) {
+      await _wipeLocalUserData();
+      if (subject != null) await storage.writeLastUserId(subject);
+    }
+
+    /*
+     * Drop the in-memory copies before letting the app back in.
+     *
+     * These providers are keepAlive, and one that already holds a value does not
      * rebuild just because a screen re-mounted. So without this, a session that
-     * ended (an expired token, an explicit logout) and was then re-established
-     * would put the board fetched *before* it ended back on screen, labelled as
-     * live, with nothing scheduled to refresh it until the user thought to pull
-     * down.
+     * ended and was then re-established would put the data fetched *before* it
+     * ended back on screen, labelled as live, with nothing scheduled to refresh
+     * it until the user thought to pull down -- and after a change of user it
+     * would be the previous person's data.
      *
      * Invalidating here rather than in the sign-out paths is deliberate: at this
      * point the board screen is certainly not mounted (the login form is) and the
      * new token is already installed, so the rebuild cannot fire a request with
-     * a token that has just been thrown away.
-     *
-     * The snapshot *file* is left alone on purpose -- it is this same user's
-     * last good board, and drawing it instantly on the next cold start is the
-     * entire reason it exists.
+     * a token that has just been thrown away. The wipe above comes first so the
+     * rebuilt providers read the emptied stores, not the old files.
      */
     ref.invalidate(boardProvider);
+    ref.invalidate(scopesProvider);
+    ref.invalidate(selectedScopeIdProvider);
+    ref.invalidate(inboxProvider);
+    ref.invalidate(captureQueueProvider);
+    ref.invalidate(historyFeedProvider);
+    ref.invalidate(archivedBoardProvider);
 
     state = const AsyncData(SessionStatus.signedIn);
   }
@@ -162,6 +204,14 @@ class Session extends _$Session {
     await _forgetToken();
     if (!ref.mounted) return;
     state = const AsyncData(SessionStatus.signedOut);
+  }
+
+  /// Removes what the device keeps per user. The stores' own `clear()`s already
+  /// swallow I/O errors, so a stubborn file cannot block a sign-in.
+  Future<void> _wipeLocalUserData() async {
+    await ref.read(boardSnapshotStoreProvider).clear();
+    await ref.read(captureQueueStoreProvider).clear();
+    await ref.read(settingsStoreProvider).clearSelectedScopeId();
   }
 
   /// Drops the token from both places it lives: the in-memory copy the HTTP

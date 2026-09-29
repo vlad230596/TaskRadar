@@ -4,6 +4,7 @@ import type { FastifyInstance } from "fastify";
 // (and therefore do not construct a Prisma client) before the mock below is in place.
 import type { AuthConfig } from "../src/lib/authConfig";
 import type { BuildAppOptions } from "../src/app";
+import { inMemoryUsers, tokenFor, TEST_PASSWORD, USER_A, USER_B } from "./support/users";
 
 /*
  * There is no database in this environment (and no repo-root `.env`), so the
@@ -17,7 +18,7 @@ import type { BuildAppOptions } from "../src/app";
  * cannot prove is that Postgres agrees with it; see the note at the bottom.
  */
 const prismaMock = vi.hoisted(() => ({
-  project: { findMany: vi.fn(), findUnique: vi.fn() },
+  project: { findMany: vi.fn(), findFirst: vi.fn() },
   task: { findMany: vi.fn() },
 }));
 
@@ -27,8 +28,7 @@ vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
 // client is constructed instead, and it demands DATABASE_URL at import time.
 process.env.DATABASE_URL ??= "postgresql://placeholder:placeholder@localhost:5432/placeholder";
 
-const TEST_PASSWORD = "test-password-not-the-real-one";
-/** bcrypt hash of TEST_PASSWORD at cost 4 -- fast, since these tests log in repeatedly. */
+/** bcrypt hash of the shared test password at cost 4 (see test/support/users.ts). */
 const TEST_HASH = "$2b$04$zV5VFEALedx8Rfd/ucwUSOrHYSSr8xveuActiCTdzOmCsBSDTbYXO";
 
 const baseConfig: AuthConfig = {
@@ -55,12 +55,20 @@ interface TaskRow {
 interface ProjectRow {
   id: string;
   name: string;
+  scopeId: string;
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 const T0 = new Date("2026-01-01T00:00:00.000Z");
+
+/** Who owns each scope; a project belongs to whoever owns its scope. */
+const SCOPE_OWNERS: Record<string, string> = {
+  "s-a1": USER_A.id,
+  "s-a2": USER_A.id,
+  "s-b": USER_B.id,
+};
 
 function task(
   id: string,
@@ -84,13 +92,25 @@ function task(
 
 /** Insertion order here is scrambled on purpose, so ordering cannot pass by luck. */
 const PROJECTS: ProjectRow[] = [
-  { id: "p-second", name: "Second", archivedAt: null, createdAt: new Date("2026-02-01T00:00:00.000Z"), updatedAt: T0 },
-  { id: "p-first", name: "First", archivedAt: null, createdAt: new Date("2026-01-01T00:00:00.000Z"), updatedAt: T0 },
+  { id: "p-second", name: "Second", scopeId: "s-a2", archivedAt: null, createdAt: new Date("2026-02-01T00:00:00.000Z"), updatedAt: T0 },
+  { id: "p-first", name: "First", scopeId: "s-a1", archivedAt: null, createdAt: new Date("2026-01-01T00:00:00.000Z"), updatedAt: T0 },
   {
     id: "p-archived",
     name: "Archived",
+    scopeId: "s-a1",
     archivedAt: new Date("2026-03-01T00:00:00.000Z"),
     createdAt: new Date("2026-01-15T00:00:00.000Z"),
+    updatedAt: T0,
+  },
+  // USER_B's board. Created between A's projects, so a missing owner filter
+  // shows up in the order as well as in the membership.
+  { id: "p-b-active", name: "Boris", scopeId: "s-b", archivedAt: null, createdAt: new Date("2026-01-20T00:00:00.000Z"), updatedAt: T0 },
+  {
+    id: "p-b-archived",
+    name: "Boris old",
+    scopeId: "s-b",
+    archivedAt: new Date("2026-03-02T00:00:00.000Z"),
+    createdAt: new Date("2026-01-21T00:00:00.000Z"),
     updatedAt: T0,
   },
 ];
@@ -110,6 +130,7 @@ const TASKS: TaskRow[] = [
   task("t-second-1", "p-second", "done", 10),
   // p-archived has one task, to prove archived projects carry theirs too.
   task("t-arch-1", "p-archived", "pending", 10),
+  task("t-b-1", "p-b-active", "pending", 10),
 ];
 
 /**
@@ -118,7 +139,7 @@ const TASKS: TaskRow[] = [
  * starts relying on it, this throws rather than quietly returning wrong data.
  */
 interface FindManyArgs {
-  where?: { archivedAt?: null | { not: null } };
+  where?: { scope?: { userId?: string }; scopeId?: string; archivedAt?: null | { not: null } };
   orderBy?: { createdAt?: "asc" | "desc" };
   include?: {
     tasks?: { orderBy?: { position?: "asc" | "desc" } };
@@ -129,10 +150,32 @@ interface FindManyArgs {
 /** How many notes each fixture project has; absent means none. */
 const NOTE_COUNTS: Record<string, number> = { "p-first": 3, "p-archived": 1 };
 
-function fakeFindMany(args: FindManyArgs = {}): unknown[] {
-  const wantsArchived = args.where?.archivedAt !== null && args.where?.archivedAt !== undefined;
+/**
+ * Evaluates a project `where`: `archivedAt`, `scopeId` and the ownership
+ * relation `scope: { userId }` (against SCOPE_OWNERS). Any other key throws.
+ * The owner filter is applied for real, so the isolation tests mean something.
+ */
+function projectMatches(p: ProjectRow, where: Record<string, unknown> = {}): boolean {
+  for (const [key, value] of Object.entries(where)) {
+    if (key === "id" || key === "scopeId") {
+      if (p[key] !== value) return false;
+    } else if (key === "archivedAt") {
+      if ((value !== null) !== (p.archivedAt !== null)) return false;
+    } else if (key === "scope") {
+      const scope = value as Record<string, unknown>;
+      for (const [scopeKey, scopeValue] of Object.entries(scope)) {
+        if (scopeKey !== "userId") throw new Error(`fake: unsupported scope where key "${scopeKey}"`);
+        if (SCOPE_OWNERS[p.scopeId] !== scopeValue) return false;
+      }
+    } else {
+      throw new Error(`fake: unsupported project where key "${key}"`);
+    }
+  }
+  return true;
+}
 
-  let rows = PROJECTS.filter((p) => (wantsArchived ? p.archivedAt !== null : p.archivedAt === null));
+function fakeFindMany(args: FindManyArgs = {}): unknown[] {
+  let rows = PROJECTS.filter((p) => projectMatches(p, args.where));
 
   if (args.orderBy?.createdAt === "asc") {
     rows = [...rows].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
@@ -167,8 +210,8 @@ function fakeFindMany(args: FindManyArgs = {}): unknown[] {
  * layer, instead of against a second hand-written expectation that could drift
  * from the route in the same direction as the bug.
  */
-function fakeProjectFindUnique(args: { where: { id: string } }): ProjectRow | null {
-  return PROJECTS.find((p) => p.id === args.where.id) ?? null;
+function fakeProjectFindFirst(args: { where: Record<string, unknown> }): ProjectRow | null {
+  return PROJECTS.find((p) => projectMatches(p, args.where)) ?? null;
 }
 
 function fakeTaskFindMany(args: {
@@ -185,6 +228,7 @@ function fakeTaskFindMany(args: {
 let buildApp: (options?: BuildAppOptions) => Promise<FastifyInstance>;
 let app: FastifyInstance;
 let token: string;
+let tokenB: string;
 
 interface BoardTask {
   id: string;
@@ -201,11 +245,11 @@ interface BoardProject {
 }
 
 /** Calls GET /board as the native client would: token in an Authorization header. */
-async function getBoard(query = ""): Promise<{ statusCode: number; body: BoardProject[] }> {
+async function getBoard(query = "", bearer?: string): Promise<{ statusCode: number; body: BoardProject[] }> {
   const res = await app.inject({
     method: "GET",
     url: `/board${query}`,
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${bearer ?? token}` },
   });
   return { statusCode: res.statusCode, body: res.statusCode === 200 ? (res.json() as BoardProject[]) : [] };
 }
@@ -213,15 +257,11 @@ async function getBoard(query = ""): Promise<{ statusCode: number; body: BoardPr
 beforeAll(async () => {
   const appModule = await import("../src/app");
   buildApp = appModule.buildApp;
-  app = await buildApp({ authConfig: baseConfig, logger: false });
+  app = await buildApp({ authConfig: baseConfig, users: inMemoryUsers(), logger: false });
   await app.ready();
 
-  const login = await app.inject({
-    method: "POST",
-    url: "/auth/login",
-    payload: { email: baseConfig.email, password: TEST_PASSWORD },
-  });
-  token = (login.json() as { token: string }).token;
+  token = await tokenFor(app, USER_A.email);
+  tokenB = await tokenFor(app, USER_B.email);
 });
 
 afterAll(async () => {
@@ -230,10 +270,10 @@ afterAll(async () => {
 
 beforeEach(() => {
   prismaMock.project.findMany.mockReset();
-  prismaMock.project.findUnique.mockReset();
+  prismaMock.project.findFirst.mockReset();
   prismaMock.task.findMany.mockReset();
   prismaMock.project.findMany.mockImplementation(fakeFindMany);
-  prismaMock.project.findUnique.mockImplementation(fakeProjectFindUnique);
+  prismaMock.project.findFirst.mockImplementation(fakeProjectFindFirst);
   prismaMock.task.findMany.mockImplementation(fakeTaskFindMany);
 });
 
@@ -279,6 +319,7 @@ describe("GET /board -- response shape", () => {
       "id",
       "name",
       "noteCount",
+      "scopeId",
       "tasks",
       "updatedAt",
     ]);
@@ -406,7 +447,7 @@ describe("GET /board -- archived filter", () => {
     expect(body.map((p) => p.id)).toEqual(["p-first", "p-second"]);
 
     const args = prismaMock.project.findMany.mock.calls[0]![0] as FindManyArgs;
-    expect(args.where).toEqual({ archivedAt: null });
+    expect(args.where).toEqual({ scope: { userId: USER_A.id }, archivedAt: null });
   });
 
   it("treats archived=false the same as omitting it", async () => {
@@ -419,7 +460,7 @@ describe("GET /board -- archived filter", () => {
     expect(body.map((p) => p.id)).toEqual(["p-archived"]);
 
     const args = prismaMock.project.findMany.mock.calls[0]![0] as FindManyArgs;
-    expect(args.where).toEqual({ archivedAt: { not: null } });
+    expect(args.where).toEqual({ scope: { userId: USER_A.id }, archivedAt: { not: null } });
   });
 
   it("rejects any other value with 400, exactly like GET /projects", async () => {
@@ -437,6 +478,43 @@ describe("GET /board -- archived filter", () => {
       expect(board.statusCode, `archived=${value}`).toBe(400);
       expect(board.statusCode).toBe(projects.statusCode);
     }
+  });
+});
+
+describe("GET /board -- one user's board is not another's", () => {
+  it("shows each user only their own projects, active and archived", async () => {
+    expect((await getBoard()).body.map((p) => p.id)).toEqual(["p-first", "p-second"]);
+    expect((await getBoard("?archived=true")).body.map((p) => p.id)).toEqual(["p-archived"]);
+    expect((await getBoard("", tokenB)).body.map((p) => p.id)).toEqual(["p-b-active"]);
+    expect((await getBoard("?archived=true", tokenB)).body.map((p) => p.id)).toEqual(["p-b-archived"]);
+  });
+
+  it("carries only the owner's tasks and notes counts on their projects", async () => {
+    const { body } = await getBoard("", tokenB);
+    expect(body[0]!.tasks.map((t) => t.id)).toEqual(["t-b-1"]);
+    expect(body[0]!.noteCount).toBe(0);
+    const ids = (await getBoard()).body.flatMap((p) => p.tasks.map((t) => t.id));
+    expect(ids).not.toContain("t-b-1");
+  });
+
+  it("does not leak A's projects when B asks for A's scopeId", async () => {
+    const { statusCode, body } = await getBoard("?scopeId=s-a1", tokenB);
+    expect(statusCode).toBe(200);
+    expect(body).toEqual([]);
+  });
+
+  it("filters on the caller's own id, whichever user that is", async () => {
+    await getBoard("", tokenB);
+    const args = prismaMock.project.findMany.mock.calls[0]![0] as FindManyArgs;
+    expect(args.where?.scope).toEqual({ userId: USER_B.id });
+  });
+
+  it("answers 404 for another user's project tasks, like a missing project", async () => {
+    const headers = { authorization: `Bearer ${tokenB}` };
+    const foreign = await app.inject({ method: "GET", url: "/projects/p-first/tasks", headers });
+    const missing = await app.inject({ method: "GET", url: "/projects/p-nope/tasks", headers });
+    expect(foreign.statusCode).toBe(404);
+    expect(foreign.json()).toEqual(missing.json());
   });
 });
 

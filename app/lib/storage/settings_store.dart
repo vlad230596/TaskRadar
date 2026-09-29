@@ -53,6 +53,10 @@ abstract interface class SettingsStore {
   /// Remembers which scope the board is showing. May throw.
   Future<void> writeSelectedScopeId(String scopeId);
 
+  /// Forgets the selection. A scope id belongs to one account, so it must not
+  /// outlive a change of user.
+  Future<void> clearSelectedScopeId();
+
   /// The mode the app was in when it was last closed (F12), as the mode's own
   /// wire name -- `plan` / `work` / `history`.
   ///
@@ -179,6 +183,18 @@ class PreferencesSettingsStore implements SettingsStore {
   @override
   Future<void> writeSelectedScopeId(String scopeId) =>
       _writeString(selectedScopeKey, scopeId);
+
+  @override
+  Future<void> clearSelectedScopeId() async {
+    try {
+      final preferences = await _preferences();
+      await preferences.remove(selectedScopeKey);
+      await preferences.remove(legacySelectedScopeKey);
+    } catch (error) {
+      // Same stance as the other clears: a failure here must not block sign-in.
+      debugPrint('Could not clear the selected scope: $error');
+    }
+  }
 
   @override
   Future<String?> readAppMode() => _readString(appModeKey);

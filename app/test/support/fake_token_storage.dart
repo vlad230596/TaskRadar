@@ -12,6 +12,9 @@ class FakeTokenStorage implements TokenStorage {
 
   String? token;
 
+  /// Survives [clear], like the real one.
+  String? lastUserId;
+
   int readCount = 0;
   int writeCount = 0;
   int clearCount = 0;
@@ -32,5 +35,13 @@ class FakeTokenStorage implements TokenStorage {
   Future<void> clear() async {
     clearCount++;
     token = null;
+  }
+
+  @override
+  Future<String?> readLastUserId() async => lastUserId;
+
+  @override
+  Future<void> writeLastUserId(String userId) async {
+    lastUserId = userId;
   }
 }

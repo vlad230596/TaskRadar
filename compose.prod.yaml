@@ -117,10 +117,12 @@ services:
       NODE_ENV: production
       PORT: "3001"
       DATABASE_URL: postgresql://${POSTGRES_USER:-taskradar}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-taskradar}
-      # Single-user auth, defined entirely by these three variables (there is no
-      # users table). All are required: src/lib/authConfig.ts validates them at
-      # startup and throws, so a misconfigured deployment refuses to boot instead
-      # of serving an app nobody can log into.
+      # Auth. AUTH_EMAIL / AUTH_PASSWORD_HASH are the FIRST user's login (id
+      # "owner"); the server writes them onto that row at every start. Everyone
+      # else is created with `node dist/scripts/user.js create` (no registration).
+      # All three are required: src/lib/authConfig.ts validates them at startup
+      # and throws, so a misconfigured deployment refuses to boot instead of
+      # serving an app nobody can log into.
       AUTH_EMAIL: ${AUTH_EMAIL:?set AUTH_EMAIL in .env}
       AUTH_PASSWORD_HASH: ${AUTH_PASSWORD_HASH:?set AUTH_PASSWORD_HASH in .env}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
@@ -135,6 +137,8 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-12000}
       LLM_STREAM_TIMEOUT_MS: ${LLM_STREAM_TIMEOUT_MS:-90000}
+      # AI requests one user may make per UTC day. The one key pays for everyone.
+      AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-50}
     depends_on:
       postgres:
         condition: service_healthy
