@@ -169,6 +169,18 @@ jobs:
           # deploy/web/nginx.conf.
           echo "$headers" | grep -qi '^cache-control: no-cache'
 
+      - name: Bundle fonts are typed as fonts and compressed at the edge
+        # nginx's stock mime.types has no .ttf, so the bundle's fonts went out
+        # as application/octet-stream, which `encode` does not compress: ~1.6 MB
+        # of raw fonts on every first visit, the tail of a ~14 s blank page. The
+        # fixture font stands in for them; see deploy/web/nginx.conf.
+        run: |
+          headers="$(curl --fail --silent --show-error --dump-header - --output /dev/null \
+            --header 'Accept-Encoding: gzip' "$BASE_URL/assets/fonts/ci-fixture.ttf")"
+          echo "$headers"
+          echo "$headers" | grep -qi '^content-type: font/ttf'
+          echo "$headers" | grep -qi '^content-encoding: gzip'
+
       - name: Unrouted paths are refused at the edge
         # Still a 404, now from the web upstream rather than from Caddy: the
         # bundle's server has no SPA fallback on purpose, so a path that is

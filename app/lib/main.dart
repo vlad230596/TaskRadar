@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app.dart';
+import 'web/app_loader.dart';
 
 void main() {
   // Nothing async happens here on purpose. The startup session probe lives in
@@ -10,4 +11,8 @@ void main() {
   // round trip. On a cold start over mobile data that difference is the gap
   // between "opened instantly" and "hung for two seconds".
   runApp(const ProviderScope(child: TaskRadarApp()));
+
+  // On web, the HTML loader from index.html stays until something is painted
+  // over it; on the other targets this does nothing.
+  WidgetsBinding.instance.addPostFrameCallback((_) => removeAppLoader());
 }

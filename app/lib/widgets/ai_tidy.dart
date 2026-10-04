@@ -261,12 +261,13 @@ class TidyLabel extends StatelessWidget {
 }
 
 /// A field of the answer, or the source: no box, editable, as tall as its text.
-class TidyTextField extends StatelessWidget {
+class TidyTextField extends StatefulWidget {
   const TidyTextField({
     required this.controller,
     required this.style,
     required this.hint,
     this.fieldKey,
+    this.revealWhole = false,
     super.key,
   });
 
@@ -275,11 +276,77 @@ class TidyTextField extends StatelessWidget {
   final String hint;
   final Key? fieldKey;
 
+  /// Keep the whole field in view while it is edited, not just the caret's
+  /// line -- when it fits in what the keyboard leaves of the list.
+  ///
+  /// For the title, which is read whole. The text field alone scrolls only as
+  /// far as the caret: a title tapped in its second line, with the keyboard
+  /// coming up, showed its second line and lost the first under the segment.
+  /// A field taller than the window (a long description) is left to the
+  /// caret, as before -- revealing all of it is not possible.
+  final bool revealWhole;
+
+  @override
+  State<TidyTextField> createState() => _TidyTextFieldState();
+}
+
+class _TidyTextFieldState extends State<TidyTextField>
+    with WidgetsBindingObserver {
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_scheduleReveal);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  // The keyboard coming up (or changing height) shrinks the list after the
+  // focus has already moved, so the reveal is redone then. Not through
+  // `MediaQuery.viewInsetsOf`: the Scaffold strips the inset from its body, so
+  // in here it never changes.
+  @override
+  void didChangeMetrics() => _scheduleReveal();
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _scheduleReveal() {
+    if (!widget.revealWhole || !_focus.hasFocus) return;
+    // Two frames on. The first lets the list lay out at its new height; the
+    // text field's own caret reveal runs in that same post-frame phase, after
+    // this widget's (its observer registered later), and its scroll would
+    // replace this one. Starting a frame later puts the whole field last.
+    void reveal(Duration _) {
+      if (!mounted || !_focus.hasFocus) return;
+      final box = context.findRenderObject() as RenderBox?;
+      final scrollable = Scrollable.maybeOf(context);
+      if (box == null || scrollable == null) return;
+      if (box.size.height > scrollable.position.viewportDimension) return;
+      box.showOnScreen(
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.fastOutSlowIn,
+      );
+    }
+
+    final binding = WidgetsBinding.instance;
+    binding.addPostFrameCallback((_) {
+      binding.addPostFrameCallback(reveal);
+      binding.scheduleFrame();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    final style = widget.style;
     return TextField(
-      key: fieldKey,
-      controller: controller,
+      key: widget.fieldKey,
+      controller: widget.controller,
+      focusNode: _focus,
       maxLines: null,
       keyboardType: TextInputType.multiline,
       textCapitalization: TextCapitalization.sentences,
@@ -294,7 +361,7 @@ class TidyTextField extends StatelessWidget {
         // Flush with the labels above: the theme's inset is for a boxed
         // field, and these have no box.
         contentPadding: EdgeInsets.zero,
-        hintText: hint,
+        hintText: widget.hint,
         hintStyle: style.copyWith(color: AppColors.voiceLine),
       ),
     );

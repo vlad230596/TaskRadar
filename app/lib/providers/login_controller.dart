@@ -19,13 +19,19 @@ class LoginController extends _$LoginController {
 
   /// Attempts a login. Never throws -- the outcome lands in [state], which the
   /// form renders as a spinner or an inline error.
-  Future<void> submit({required String email, required String password}) async {
+  ///
+  /// Also answers whether it worked, for the one caller that cannot read
+  /// [state] afterwards: on success the session flips and the login screen is
+  /// gone by the time this returns.
+  Future<bool> submit({required String email, required String password}) async {
     state = const AsyncLoading<void>();
-    state = await AsyncValue.guard<void>(
+    final result = await AsyncValue.guard<void>(
       () => ref
           .read(sessionProvider.notifier)
           .signIn(email: email.trim(), password: password),
     );
+    if (ref.mounted) state = result;
+    return !result.hasError;
   }
 }
 

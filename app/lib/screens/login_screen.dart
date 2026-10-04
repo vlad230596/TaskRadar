@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
@@ -41,12 +42,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     // area where the error message will appear.
     FocusScope.of(context).unfocus();
 
-    await ref
+    final signedIn = await ref
         .read(loginControllerProvider.notifier)
         .submit(
           email: _emailController.text,
           password: _passwordController.text,
         );
+
+    // Tells the password manager the credentials worked, which is what makes
+    // it offer to save them. Only on success: a mistyped password offered for
+    // saving would overwrite the right one. A static call, because by now the
+    // session has flipped and this screen may already be unmounted.
+    if (signedIn) TextInput.finishAutofillContext();
   }
 
   @override
@@ -66,78 +73,98 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               constraints: const BoxConstraints(maxWidth: 420),
               child: Form(
                 key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      'TaskRadar',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                    const SizedBox(height: 24),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: 'Email',
-                        border: OutlineInputBorder(),
-                      ),
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
-                      autofillHints: const [AutofillHints.username],
-                      autofocus: true,
-                      enabled: !submitting,
-                      validator: (value) =>
-                          (value == null || value.trim().isEmpty) ? 'Введите email' : null,
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      decoration: const InputDecoration(
-                        labelText: 'Пароль',
-                        border: OutlineInputBorder(),
-                      ),
-                      obscureText: true,
-                      autofillHints: const [AutofillHints.password],
-                      // Submitting from the keyboard's "done" key is the normal
-                      // way to finish a two-field form on a phone.
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => submitting ? null : _submit(),
-                      enabled: !submitting,
-                      validator: (value) =>
-                          (value == null || value.isEmpty) ? 'Введите пароль' : null,
-                    ),
-                    if (error != null) ...[
-                      const SizedBox(height: 16),
+                // One group for both fields, so they reach the platform as one
+                // login form. On web that is literal: the engine builds a DOM
+                // <form> from the focused field and its group, and without the
+                // group the form held only the email <input>. A password
+                // manager looks for a password input in it, found none, and
+                // offered nothing. With the group the password <input> is
+                // there too, whichever field has focus.
+                //
+                // `cancel` on dispose: saving is decided in [_submit], on a
+                // login that actually worked, not by the screen going away.
+                child: AutofillGroup(
+                  onDisposeAction: AutofillContextAction.cancel,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       Text(
-                        loginErrorMessage(error),
-                        style: TextStyle(color: Theme.of(context).colorScheme.error),
+                        'TaskRadar',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.headlineMedium,
+                      ),
+                      const SizedBox(height: 24),
+                      TextFormField(
+                        controller: _emailController,
+                        decoration: const InputDecoration(
+                          labelText: 'Email',
+                          border: OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        autofillHints: const [AutofillHints.username],
+                        autofocus: true,
+                        enabled: !submitting,
+                        validator: (value) =>
+                            (value == null || value.trim().isEmpty)
+                            ? 'Введите email'
+                            : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _passwordController,
+                        decoration: const InputDecoration(
+                          labelText: 'Пароль',
+                          border: OutlineInputBorder(),
+                        ),
+                        obscureText: true,
+                        autofillHints: const [AutofillHints.password],
+                        // Submitting from the keyboard's "done" key is the normal
+                        // way to finish a two-field form on a phone.
+                        textInputAction: TextInputAction.done,
+                        onFieldSubmitted: (_) => submitting ? null : _submit(),
+                        enabled: !submitting,
+                        validator: (value) => (value == null || value.isEmpty)
+                            ? 'Введите пароль'
+                            : null,
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 16),
+                        Text(
+                          loginErrorMessage(error),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        onPressed: submitting ? null : _submit,
+                        child: submitting
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Text('Войти'),
+                      ),
+                      const SizedBox(height: 16),
+                      // The one piece of diagnostics worth showing on a login
+                      // screen. "Cannot connect" on a phone is almost always the
+                      // wrong base URL (localhost baked in, or the laptop's LAN
+                      // address changed), and this turns a ten-minute guess into
+                      // a glance. It is compile-time constant, so nothing secret
+                      // can leak through it.
+                      Text(
+                        AppConfig.apiBaseUrl,
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall,
                       ),
                     ],
-                    const SizedBox(height: 24),
-                    FilledButton(
-                      onPressed: submitting ? null : _submit,
-                      child: submitting
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Text('Войти'),
-                    ),
-                    const SizedBox(height: 16),
-                    // The one piece of diagnostics worth showing on a login
-                    // screen. "Cannot connect" on a phone is almost always the
-                    // wrong base URL (localhost baked in, or the laptop's LAN
-                    // address changed), and this turns a ten-minute guess into
-                    // a glance. It is compile-time constant, so nothing secret
-                    // can leak through it.
-                    Text(
-                      AppConfig.apiBaseUrl,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),

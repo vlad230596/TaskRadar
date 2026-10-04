@@ -629,7 +629,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 _header(),
-                _stage(state),
+                // With the keyboard up the stage goes: it only says what the
+                // screen already shows ("Можно править", "Разобрано — можно
+                // править"), and on a 360x780 phone the answer was left 64 px
+                // -- under three lines -- between it, the segment and the two
+                // rows of buttons. The keyboard is only ever up when the user
+                // is typing into the words, never while recording.
+                if (!keyboard) _stage(state),
                 // The space is held rather than collapsed when the recording
                 // stops: the text below must not jump up the screen while the
                 // user is reading it. The answer is a different view, with
@@ -999,6 +1005,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             controller: _title,
             style: heading,
             hint: 'Что сделать',
+            revealWhole: true,
           ),
           const SizedBox(height: 20),
           const TidyLabel('ОПИСАНИЕ'),
@@ -1094,7 +1101,9 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         // "Отменить" is the full width of the screen, like "Готово" above it.
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          if (_result != null) ...<Widget>[
+          // Not with the keyboard up, for the same reason as the stage: the
+          // user is editing the answer, and both actions would replace it.
+          if (_result != null && !compact) ...<Widget>[
             TidyActions(
               onAsIs: _untidy,
               onRerun: _tidying || busy ? null : _rerun,
@@ -1105,6 +1114,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             _VoiceButton(
               label: 'Ещё раз',
               icon: Icons.refresh,
+              compact: compact,
               onPressed: () =>
                   unawaited(ref.read(voiceDictationProvider.notifier).retry()),
             )
@@ -1112,6 +1122,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             _VoiceButton(
               label: 'Готово',
               icon: Icons.check,
+              compact: compact,
               onPressed: busy ? null : () => unawaited(_done()),
             ),
           if (!compact) ...<Widget>[
@@ -1149,16 +1160,22 @@ class _VoiceButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onPressed,
+    this.compact = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback? onPressed;
 
+  /// The keyboard is up. The full 76 px is for a thumb finding the button
+  /// without looking; while typing, the eyes are on the screen already, and
+  /// on a 360x780 phone those 20 px are most of a line of the text.
+  final bool compact;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: Targets.finishDictation,
+      height: compact ? 56 : Targets.finishDictation,
       width: double.infinity,
       child: FilledButton.icon(
         style: FilledButton.styleFrom(

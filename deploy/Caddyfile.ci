@@ -5,6 +5,11 @@
 # entire point of this file: a typo in the production matcher list shows up as a
 # failing integration check rather than as a 404 nobody can reproduce locally.
 :8080 {
+	# As in production. Here so the integration workflow can see what the edge
+	# compresses -- the web bundle's fonts went out uncompressed for a whole
+	# release because nginx typed them application/octet-stream.
+	encode zstd gzip
+
 	header {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"

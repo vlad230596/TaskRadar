@@ -823,6 +823,111 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('Готово'), findsOneWidget);
     });
+
+    testWidgets('editing the proposal keeps the text being edited in sight', (
+      tester,
+    ) async {
+      modelAnswers(<String, dynamic>{
+        'title': 'Купить кабель USB-C для монитора в кабинете',
+        'description': List<String>.generate(
+          12,
+          (i) => '- пункт списка номер ${i + 1}',
+        ).join('\n'),
+        'remindDate': '2026-09-25',
+        'remindTime': null,
+      });
+
+      await dictate(tester);
+      // The phone the bug was reported from (Galaxy S23: 1080x2340 at 480 dpi
+      // is 360x780 dp) with its status bar, rather than the roomier 390x844
+      // above, and a 400 dp keyboard: the Samsung one with its toolbar. At
+      // 330 dp the answer still had 64 px; at this height it had none.
+      tester.view.physicalSize = const Size(360, 780);
+      tester.view.padding = const FakeViewPadding(top: 30, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 30, bottom: 24);
+      await settle(tester);
+      await tidy(tester);
+
+      // Tap into the description, then the keyboard comes up.
+      final description = find.byWidgetPredicate(
+        (w) =>
+            w is TextField && (w.controller?.text.contains('номер 1') ?? false),
+      );
+      // Into its third line, where a correction would go; the field's middle
+      // is under the buttons.
+      await tester.tapAt(
+        tester.getTopLeft(description) + const Offset(200, 55),
+      );
+      await settle(tester);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 400);
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final keyboardTop = 780.0 - 400;
+      final list = tester.getRect(find.byType(ListView));
+      // What is left of the screen above the keyboard for the answer itself.
+      // Five lines of 17 px text is the least that reads as "the text", not
+      // as a slot. It was 0 px, and the column overflowed: the stage line,
+      // the segment, "Как надиктовано | Разобрать заново" and a 76 px "Готово"
+      // kept their full height with the keyboard up, and the list got what
+      // was left.
+      expect(list.bottom, lessThanOrEqualTo(keyboardTop));
+      expect(list.height, greaterThanOrEqualTo(5 * 17 * 1.4));
+
+      // And the line with the caret is inside that window, not under the
+      // keyboard or scrolled above it.
+      final editableState = tester.state<EditableTextState>(
+        find.descendant(of: description, matching: find.byType(EditableText)),
+      );
+      expect(editableState.widget.focusNode.hasFocus, isTrue);
+      final editable = editableState.renderEditable;
+      final caret = editable.getLocalRectForCaret(editable.selection!.extent);
+      final caretTop = editable.localToGlobal(caret.topLeft).dy;
+      final caretBottom = editable.localToGlobal(caret.bottomLeft).dy;
+      expect(caretTop, greaterThanOrEqualTo(list.top));
+      expect(caretBottom, lessThanOrEqualTo(list.bottom));
+    });
+
+    testWidgets('editing the title keeps the whole title in sight', (
+      tester,
+    ) async {
+      modelAnswers(<String, dynamic>{
+        'title': 'Купить кабель USB-C для монитора в кабинете',
+        'description': List<String>.generate(
+          12,
+          (i) => '- пункт списка номер ${i + 1}',
+        ).join('\n'),
+        'remindDate': '2026-09-25',
+        'remindTime': null,
+      });
+
+      await dictate(tester);
+      // The reporting phone, as in the test above.
+      tester.view.physicalSize = const Size(360, 780);
+      tester.view.padding = const FakeViewPadding(top: 30, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 30, bottom: 24);
+      await settle(tester);
+      await tidy(tester);
+
+      final title = find.byWidgetPredicate(
+        (w) =>
+            w is TextField && w.controller?.text.startsWith('Купить') == true,
+      );
+      // Into its second line: the title is 22 px and wraps.
+      await tester.tapAt(tester.getTopLeft(title) + const Offset(150, 45));
+      await settle(tester);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 400);
+      await settle(tester);
+
+      expect(tester.takeException(), isNull);
+      final list = tester.getRect(find.byType(ListView));
+      final field = tester.getRect(title);
+      // The whole title -- both of its lines -- inside what the keyboard
+      // leaves, not just the line with the caret: a title is read whole.
+      expect(field.top, greaterThanOrEqualTo(list.top));
+      expect(field.bottom, lessThanOrEqualTo(list.bottom));
+      expect(field.bottom, lessThanOrEqualTo(780.0 - 400));
+    });
   });
 }
 

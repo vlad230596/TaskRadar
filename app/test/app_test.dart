@@ -263,4 +263,101 @@ void main() {
     expect(find.text('После входа'), findsOneWidget);
     expect(find.text('До выхода'), findsNothing);
   });
+
+  group('password manager autofill', () {
+    /// The configuration the field last sent to the platform's text input.
+    ///
+    /// On web this is what the engine builds the DOM `<form>` from: the
+    /// focused field's own `<input>`, plus one hidden `<input>` per entry in
+    /// `fields`. A password manager looks for a password input in that form,
+    /// and with `fields` empty there was none -- the form held a lone
+    /// `autocomplete="username"` input, and nothing offered to fill it.
+    Map<String, dynamic> lastClientConfiguration(WidgetTester tester) {
+      final call = tester.testTextInput.log.lastWhere(
+        (call) => call.method == 'TextInput.setClient',
+      );
+      return ((call.arguments as List<dynamic>)[1] as Map<dynamic, dynamic>)
+          .cast<String, dynamic>();
+    }
+
+    List<String> hintsOf(Map<dynamic, dynamic>? configuration) =>
+        ((configuration?['autofill'] as Map<dynamic, dynamic>?)?['hints']
+                    as List<dynamic>? ??
+                const <dynamic>[])
+            .cast<String>();
+
+    testWidgets('both fields are offered to the platform as one login form', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await settle(tester);
+
+      for (final field in <int>[0, 1]) {
+        await tester.tap(find.byType(TextFormField).at(field));
+        await settle(tester);
+
+        final fields =
+            (lastClientConfiguration(tester)['fields'] as List<dynamic>?)
+                ?.cast<Map<dynamic, dynamic>>();
+        expect(fields, isNotNull, reason: 'field $field is sent alone');
+        final hints = fields!.expand(hintsOf).toSet();
+        expect(hints, containsAll(<String>['username', 'password']));
+      }
+    });
+
+    testWidgets('a successful login asks to save the password', (tester) async {
+      respondToSignedInStartup();
+
+      await pumpApp(tester);
+      await settle(tester);
+
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'owner@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      tester.testTextInput.log.clear();
+      await tester.tap(find.text('Войти'));
+      await settle(tester);
+
+      expect(find.byType(ShellScreen), findsOneWidget);
+      expect(
+        tester.testTextInput.log.where(
+          (call) =>
+              call.method == 'TextInput.finishAutofillContext' &&
+              call.arguments == true,
+        ),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('a rejected login does not', (tester) async {
+      backend.alwaysRespond(
+        unauthorizedJson(message: 'Invalid email or password'),
+        statusCode: 401,
+      );
+
+      await pumpApp(tester);
+      await settle(tester);
+
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'owner@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).last, 'wrong');
+      tester.testTextInput.log.clear();
+      await tester.tap(find.text('Войти'));
+      await settle(tester);
+
+      expect(find.text('Неверный email или пароль'), findsOneWidget);
+      expect(
+        tester.testTextInput.log.where(
+          (call) =>
+              call.method == 'TextInput.finishAutofillContext' &&
+              call.arguments == true,
+        ),
+        isEmpty,
+      );
+    });
+  });
 }
