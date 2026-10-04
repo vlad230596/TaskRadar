@@ -431,7 +431,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                     ),
                     const SizedBox(height: Insets.gap),
                     _statusRow(task),
-                    if (task.status == TaskStatus.blocked) ...<Widget>[
+                    if (task.status != TaskStatus.done) ...<Widget>[
                       const SizedBox(height: Insets.gap),
                       _reminderRow(task),
                     ],
@@ -641,9 +641,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   Widget _reminderRow(Task task) {
     final remindAt = task.remindAt;
     final due = remindAt != null && isReminderDue(remindAt);
+    // A blocker keeps its amber; a plain open task's reminder is neutral.
+    final blocked = task.status == TaskStatus.blocked;
+    final ink = blocked ? AppColors.waitingInk : AppColors.indigoLink;
 
     return Material(
-      color: AppColors.waitingFill,
+      color: blocked ? AppColors.waitingFill : AppColors.card,
       borderRadius: BorderRadius.circular(Radii.card),
       child: InkWell(
         onTap: () => unawaited(_pickReminder()),
@@ -652,7 +655,9 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           height: 52,
           padding: const EdgeInsets.fromLTRB(14, 0, 6, 0),
           decoration: BoxDecoration(
-            border: Border.all(color: AppColors.waitingLine),
+            border: Border.all(
+              color: blocked ? AppColors.waitingLine : AppColors.line,
+            ),
             borderRadius: BorderRadius.circular(Radii.card),
           ),
           child: Row(
@@ -662,7 +667,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                     ? Icons.notifications_active_outlined
                     : Icons.notifications_none,
                 size: 20,
-                color: AppColors.waitingInk,
+                color: ink,
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -672,24 +677,20 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                       : 'Напомнить ${formatReminderDate(remindAt)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppText.action.copyWith(color: AppColors.waitingInk),
+                  style: AppText.action.copyWith(color: ink),
                 ),
               ),
               if (remindAt == null)
-                const Padding(
-                  padding: EdgeInsets.only(right: 8),
-                  child: Icon(
-                    Icons.chevron_right,
-                    size: 18,
-                    color: AppColors.waitingInk,
-                  ),
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Icon(Icons.chevron_right, size: 18, color: ink),
                 )
               else
                 IconButton(
                   tooltip: 'Убрать дату напоминания',
                   onPressed: () => unawaited(_clearReminder(task)),
                   icon: const Icon(Icons.event_busy, size: 18),
-                  color: AppColors.waitingInk,
+                  color: ink,
                 ),
             ],
           ),

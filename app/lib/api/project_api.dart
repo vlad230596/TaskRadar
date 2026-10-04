@@ -184,9 +184,8 @@ class ProjectApi {
   ///
   /// Inline creation (the fast path this screen is built around) sends only
   /// `title`; the server defaults the rest to null/`pending`. A dictated task
-  /// (F14) can arrive with a description and a reminder, and then with
-  /// `blocked` -- a reminder only fires for a blocked task
-  /// (`domain/board_reminders.dart`).
+  /// (F14) can arrive with a description and a reminder; the reminder
+  /// fires for any task that is not done (`domain/board_reminders.dart`).
   ///
   /// [remindAt] is the `YYYY-MM-DD` calendar date, for the reason given on
   /// [updateTask].

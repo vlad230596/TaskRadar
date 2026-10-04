@@ -489,7 +489,14 @@ class TaskRow extends ConsumerWidget {
               const SizedBox(height: 6),
               _Meta(
                 icon: Icons.arrow_forward,
-                text: 'следующая',
+                text: _reminderSuffix('следующая', task, now),
+                colour: AppColors.indigoLink,
+              ),
+            ] else if (!blocked && !done && task.remindAt != null) ...<Widget>[
+              const SizedBox(height: 6),
+              _Meta(
+                icon: Icons.notifications_none,
+                text: _reminderSuffix('', task, now),
                 colour: AppColors.indigoLink,
               ),
             ] else if (blocked) ...<Widget>[
@@ -754,6 +761,16 @@ void _offerUndo(
     );
 }
 
+/// [lead] followed by the reminder date of an open, unblocked row
+/// ("следующая · 23.09", "пора · 23.09"); just [lead] when there is no date.
+String _reminderSuffix(String lead, Task task, DateTime? now) {
+  final remindAt = task.remindAt;
+  if (remindAt == null) return lead;
+  final date = formatReminderDate(remindAt);
+  final label = isReminderDue(remindAt, now: now) ? 'пора · $date' : date;
+  return lead.isEmpty ? label : '$lead · $label';
+}
+
 /// "23.09 · ждёт 3 д", or just one half of it.
 String _blockedLine(Task task, int? age, DateTime? now) {
   final remindAt = task.remindAt;
@@ -980,7 +997,7 @@ class _StatusTargetState extends ConsumerState<_StatusTarget>
 }
 
 /// Puts a task back the way it was before "сделано": its status, the reminder
-/// date that leaving `blocked` cleared, and its place in the focus set that
+/// date that closing it cleared, and its place in the focus set that
 /// closing it cost it on the server.
 ///
 /// Not [setTaskStatus]: that one needs a live `BuildContext` and `WidgetRef`,
@@ -1006,13 +1023,13 @@ Future<void> _restore(
   await tasks.setStatus(now, previous.status);
 
   final remindAt = previous.remindAt;
-  if (previous.status == TaskStatus.blocked &&
+  if (previous.status != TaskStatus.done &&
       remindAt != null &&
       remindAt.length >= 10) {
-    final blocked = fresh();
-    if (blocked != null && blocked.status == TaskStatus.blocked) {
+    final reopened = fresh();
+    if (reopened != null && reopened.status != TaskStatus.done) {
       // The `YYYY-MM-DD` prefix is the calendar date; see [calendarDateForApi].
-      await tasks.setRemindAt(blocked, remindAt.substring(0, 10));
+      await tasks.setRemindAt(reopened, remindAt.substring(0, 10));
     }
   }
 

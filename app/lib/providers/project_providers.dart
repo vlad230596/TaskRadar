@@ -146,9 +146,8 @@ class ProjectTasks extends _$ProjectTasks {
   /// the wrong row.
   ///
   /// [description] and [remindAt] come from dictation (F14). A task created
-  /// with a reminder is created **blocked**: a reminder only fires for a
-  /// blocked task (`domain/board_reminders.dart`), and "напомни в пятницу"
-  /// said about a task is exactly "this waits until Friday".
+  /// with a reminder stays an ordinary open task: a reminder fires for any task
+  /// that is not done, and "напомни в пятницу" does not mean the task is stuck.
   ///
   /// [dictationParseId] links the task to the server's record of the parse
   /// it came from -- see `ProjectApi.createTask`.
@@ -160,7 +159,6 @@ class ProjectTasks extends _$ProjectTasks {
   }) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return Future<void>.value();
-    final status = remindAt == null ? null : TaskStatus.blocked;
 
     return _mutate((rows) {
       return _MutationPlan(
@@ -170,7 +168,6 @@ class ProjectTasks extends _$ProjectTasks {
             trimmed,
             rows,
             description: description,
-            status: status,
             remindAt: remindAt,
           ),
         ],
@@ -179,7 +176,6 @@ class ProjectTasks extends _$ProjectTasks {
             projectId: projectId,
             title: trimmed,
             description: description,
-            status: status,
             remindAt: remindAt,
             dictationParseId: dictationParseId,
           );
@@ -191,14 +187,11 @@ class ProjectTasks extends _$ProjectTasks {
 
   /// Moves a task between `pending` / `done` / `blocked`.
   ///
-  /// Leaving `blocked` clears `remindAt`, which is the one place in F3 that uses
-  /// [PatchField.clear] in anger. The reasoning is the React client's
-  /// (`TaskListItem.handleStatusChange`) and still holds: a reminder date only
-  /// means something while the task is actually waiting on something. Kept
-  /// invisibly (the date is only shown for a blocked task), a stale one would
-  /// resurface as an alarm the next time the task was blocked, on a day the user
-  /// never chose. Note the asymmetry -- entering `blocked` keeps whatever date
-  /// is there, because F4 owns setting it and must not have F3 wiping it first.
+  /// Moving to `done` clears `remindAt`, which is the one place that uses
+  /// [PatchField.clear] in anger: a finished task has nothing to be reminded
+  /// about, and a date kept invisibly would resurface as an alarm if the task
+  /// were ever reopened, on a day the user never chose. `pending` <-> `blocked`
+  /// keeps the date -- a reminder belongs to any open task, not only a blocker.
   ///
   /// `description` is left as [PatchField.keep], which is the whole point of
   /// that type: a status change must not touch the description, and the way to
@@ -210,9 +203,8 @@ class ProjectTasks extends _$ProjectTasks {
       final index = rows.indexWhere((row) => row.id == task.id);
       if (index < 0) return null;
 
-      final leavingBlocked =
-          rows[index].status == TaskStatus.blocked &&
-          status != TaskStatus.blocked;
+      final clearsDate =
+          status == TaskStatus.done && rows[index].remindAt != null;
 
       return _MutationPlan(
         optimistic: _replaceAt(
@@ -220,7 +212,7 @@ class ProjectTasks extends _$ProjectTasks {
           index,
           rows[index].copyWith(
             status: status,
-            remindAt: leavingBlocked ? null : rows[index].remindAt,
+            remindAt: clearsDate ? null : rows[index].remindAt,
             // The one optimistic touch of `isCurrent` anywhere, and it is a
             // weakening, never an invention: a task that is not `pending`
             // cannot be current, so dropping the highlight is knowledge, not a
@@ -232,7 +224,7 @@ class ProjectTasks extends _$ProjectTasks {
           await _api.updateTask(
             task.id,
             status: status,
-            remindAt: leavingBlocked
+            remindAt: clearsDate
                 ? const PatchField<String>.clear()
                 : const PatchField<String>.keep(),
           );
@@ -242,7 +234,7 @@ class ProjectTasks extends _$ProjectTasks {
     });
   }
 
-  /// Sets or clears a blocked task's reminder date (F4).
+  /// Sets or clears an open (not done) task's reminder date (F4).
   ///
   /// [date] is a calendar date as `YYYY-MM-DD`, never an instant -- see
   /// [calendarDateForApi] for the two obvious serialisations that are both off
@@ -264,17 +256,14 @@ class ProjectTasks extends _$ProjectTasks {
   /// mutation here does), `boardReminderBridge` sees a new list and republishes
   /// the target set, and `reminderSync` re-arms. Rule 3 at the top of this file.
   ///
-  /// Refuses a task that is not blocked. A date on a `pending` or `done` task is
-  /// invisible (only a blocked row shows it) and produces no alarm
+  /// Refuses a `done` task. A date on a finished task produces no alarm
   /// (`remindersFromBoard` filters on the status), so setting one would be a
-  /// write whose entire effect is a value that resurfaces the next time someone
-  /// blocks the task -- which is the exact bug [setStatus] clears the date to
-  /// avoid.
+  /// write whose entire effect is a value that resurfaces if the task is
+  /// reopened -- which is the exact bug [setStatus] clears the date to avoid.
   Future<void> setRemindAt(Task task, String? date) {
-    if (task.status != TaskStatus.blocked) {
+    if (task.status == TaskStatus.done) {
       throw StateError(
-        'task ${task.id} is ${task.status.name}; only a blocked task has a '
-        'reminder date',
+        'task ${task.id} is done; a finished task has no reminder date',
       );
     }
 

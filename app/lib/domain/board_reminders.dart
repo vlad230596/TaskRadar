@@ -8,17 +8,17 @@ import 'reminder_schedule.dart';
 /// models: the scheduler is testable with three synthetic rows and does not need
 /// to know that a board exists.
 ///
-/// The rule is the one from `flutter-migration-plan.md`: a reminder exists for a
-/// task that is **blocked** and has a `remindAt`. A `pending` or `done` task
-/// with a leftover date is not a reminder -- the date only means something while
-/// the task is waiting on something.
+/// A reminder exists for every task that is **not done** and has a `remindAt`:
+/// a blocker ("ждём кабель, спросить завтра") and a plain open task ("вернуться
+/// к этому в пятницу") alike. A `done` task with a leftover date is not a
+/// reminder -- there is nothing left to be reminded about.
 List<TaskReminder> remindersFromBoard(Iterable<BoardProject> board) {
   final reminders = <TaskReminder>[];
 
   for (final entry in board) {
     for (final task in entry.tasks) {
       final remindAt = task.remindAt;
-      if (task.status != TaskStatus.blocked || remindAt == null) continue;
+      if (task.status == TaskStatus.done || remindAt == null) continue;
 
       reminders.add(
         TaskReminder(

@@ -311,7 +311,7 @@ void main() {
     });
 
     test(
-      'leaving blocked clears the reminder date; entering it does not',
+      'closing a task clears the reminder date; blocking and unblocking keep it',
       () async {
         final projectId = server.addProject(name: 'Дача');
         server.addTask(
@@ -333,10 +333,18 @@ void main() {
         expect(server.patches.last.body.containsKey('remindAt'), isFalse);
         expect(tasksNow(container, projectId).single.remindAt, isNotNull);
 
-        // Leaving it drops the date, with an explicit null.
+        // Leaving it keeps the date too: a reminder belongs to any open task.
         await notifier.setStatus(
           tasksNow(container, projectId).single,
           TaskStatus.pending,
+        );
+        expect(server.patches.last.body.containsKey('remindAt'), isFalse);
+        expect(tasksNow(container, projectId).single.remindAt, isNotNull);
+
+        // Closing it drops the date, with an explicit null.
+        await notifier.setStatus(
+          tasksNow(container, projectId).single,
+          TaskStatus.done,
         );
         expect(server.patches.last.body['remindAt'], isNull);
         expect(server.patches.last.body.containsKey('remindAt'), isTrue);
@@ -656,9 +664,13 @@ void main() {
       );
     });
 
-    test('refuses a task that is not blocked, without a request', () async {
+    test('refuses a done task, without a request', () async {
       final projectId = server.addProject(name: 'Dacha');
-      server.addTask(projectId: projectId, title: 'An ordinary one');
+      server.addTask(
+        projectId: projectId,
+        title: 'A finished one',
+        status: 'done',
+      );
 
       final container = makeContainer();
       final tasks = await loadTasks(container, projectId);
@@ -734,11 +746,10 @@ void main() {
       expect(gateway.queue, hasLength(1));
       expect(gateway.queue.values.single.payload, 'task:${task.id}');
 
-      // 4. unblock it. F3 clears the date on the way out, so the alarm goes
-      // with it -- the asymmetry that keeps a stale date from resurfacing the
-      // next time the task is blocked.
+      // 4. close it. The date goes with the status, so the alarm goes too --
+      // that keeps a stale date from resurfacing if the task is reopened.
       task = tasksNow(container, projectId).single;
-      await notifier.setStatus(task, TaskStatus.pending);
+      await notifier.setStatus(task, TaskStatus.done);
       await pumpEventQueue();
 
       expect(tasksNow(container, projectId).single.remindAt, isNull);
@@ -833,10 +844,9 @@ void main() {
       container.listen(boardReminderBridgeProvider, (_, _) {});
     }
 
-    test('blocking a task dated today arms its reminder', () async {
+    test('an open task dated today arms its reminder, blocked or not', () async {
       final projectId = server.addProject(name: 'Дача');
-      // A pending task that already carries a date: the state you are in after
-      // setting a reminder from the desktop and then unblocking the task.
+      // A pending task that already carries a date.
       server.addTask(
         projectId: projectId,
         title: 'Жду кабель',
@@ -850,8 +860,8 @@ void main() {
       await container.read(boardProvider.future);
       await pumpEventQueue();
 
-      // Nothing armed: a `pending` task with a leftover date is not a reminder.
-      expect(container.read(reminderTargetsProvider), isEmpty);
+      // Armed already: a reminder belongs to any task that is not done.
+      expect(container.read(reminderTargetsProvider), hasLength(1));
 
       final tasks = await loadTasks(container, projectId);
       await container
@@ -888,7 +898,8 @@ void main() {
         watchBridge(container);
         await container.read(boardProvider.future);
         await pumpEventQueue();
-        expect(gateway.queue, isEmpty);
+        await container.read(reminderSyncProvider.future);
+        expect(gateway.queue, hasLength(1));
 
         final tasks = await loadTasks(container, projectId);
         await container
@@ -935,7 +946,7 @@ void main() {
     });
 
     test(
-      'unblocking disarms it, because the date went with the status',
+      'closing a task disarms it, because the date went with the status',
       () async {
         final projectId = server.addProject(name: 'Дача');
         server.addTask(
@@ -955,7 +966,7 @@ void main() {
         final tasks = await loadTasks(container, projectId);
         await container
             .read(projectTasksProvider(projectId).notifier)
-            .setStatus(tasks.single, TaskStatus.pending);
+            .setStatus(tasks.single, TaskStatus.done);
         await pumpEventQueue();
 
         expect(container.read(reminderTargetsProvider), isEmpty);

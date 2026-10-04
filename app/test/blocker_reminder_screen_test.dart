@@ -367,12 +367,12 @@ void main() {
       expect(find.textContaining('пора'), findsOneWidget);
     });
 
-    testWidgets('a non-blocked task has no reminder line at all', (
+    testWidgets('an open task shows its date on the row, without "ждёт"', (
       tester,
     ) async {
-      // The date is only meaningful while the task is waiting on something, and
-      // `remindersFromBoard` arms nothing for any other status -- an input here
-      // would be an input whose value does nothing.
+      // A reminder belongs to any task that is not done; the row says the date
+      // but not the blocker-only "без даты" / "ждёт".
+      final day = DateTime.now().add(const Duration(days: 2));
       server.addTask(
         projectId: projectId,
         title: 'Обычная',
@@ -380,8 +380,29 @@ void main() {
       );
       await pumpProject(tester);
 
+      expect(find.textContaining(_pad2(day.day)), findsWidgets);
       expect(find.textContaining('без даты'), findsNothing);
       expect(find.textContaining('ждёт'), findsNothing);
+    });
+
+    testWidgets('a task that is not blocked can be given a date', (
+      tester,
+    ) async {
+      server.addTask(projectId: projectId, title: 'Обычная');
+      await pumpProject(tester);
+      await openTask(tester, 'Обычная');
+
+      await tester.tap(find.text('Напомнить когда-нибудь…'));
+      await tester.pumpAndSettle();
+      final today = DateTime.now();
+      await pickDay(tester, today.day);
+
+      expect(server.tasks.single['status'], 'pending');
+      expect(server.patches.last.body.keys, <String>['remindAt']);
+      expect(
+        find.textContaining('Напомнить ${_pad2(today.day)}.'),
+        findsOneWidget,
+      );
     });
   });
 }

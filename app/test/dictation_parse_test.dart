@@ -227,7 +227,7 @@ void main() {
       });
     });
 
-    testWidgets('a proposed reminder makes a blocked task with that date', (
+    testWidgets('a proposed reminder makes an open task with that date', (
       tester,
     ) async {
       modelAnswers(<String, dynamic>{
@@ -242,7 +242,7 @@ void main() {
       expect(find.text('Напомнить 25.09 · задача будет ждать'), findsOneWidget);
       await save(tester);
 
-      expect(server.tasks.single['status'], 'blocked');
+      expect(server.tasks.single['status'], 'pending');
       // The calendar date, not an instant -- see `ProjectApi.updateTask`.
       expect(server.tasks.single['remindAt'], '2026-09-25');
       expect(
