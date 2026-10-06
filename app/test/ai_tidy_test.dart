@@ -577,6 +577,43 @@ void main() {
       );
     });
 
+    test('sends the user to Settings when the model was retired', () {
+      // The stream's `error` event: the class at the top.
+      final fromStream = ApiException(502, 'Dictation model did not answer', {
+        'code': 'model_failed',
+        'cause': 'model_not_found',
+        'model': 'vendor/old:free',
+      });
+      expect(
+        tidyFailureMessage(fromStream),
+        'Модель «vendor/old:free» недоступна у провайдера — выберите другую '
+        'в Настройках.',
+      );
+
+      // The JSON reply: the same, under `details`.
+      final fromJson = ApiException(502, 'Dictation model did not answer', {
+        'error': 'UpstreamModelError',
+        'details': {'cause': 'model_not_found'},
+      });
+      expect(tidyFailureMessage(fromJson), startsWith('Модель недоступна'));
+    });
+
+    test('names an empty account and a rate limit', () {
+      ApiException failed(String cause) =>
+          ApiException(502, 'x', {'code': 'model_failed', 'cause': cause});
+      expect(tidyFailureMessage(failed('no_credits')), contains('средства'));
+      expect(tidyFailureMessage(failed('rate_limited')), contains('минуту'));
+    });
+
+    test('falls back for a class it does not know', () {
+      expect(
+        tidyFailureMessage(
+          ApiException(502, 'x', {'code': 'model_failed', 'cause': 'new_one'}),
+        ),
+        'Модель не ответила — попробуйте ещё раз.',
+      );
+    });
+
     test('keeps "Модель не ответила" for other server errors', () {
       expect(
         tidyFailureMessage(ApiException(502, 'Bad gateway')),

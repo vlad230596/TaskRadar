@@ -169,12 +169,44 @@ String tidyFailureMessage(Object error) {
     case ApiException(statusCode: 429):
       return 'Дневной лимит AI-запросов исчерпан — до 00:00 UTC можно '
           'сохранить как есть.';
+    case ApiException() when ModelFailure.of(error) != null:
+      return modelFailureMessage(ModelFailure.of(error)!);
     case ApiException():
       return 'Модель не ответила — попробуйте ещё раз.';
     default:
       debugPrint('Tidy failed: $error');
       return 'Не получилось разобрать.';
   }
+}
+
+/// What the user can do about [failure], in their words. The provider's own
+/// message never gets here (`ModelFailure`); its class is enough to tell "pick
+/// another model" from "try again in a minute".
+String modelFailureMessage(ModelFailure failure) {
+  final model = failure.model == null ? 'Модель' : 'Модель «${failure.model}»';
+  return switch (failure.cause) {
+    'model_not_found' =>
+      '$model недоступна у провайдера — выберите другую в Настройках.',
+    'unauthorized' =>
+      'Провайдер модели не принял ключ API — его нужно '
+          'проверить на сервере.',
+    'no_credits' => 'У провайдера модели закончились средства на счёте.',
+    'rate_limited' =>
+      'Провайдер модели ограничил частоту запросов — '
+          'повторите через минуту.',
+    'provider_down' =>
+      'Провайдер модели сейчас не работает — попробуйте '
+          'позже или сохраните как есть.',
+    'timeout' => 'Модель не успела ответить — попробуйте ещё раз.',
+    'unreachable' =>
+      'Сервер не достучался до провайдера модели — '
+          'попробуйте позже.',
+    'bad_reply' => 'Модель ответила не по формату — попробуйте ещё раз.',
+    'rejected' =>
+      'Провайдер модели отклонил запрос — попробуйте другую '
+          'модель в Настройках.',
+    _ => 'Модель не ответила — попробуйте ещё раз.',
+  };
 }
 
 /// "Результат AI | Исходник": which of the two the screen shows.

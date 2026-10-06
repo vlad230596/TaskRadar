@@ -494,6 +494,50 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     }
   }
 
+  /// "Причесать" on the note alone: [ParseKind.note], with the task's title
+  /// as the note's title so the model leaves it be. The answer is not labelled
+  /// with its parse: a task's save links only `task_tidy` parses.
+  Future<void> _tidyNote() async {
+    final source = _note.text.trim();
+    if (source.isEmpty) return;
+    final title = _title.text.trim();
+    final outcome = await openAiTidy(
+      context,
+      kind: ParseKind.note,
+      source: source,
+      noteTitle: title.isEmpty ? null : title,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case TidyAccepted(result: TidiedNote(:final content)):
+        setState(() => _note.text = content);
+      case TidyKeptSource(:final source) when source != _note.text.trim():
+        setState(() => _note.text = source);
+      default:
+        break;
+    }
+  }
+
+  /// Dictation into the note: the words, as said or tidied as a note, on a
+  /// new line after what the note holds.
+  Future<void> _dictateNote() async {
+    final result = await AppRoutes.openDictation(
+      context,
+      destination: const FieldDestination('в заметку'),
+    );
+    if (!mounted) return;
+    final text = switch (result) {
+      FieldWords(:final text) => text,
+      FieldTaskText(:final title, :final description) => <String>[
+        title,
+        ?description,
+      ].join('\n'),
+      null => '',
+    };
+    if (text.isEmpty) return;
+    setState(() => appendDictated(_note, text: text, separator: '\n'));
+  }
+
   @override
   Widget build(BuildContext context) {
     final rows = ref.watch(projectTasksProvider(widget.projectId)).value;
@@ -885,6 +929,24 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
               focusedBorder: InputBorder.none,
               hintText: 'Кто, что, к какому сроку…',
             ),
+          ),
+          // The note's own two chips, as under the title: the title's work on
+          // the title and the note together, these on the note alone.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: <Widget>[
+              _FieldChip(
+                icon: Icons.auto_awesome,
+                label: 'Причесать',
+                onTap: () => unawaited(_tidyNote()),
+              ),
+              const SizedBox(width: 4),
+              _FieldChip(
+                icon: Icons.mic_none,
+                tooltip: 'Дописать в заметку голосом',
+                onTap: () => unawaited(_dictateNote()),
+              ),
+            ],
           ),
         ],
       ),

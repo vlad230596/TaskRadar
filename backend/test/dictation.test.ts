@@ -371,8 +371,28 @@ describe("createOpenAiCompatibleClient", () => {
 
     await expect(complete([], "m")).rejects.toMatchObject({
       reason: expect.stringMatching(/request failed/),
+      category: "timeout",
     });
     await expect(complete([], "m", { timeoutMs: 500 })).resolves.toBe("{}");
+  });
+
+  it("calls a body cut off by the timeout a timeout, not a bad reply", async () => {
+    // Headers at once, the body only after the budget: what a slow model on
+    // OpenRouter looks like.
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init.signal?.addEventListener("abort", () => controller.error(new Error("aborted")));
+        },
+      });
+      return new Response(body, { status: 200 });
+    });
+    const complete = createOpenAiCompatibleClient(
+      { ...config, timeoutMs: 20 },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    await expect(complete([], "m")).rejects.toMatchObject({ category: "timeout" });
   });
 
   it("gives up when the caller goes away, and says that is why", async () => {
@@ -387,7 +407,56 @@ describe("createOpenAiCompatibleClient", () => {
 
     const call = complete([], "m", { signal: gone.signal });
     gone.abort();
-    await expect(call).rejects.toMatchObject({ reason: "cancelled by the client" });
+    await expect(call).rejects.toMatchObject({
+      reason: "cancelled by the client",
+      category: "cancelled",
+    });
+  });
+
+  it.each([
+    [
+      "a retired model on OpenRouter",
+      404,
+      { error: { message: "No endpoints found for vendor/old-model:free.", code: 404 } },
+      "model_not_found",
+      "status 404 (code 404: No endpoints found for vendor/old-model:free.)",
+    ],
+    [
+      "an unknown model on DeepSeek",
+      400,
+      { error: { message: "Model Not Exist", type: "invalid_request_error", code: "invalid_request_error" } },
+      "model_not_found",
+      "status 400 (code invalid_request_error: type invalid_request_error: Model Not Exist)",
+    ],
+    ["a refused key", 401, { error: { message: "No auth credentials found", code: 401 } }, "unauthorized", null],
+    ["an empty account", 402, { error: { message: "Insufficient credits", code: 402 } }, "no_credits", null],
+    ["a rate limit", 429, { error: { message: "Rate limit exceeded", code: 429 } }, "rate_limited", null],
+    ["a provider outage", 503, "Service Unavailable", "provider_down", "status 503 (Service Unavailable)"],
+    ["any other refusal", 400, { error: { message: "Bad request" } }, "rejected", null],
+  ])(
+    "classifies %s and logs the provider's code",
+    async (_label, status, body, category, reason) => {
+      const text = typeof body === "string" ? body : JSON.stringify(body);
+      const complete = createOpenAiCompatibleClient(
+        config,
+        vi.fn(async () => new Response(text, { status })) as unknown as typeof fetch,
+      );
+      const error = await complete([], "m").catch((caught: unknown) => caught);
+      expect(error).toBeInstanceOf(UpstreamModelError);
+      expect(error).toMatchObject({ category });
+      if (reason !== null) expect((error as UpstreamModelError).reason).toBe(reason);
+    },
+  );
+
+  it("cuts a long provider message short in the reason", async () => {
+    const complete = createOpenAiCompatibleClient(
+      config,
+      vi.fn(
+        async () => new Response(JSON.stringify({ error: { message: "x".repeat(1000) } }), { status: 500 }),
+      ) as unknown as typeof fetch,
+    );
+    const error = (await complete([], "m").catch((caught: unknown) => caught)) as UpstreamModelError;
+    expect(error.reason.length).toBeLessThan(260);
   });
 
   it.each([
@@ -593,14 +662,22 @@ describe("POST /dictation/parse", () => {
 
   it("answers 502 when the model fails, and keeps the failure as a sample", async () => {
     parser.mockResolvedValueOnce(
-      traceOf({ rawReply: null, result: null, error: "status 500", durationMs: 12000 }),
+      traceOf({
+        rawReply: null,
+        result: null,
+        error: "status 500",
+        category: "provider_down",
+        durationMs: 12000,
+      }),
     );
     const res = await post(app, { text: "x", timeZone: "UTC" });
 
     expect(res.statusCode).toBe(502);
+    // The class of the failure and the model, never the provider's own text.
     expect(res.json()).toEqual({
       error: "UpstreamModelError",
       message: "Dictation model did not answer",
+      details: { cause: "provider_down", model: traceOf({}).model },
     });
     // A model that times out is exactly what a comparison between models has
     // to count.
@@ -770,7 +847,9 @@ describe("POST /dictation/parse", () => {
 
     it("ends with an error event when the model fails, and keeps the sample", async () => {
       parser.mockImplementationOnce(
-        staged(traceOf({ rawReply: null, result: null, error: "status 500" })),
+        staged(
+          traceOf({ rawReply: null, result: null, error: "status 404", category: "model_not_found" }),
+        ),
       );
 
       const res = await postStream(app, { text: "x", timeZone: "UTC" });
@@ -783,12 +862,15 @@ describe("POST /dictation/parse", () => {
         "model_done",
         "error",
       ]);
-      // The provider's reason stays in the dataset, as in the JSON reply.
+      // The provider's reason stays in the dataset, as in the JSON reply; the
+      // client hears its class and the model, so it can say what to do.
       expect(events.at(-1)![1]).toEqual({
         code: "model_failed",
         message: "Dictation model did not answer",
+        cause: "model_not_found",
+        model: traceOf({}).model,
       });
-      expect(samples[0]).toMatchObject({ status: "failed", error: "status 500" });
+      expect(samples[0]).toMatchObject({ status: "failed", error: "status 404" });
     });
 
     it("turns anything unexpected into an error event rather than a cut connection", async () => {

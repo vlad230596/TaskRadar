@@ -114,7 +114,8 @@ async function keepSample(
  *
  * The reason for a failure goes to the log and the dataset, not to the client:
  * it can name the provider's status or a fragment of its reply, which is ours
- * to debug and nobody else's to read.
+ * to debug and nobody else's to read. The client hears only its class
+ * (`UpstreamCause` in ../lib/llmClient.ts) and the model that was asked.
  */
 function pipelineFor(
   userId: string,
@@ -182,7 +183,8 @@ export function dictationRoutes(
      *     model_done     {durationMs}            the model answered
      *     validated      {}                      its answer is usable
      *     result         {..., parseId}          the same payload as the JSON reply
-     *     error          {code, message}         instead of result; ends the stream
+     *     error          {code, message,         instead of result; ends the stream;
+     *                     cause?, model?}         cause is an UpstreamCause (../lib/llmClient.ts)
      *     heartbeat      {}                      every 5 s, whatever else is said
      *
      * What `result` holds depends on the request's `kind` (`task` when absent):
@@ -241,7 +243,13 @@ export function dictationRoutes(
         events.send("result", result);
       } catch (error) {
         if (error instanceof UpstreamModelError) {
-          events.send("error", { code: "model_failed", message: error.message });
+          // `model` is dropped by JSON when the failure is not tied to one.
+          events.send("error", {
+            code: "model_failed",
+            message: error.message,
+            cause: error.category,
+            model: error.model,
+          });
         } else {
           request.log.error({ err: error }, "dictation parse failed");
           events.send("error", { code: "internal", message: "Internal Server Error" });

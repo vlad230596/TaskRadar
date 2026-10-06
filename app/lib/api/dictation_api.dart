@@ -308,6 +308,34 @@ class ParseSilenceException extends NetworkException {
   final Duration silence;
 }
 
+/// Why the model gave no answer: the class of the provider's failure, as the
+/// server tells it (`UpstreamCause` in `backend/src/lib/llmClient.ts`), and the
+/// model that was asked. The provider's own words stay in the server's log.
+class ModelFailure {
+  const ModelFailure(this.cause, {this.model});
+
+  /// The failure behind [error], or null when [error] is not the model's -- or
+  /// came from a server too old to say why. Read from either reply: the JSON
+  /// one keeps it under `details`, the stream's `error` event at the top.
+  static ModelFailure? of(Object error) {
+    if (error is! ApiException || error.statusCode != 502) return null;
+    final body = error.body;
+    if (body is! Map) return null;
+    final details = body['details'];
+    final fields = details is Map ? details : body;
+    final cause = fields['cause'];
+    if (cause is! String) return null;
+    return ModelFailure(cause, model: fields['model'] as String?);
+  }
+
+  /// One of `model_not_found`, `unauthorized`, `no_credits`, `rate_limited`,
+  /// `provider_down`, `rejected`, `timeout`, `unreachable`, `bad_reply`,
+  /// `cancelled` -- or a class a newer server added.
+  final String cause;
+
+  final String? model;
+}
+
 /// Which model parses dictation, as `GET/PUT /dictation/model` describe it.
 class DictationModel {
   const DictationModel({

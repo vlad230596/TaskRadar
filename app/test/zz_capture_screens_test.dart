@@ -11,12 +11,14 @@ import 'package:flutter/services.dart' show FontLoader;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
+import 'package:taskradar/notifications/notification_gateway.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/dictation_screen.dart';
 import 'package:taskradar/screens/inbox_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
+import 'package:taskradar/screens/settings_screen.dart';
 import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/task_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
@@ -97,6 +99,8 @@ void main() {
     double w = width,
     double h = height,
     FakeSpeechRecognizer? recognizer,
+    FakeNotificationGateway? notifications,
+    VoiceModelInstallation Function()? voiceModel,
   }) async {
     tester.view.physicalSize = Size(w, h);
     tester.view.devicePixelRatio = 1;
@@ -115,7 +119,7 @@ void main() {
               FakeCaptureQueueStore(),
             ),
             notificationGatewayProvider.overrideWithValue(
-              FakeNotificationGateway(),
+              notifications ?? FakeNotificationGateway(),
             ),
             settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
             voiceRecorderProvider.overrideWithValue(
@@ -130,7 +134,9 @@ void main() {
             speechRecognizerProvider.overrideWithValue(
               recognizer ?? FakeSpeechRecognizer(),
             ),
-            voiceModelInstallationProvider.overrideWith(_ReadyModel.new),
+            voiceModelInstallationProvider.overrideWith(
+              voiceModel ?? _ReadyModel.new,
+            ),
             deviceTimeZoneNameProvider.overrideWith(
               (ref) async => 'Europe/Moscow',
             ),
@@ -256,6 +262,25 @@ void main() {
     await settle(tester);
   });
 
+  testWidgets('Settings — the settings screen', (tester) async {
+    await pump(tester, const SettingsScreen());
+    await shot(tester, 'Settings');
+  });
+
+  testWidgets('Settings-Problems — denied, not downloaded', (tester) async {
+    await pump(
+      tester,
+      const SettingsScreen(),
+      notifications: FakeNotificationGateway()
+        ..permissionState = const NotificationPermissionState(
+          notificationsEnabled: false,
+          canScheduleExactAlarms: false,
+        ),
+      voiceModel: _MissingModel.new,
+    );
+    await shot(tester, 'Settings-Problems');
+  });
+
   testWidgets('Desk-Plan — the wide window', (tester) async {
     await pump(tester, const ShellScreen(), w: 1440, h: 900);
     await shot(tester, 'Desk-Plan');
@@ -269,6 +294,11 @@ void main() {
 }
 
 final GlobalKey _root = GlobalKey();
+
+class _MissingModel extends VoiceModelInstallation {
+  @override
+  VoiceModelState build() => const VoiceModelMissing();
+}
 
 class _ReadyModel extends VoiceModelInstallation {
   @override
@@ -414,6 +444,8 @@ final List<Map<String, dynamic>> _board = <Map<String, dynamic>>[
         'prj_dom',
         'Посмотреть, почему не работает вентилятор в туалете. Позвонить в УК '
             'и спросить, чей это участок.',
+        description: 'Вентилятор гудит, но не тянет. Номер УК — на двери '
+            'подъезда.',
         status: 'blocked',
         position: 4000,
         remindAt: _day(2),
@@ -508,6 +540,12 @@ ResponseBody _respond(RequestOptions options) {
     ];
   } else if (path == '/inbox') {
     body = _inbox;
+  } else if (path == '/dictation/model') {
+    body = <String, dynamic>{
+      'model': 'google/gemini-2.5-flash',
+      'defaultModel': 'google/gemini-2.5-flash',
+      'override': null,
+    };
   } else if (path == '/dictation/parse') {
     body = <String, dynamic>{
       'title': 'Купить кабель USB-C для монитора',

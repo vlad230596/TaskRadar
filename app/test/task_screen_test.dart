@@ -173,7 +173,8 @@ void main() {
       });
       await pumpTask(tester, id);
 
-      await tester.tap(find.text('Причесать'));
+      // The first one, under the title; the note has its own.
+      await tester.tap(find.text('Причесать').first);
       await settle(tester);
       expect(parses.single['kind'], 'task_tidy');
       // One source: the title, then the note.
@@ -232,6 +233,97 @@ void main() {
       expect(server.tasks.single['title'], 'Купить кабель');
     },
   );
+
+  group('the note', () {
+    testWidgets('"Причесать" tidies the note alone, as a note', (
+      tester,
+    ) async {
+      final id = server.addTask(
+        projectId: projectId,
+        title: 'Купить кабель',
+        description: 'ну два метра наверно',
+      );
+      final parses = <Map<String, dynamic>>[];
+      backend.on('POST', '/dictation/parse', (match) {
+        parses.add(match.body);
+        return sseResponse(<String>[
+          sseEvent('accepted'),
+          sseEvent('result', <String, dynamic>{
+            'title': null,
+            'content': 'Длина два метра.',
+            'parseId': 'dp-21',
+          }),
+        ]);
+      });
+      await pumpTask(tester, id);
+
+      expect(find.text('Причесать'), findsNWidgets(2));
+      await tester.tap(find.text('Причесать').last);
+      await settle(tester);
+      expect(parses.single['kind'], 'note');
+      expect(parses.single['text'], 'ну два метра наверно');
+
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(titleField()).controller!.text,
+        'Купить кабель',
+      );
+      expect(
+        find.widgetWithText(TextField, 'Длина два метра.'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+      await settle(tester);
+      // Only the note changed; and a note parse is no task_tidy, so the save
+      // does not label it.
+      expect(server.patches.single.body, <String, dynamic>{
+        'description': 'Длина два метра.',
+      });
+    });
+
+    testWidgets('the microphone appends the words to the note', (
+      tester,
+    ) async {
+      final id = server.addTask(
+        projectId: projectId,
+        title: 'Купить кабель',
+        description: 'Два метра',
+      );
+      backend.on('POST', '/dictation/parse', (match) {
+        return sseResponse(<String>[
+          sseEvent('accepted'),
+          sseEvent('result', <String, dynamic>{'content': 'Что-то другое'}),
+        ]);
+      });
+      await pumpTask(tester, id, voice: true);
+
+      await tester.tap(find.byTooltip('Дописать в заметку голосом'));
+      await settle(tester);
+      // Stops the recording; the fake has heard "и переходник".
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await tester.tap(find.text('Разобрать'));
+      await settle(tester);
+      await tester.tap(find.text('Как надиктовано'));
+      await settle(tester);
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(titleField()).controller!.text,
+        'Купить кабель',
+      );
+      expect(
+        find.widgetWithText(TextField, 'Два метра\nи переходник'),
+        findsOneWidget,
+      );
+    });
+  });
 
   group('dictating into the task', () {
     Future<void> dictateAndTidy(

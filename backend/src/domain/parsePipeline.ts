@@ -1,4 +1,4 @@
-import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient";
+import { ChatMessage, CompleteJson, UpstreamCause, UpstreamModelError } from "../lib/llmClient";
 import type { DictationInput } from "./dictation";
 
 /*
@@ -62,6 +62,11 @@ export interface ParseTrace<T> {
   result: T | null;
   /** Why it failed; null when it did not. */
   error: string | null;
+  /**
+   * The class of [error], as the client may be told it. Absent when the parse
+   * did not fail, or failed in a way nobody classified.
+   */
+  category?: UpstreamCause | undefined;
   durationMs: number;
 }
 
@@ -101,12 +106,17 @@ export function createKindParser<I, T>(
     hooks.onStage?.({ stage: "model_started", model });
     const started = clock();
     let rawReply: string | null = null;
-    const trace = (result: T | null, error: string | null): ParseTrace<T> => ({
+    const trace = (
+      result: T | null,
+      error: string | null,
+      category?: UpstreamCause,
+    ): ParseTrace<T> => ({
       model,
       promptVersion: spec.promptVersion,
       rawReply,
       result,
       error,
+      ...(category === undefined ? {} : { category }),
       durationMs: clock() - started,
     });
     try {
@@ -120,7 +130,7 @@ export function createKindParser<I, T>(
       return trace(result, null);
     } catch (error) {
       if (!(error instanceof UpstreamModelError)) throw error;
-      return trace(null, error.reason);
+      return trace(null, error.reason, error.category);
     }
   };
 }
@@ -160,7 +170,7 @@ export function keptPipeline<I extends DictationInput, T extends object>(
     const parseId = await keep(input, trace);
     if (trace.result === null) {
       onFailure(trace.error, parseId);
-      throw new UpstreamModelError(trace.error ?? "unknown");
+      throw new UpstreamModelError(trace.error ?? "unknown", trace.category, trace.model);
     }
     return { ...trace.result, parseId };
   };

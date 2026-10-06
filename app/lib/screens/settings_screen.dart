@@ -7,6 +7,8 @@ import '../domain/reminder_schedule.dart';
 import '../providers/dictation_providers.dart';
 import '../providers/reminder_providers.dart';
 import '../providers/voice_providers.dart';
+import '../theme/app_theme.dart';
+import '../theme/tokens.dart';
 import '../voice/voice_model.dart';
 import '../widgets/mutation_feedback.dart';
 import 'notification_bench_screen.dart';
@@ -29,20 +31,49 @@ class SettingsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Настройки')),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: const [
-          _ReminderTimeTile(),
-          Divider(height: 24),
-          _VoiceModelTile(),
-          Divider(height: 24),
-          _DictationModelTile(),
-          Divider(height: 24),
-          _PermissionsTile(),
-          Divider(height: 24),
-          _BenchTile(),
-        ],
+      body: SafeArea(
+        // The same column the other sub-screens use: a phone screen set in the
+        // middle of a wide window, because a setting whose value sits a metre
+        // away from its name on a 1440 px window is no longer read as one row.
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const _SettingsHeader(),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(
+                      Insets.gutter,
+                      8,
+                      Insets.gutter,
+                      24,
+                    ),
+                    children: const <Widget>[
+                      _SectionLabel('Напоминания'),
+                      _SettingsGroup(
+                        children: <Widget>[
+                          _ReminderTimeTile(),
+                          _PermissionsTile(),
+                        ],
+                      ),
+                      _SectionLabel('Голос'),
+                      _SettingsGroup(
+                        children: <Widget>[
+                          _VoiceModelTile(),
+                          _DictationModelTile(),
+                        ],
+                      ),
+                      _SectionLabel('Диагностика'),
+                      _SettingsGroup(children: <Widget>[_BenchTile()]),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -67,7 +98,6 @@ class _VoiceModelTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
     final state = ref.watch(voiceModelInstallationProvider);
     final notifier = ref.read(voiceModelInstallationProvider.notifier);
     final model = notifier.model;
@@ -76,65 +106,55 @@ class _VoiceModelTile extends ConsumerWidget {
       // The browser build, where there is nothing to offer: no download button,
       // because the download could not lead anywhere. See
       // `VoiceModelUnsupported`.
-      VoiceModelUnsupported() => const ListTile(
-        leading: Icon(Icons.mic_off),
-        title: Text('Голосовой ввод недоступен'),
-        subtitle: Text(
-          'Распознавание идёт на устройстве и требует модели на диске — '
-          'в браузере её негде держать. Диктовка работает в приложении для '
-          'Android и Windows.',
-        ),
-        isThreeLine: true,
+      VoiceModelUnsupported() => const _SettingRow(
+        icon: Icons.mic_off,
+        title: 'Голосовой ввод недоступен',
+        description:
+            'Распознавание идёт на устройстве и требует модели на диске — '
+            'в браузере её негде держать. Диктовка работает в приложении для '
+            'Android и Windows.',
       ),
 
-      VoiceModelUnknown() => const ListTile(
-        leading: Icon(Icons.mic_none),
-        title: Text('Голосовой ввод'),
-        subtitle: Text('Проверяем, скачана ли модель…'),
+      VoiceModelUnknown() => const _SettingRow(
+        icon: Icons.mic_none,
+        title: 'Голосовой ввод',
+        description: 'Проверяем, скачана ли модель…',
       ),
 
-      VoiceModelMissing(:final lastError) => ListTile(
-        leading: const Icon(Icons.mic_none),
-        title: const Text('Голосовой ввод'),
-        subtitle: Text(
-          lastError == null
-              ? 'Распознавание работает на устройстве и без сети. '
-                    'Модель нужно скачать один раз: '
-                    '${_megabytes(model.downloadBytes)} загрузки, '
-                    '${_megabytes(model.installedBytes)} на диске.'
-              : 'Не удалось скачать модель: $lastError',
-          style: lastError == null
-              ? null
-              : theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.error,
-                ),
-        ),
-        isThreeLine: true,
-        trailing: FilledButton.tonal(
+      VoiceModelMissing(:final lastError) => _SettingRow(
+        icon: Icons.mic_none,
+        tone: lastError == null ? _Tone.plain : _Tone.alarm,
+        title: 'Голосовой ввод',
+        description: lastError == null
+            ? 'Распознавание работает на устройстве и без сети. '
+                  'Модель нужно скачать один раз: '
+                  '${_megabytes(model.downloadBytes)} загрузки, '
+                  '${_megabytes(model.installedBytes)} на диске.'
+            : 'Не удалось скачать модель: $lastError',
+        descriptionColor: lastError == null ? null : AppColors.alarm,
+        trailing: FilledButton(
           onPressed: () => notifier.install(),
+          style: _compactButton,
           child: Text(lastError == null ? 'Скачать' : 'Ещё раз'),
         ),
       ),
 
-      VoiceModelInstalling(:final fraction, :final unpacking) => ListTile(
-        leading: const Icon(Icons.mic_none),
-        title: const Text('Голосовой ввод'),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              unpacking
-                  // Its own phase on purpose: unpacking takes tens of seconds
-                  // and reports no progress, and a bar sitting at 100% in
-                  // silence looks exactly like a hang.
-                  ? 'Распаковываем модель…'
-                  : 'Скачиваем модель…',
-            ),
-            const SizedBox(height: 8),
-            LinearProgressIndicator(value: unpacking ? null : fraction),
-          ],
+      VoiceModelInstalling(:final fraction, :final unpacking) => _SettingRow(
+        icon: Icons.mic_none,
+        title: 'Голосовой ввод',
+        description: unpacking
+            // Its own phase on purpose: unpacking takes tens of seconds and
+            // reports no progress, and a bar sitting at 100% in silence looks
+            // exactly like a hang.
+            ? 'Распаковываем модель…'
+            : 'Скачиваем модель…',
+        below: ClipRRect(
+          borderRadius: BorderRadius.circular(2),
+          child: LinearProgressIndicator(
+            value: unpacking ? null : fraction,
+            minHeight: 4,
+          ),
         ),
-        isThreeLine: true,
         trailing: TextButton(
           // Cancelling an unpack is not offered: it is a few tens of seconds
           // and stopping it halfway leaves the directory to be cleaned up
@@ -144,16 +164,18 @@ class _VoiceModelTile extends ConsumerWidget {
         ),
       ),
 
-      VoiceModelReady(:final installed) => ListTile(
-        leading: Icon(Icons.mic, color: theme.colorScheme.primary),
-        title: const Text('Голосовой ввод готов'),
-        subtitle: Text(
-          '${model.name}. Занимает ${_megabytes(installed.bytesOnDisk)}. '
-          'Распознавание идёт на устройстве — запись никуда не отправляется.',
-        ),
-        isThreeLine: true,
+      VoiceModelReady(:final installed) => _SettingRow(
+        icon: Icons.mic,
+        tone: _Tone.ready,
+        title: 'Голосовой ввод готов',
+        description:
+            '${model.name}. Занимает ${_megabytes(installed.bytesOnDisk)}. '
+            'Распознавание идёт на устройстве — запись никуда не отправляется.',
         trailing: TextButton(
           onPressed: () => _confirmRemoval(context, ref),
+          // "Выбросить" is the one red in the app; deleting a quarter of a
+          // gigabyte the user agreed to download is the same kind of act.
+          style: TextButton.styleFrom(foregroundColor: AppColors.alarm),
           child: const Text('Удалить'),
         ),
       ),
@@ -182,21 +204,19 @@ class _ReminderTimeTile extends ConsumerWidget {
     final settings = ref.watch(reminderSettingsProvider);
     final time = settings.value;
 
-    return ListTile(
-      leading: const Icon(Icons.alarm),
-      title: const Text('Время утреннего напоминания'),
-      subtitle: Text(
-        time == null
-            // The read is a disk round trip, so there is a frame or two with no
-            // answer. Showing the default during it would be a lie that
-            // occasionally flashes the wrong number at someone who set 07:30.
-            ? 'Загружаем…'
-            : 'Напоминания без времени приходят в ${time.format()} по '
-                  'местному времени в выбранный день.',
-      ),
-      trailing: time == null
-          ? null
-          : Text(time.format(), style: Theme.of(context).textTheme.titleMedium),
+    return _SettingRow(
+      icon: Icons.alarm,
+      title: 'Время утреннего напоминания',
+      description: time == null
+          // The read is a disk round trip, so there is a frame or two with no
+          // answer. Showing the default during it would be a lie that
+          // occasionally flashes the wrong number at someone who set 07:30.
+          ? 'Загружаем…'
+          : 'Напоминания без времени приходят в ${time.format()} по '
+                'местному времени в выбранный день.',
+      // The value is the point of the row, so it is set as one of the
+      // screen's few numbers -- the same chip the app gives an age.
+      trailing: time == null ? null : _ValueChip(time.format()),
       onTap: time == null ? null : () => _pick(context, ref, time),
     );
   }
@@ -242,31 +262,30 @@ class _DictationModelTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final setting = ref.watch(dictationModelSettingProvider);
-    const icon = Icon(Icons.auto_awesome_outlined);
-    const title = Text('Модель разбора диктовки');
+    const icon = Icons.auto_awesome_outlined;
+    const title = 'Модель разбора диктовки';
 
     return switch (setting) {
-      AsyncData(:final value) => ListTile(
-        leading: icon,
+      AsyncData(:final value) => _SettingRow(
+        icon: icon,
         title: title,
-        subtitle: Text(
-          value.override == null
-              ? '${value.model} · по умолчанию с сервера'
-              : '${value.model} · выбрана здесь, '
-                    'по умолчанию ${value.defaultModel}',
-        ),
-        trailing: const Icon(Icons.edit_outlined),
+        description: value.override == null
+            ? '${value.model} · по умолчанию с сервера'
+            : '${value.model} · выбрана здесь, '
+                  'по умолчанию ${value.defaultModel}',
+        trailing: const _Chevron(),
         onTap: () => _edit(context, ref, value),
       ),
-      AsyncError(:final error) => ListTile(
-        leading: icon,
+      AsyncError(:final error) => _SettingRow(
+        icon: icon,
+        tone: _Tone.waiting,
         title: title,
-        subtitle: Text(switch (error) {
+        description: switch (error) {
           NetworkException() => 'Нет связи с сервером.',
           ApiException(statusCode: 503) =>
             'Разбор не настроен на сервере: нет ключа модели в .env.',
           _ => 'Не удалось узнать модель.',
-        }),
+        },
         trailing: error is ApiException && error.statusCode == 503
             ? null
             : IconButton(
@@ -275,10 +294,10 @@ class _DictationModelTile extends ConsumerWidget {
                 onPressed: () => ref.invalidate(dictationModelSettingProvider),
               ),
       ),
-      _ => const ListTile(
-        leading: icon,
+      _ => const _SettingRow(
+        icon: icon,
         title: title,
-        subtitle: Text('Спрашиваем сервер…'),
+        description: 'Спрашиваем сервер…',
       ),
     };
   }
@@ -396,24 +415,31 @@ class _PermissionsTile extends ConsumerWidget {
     final support = ref.watch(notificationGatewayProvider).support;
 
     if (!support.hasRuntimePermission) {
-      return ListTile(
-        leading: const Icon(Icons.info_outline),
-        title: const Text('Разрешения'),
-        subtitle: Text(support.note),
+      return _SettingRow(
+        icon: Icons.info_outline,
+        title: 'Разрешения',
+        description: support.note,
       );
     }
 
     final state = permissions.value;
     final enabled = state?.notificationsEnabled;
     final exact = state?.canScheduleExactAlarms;
+    final missing = enabled == false || exact == false;
 
-    return ListTile(
-      leading: Icon(
-        enabled == false ? Icons.notifications_off : Icons.notifications_active,
-        color: enabled == false ? Theme.of(context).colorScheme.error : null,
-      ),
-      title: const Text('Разрешения на уведомления'),
-      subtitle: Text(switch ((enabled, exact)) {
+    return _SettingRow(
+      icon: enabled == false
+          ? Icons.notifications_off
+          : Icons.notifications_active,
+      tone: switch ((enabled, exact)) {
+        (false, _) => _Tone.alarm,
+        (true, false) => _Tone.waiting,
+        _ => _Tone.plain,
+      },
+      title: 'Разрешения на уведомления',
+      // Only the row that has something to grant says it can be tapped.
+      trailing: missing ? const _Chevron() : null,
+      description: switch ((enabled, exact)) {
         (null, _) => 'Проверяем…',
         (false, _) =>
           'Уведомления запрещены — напоминания не будут показаны. '
@@ -422,7 +448,7 @@ class _PermissionsTile extends ConsumerWidget {
           'Уведомления разрешены, но точные будильники — нет: напоминание '
               'может опоздать на часы. Нажмите, чтобы выдать разрешение.',
         (true, _) => 'Уведомления и точные будильники разрешены.',
-      }),
+      },
       onTap: () => ref.read(notificationPermissionsProvider.notifier).request(),
     );
   }
@@ -440,13 +466,13 @@ class _BenchTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.biotech_outlined),
-      title: const Text(NotificationBenchScreen.title),
-      subtitle: const Text(
-        'Очередь будильников, разовые проверки и разрешения — для проверки '
-        'по чек-листу на реальном телефоне.',
-      ),
+    return _SettingRow(
+      icon: Icons.biotech_outlined,
+      title: NotificationBenchScreen.title,
+      description:
+          'Очередь будильников, разовые проверки и разрешения — для проверки '
+          'по чек-листу на реальном телефоне.',
+      trailing: const _Chevron(),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => const NotificationBenchScreen(),
@@ -455,3 +481,251 @@ class _BenchTile extends StatelessWidget {
     );
   }
 }
+
+// --- the screen's own pieces ------------------------------------------------
+
+/// The header every sub-screen has: a white bar with a hairline under it, the
+/// back chevron, and the title in the display face -- the same bar as the
+/// project screen's, instead of Material's app bar, which set the title at a
+/// different height and left the screen looking borrowed from another app.
+class _SettingsHeader extends StatelessWidget {
+  const _SettingsHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    final canPop = Navigator.of(context).canPop();
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.card,
+        border: Border(bottom: BorderSide(color: AppColors.line)),
+      ),
+      padding: EdgeInsets.fromLTRB(canPop ? 4 : Insets.gutter, 10, 16, 10),
+      constraints: const BoxConstraints(minHeight: 64),
+      child: Row(
+        children: <Widget>[
+          if (canPop)
+            IconButton(
+              tooltip: 'Назад',
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.chevron_left, size: 26),
+              color: AppColors.ink,
+            ),
+          const Expanded(child: Text('Настройки', style: AppText.screen)),
+        ],
+      ),
+    );
+  }
+}
+
+/// "НАПОМИНАНИЯ ————": the group's name with a rule running out to the edge,
+/// as the pick screen labels its projects.
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.name);
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+      child: Row(
+        children: <Widget>[
+          Text(name.toUpperCase(), style: AppText.sectionLabel),
+          const SizedBox(width: 8),
+          const Expanded(child: Divider(color: AppColors.line, height: 1)),
+        ],
+      ),
+    );
+  }
+}
+
+/// One white card holding a group's rows, with the faintest rule between them.
+///
+/// A card per group rather than per row: two rows about reminders are one
+/// subject, and ten separate cards on one screen would read as a list of
+/// things to do rather than a page of choices.
+class _SettingsGroup extends StatelessWidget {
+  const _SettingsGroup({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: AppColors.card,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Radii.card),
+        side: const BorderSide(color: AppColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (var i = 0; i < children.length; i++) ...<Widget>[
+            if (i > 0)
+              const Divider(
+                color: AppColors.lineFaint,
+                height: 1,
+                indent: 14 + _SettingRow.iconBox + 12,
+              ),
+            children[i],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// How a row's icon is tinted: by what the row is saying, not by decoration.
+enum _Tone {
+  /// Nothing to report.
+  plain(AppColors.background, AppColors.muted),
+
+  /// Something is set up and working -- the speech model on disk.
+  ready(AppColors.indigoFill, AppColors.indigoInk),
+
+  /// Works, but not fully: exact alarms denied, the server unreachable.
+  waiting(AppColors.waitingChip, AppColors.waitingInk),
+
+  /// Broken in a way the user has to fix.
+  alarm(Color(0xFFFBE7E3), AppColors.alarm);
+
+  const _Tone(this.fill, this.ink);
+
+  final Color fill;
+  final Color ink;
+}
+
+/// One setting: an icon in a rounded square, a name, a sentence about it, and
+/// the control on the right.
+///
+/// The name and the sentence are two different styles on purpose -- 15/600 ink
+/// and 13/500 muted, as everywhere else in the app. `ListTile` set both at the
+/// same size and colour, and a screen of five equal paragraphs gave the eye
+/// nowhere to land.
+class _SettingRow extends StatelessWidget {
+  const _SettingRow({
+    required this.icon,
+    required this.title,
+    this.description,
+    this.descriptionColor,
+    this.tone = _Tone.plain,
+    this.trailing,
+    this.below,
+    this.onTap,
+  });
+
+  static const double iconBox = 36;
+
+  final IconData icon;
+  final String title;
+  final String? description;
+  final Color? descriptionColor;
+  final _Tone tone;
+  final Widget? trailing;
+
+  /// Under the sentence: the download's progress bar.
+  final Widget? below;
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Targets.row),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Container(
+                width: iconBox,
+                height: iconBox,
+                decoration: BoxDecoration(
+                  color: tone.fill,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 20, color: tone.ink),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  // Centres a one-line name on the icon square.
+                  padding: const EdgeInsets.only(top: 7),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(title, style: AppText.action),
+                      if (description != null) ...<Widget>[
+                        const SizedBox(height: 3),
+                        Text(
+                          description!,
+                          style: descriptionColor == null
+                              ? AppText.hint
+                              : AppText.hint.copyWith(color: descriptionColor),
+                        ),
+                      ],
+                      if (below != null) ...<Widget>[
+                        const SizedBox(height: 10),
+                        below!,
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              if (trailing != null) ...<Widget>[
+                const SizedBox(width: 8),
+                // Aligned to the name rather than to the whole block: a button
+                // floating in the middle of a four-line sentence belongs to no
+                // line in particular.
+                trailing!,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The current value of a row, in a chip: "09:00".
+class _ValueChip extends StatelessWidget {
+  const _ValueChip(this.value);
+
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(Radii.chip),
+      ),
+      child: Text(value, style: AppText.numberSmall.copyWith(fontSize: 15)),
+    );
+  }
+}
+
+/// "This row opens something."
+class _Chevron extends StatelessWidget {
+  const _Chevron();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.only(top: 6),
+      child: Icon(Icons.chevron_right, size: 24, color: AppColors.lineStrong),
+    );
+  }
+}
+
+/// A filled button that fits beside a sentence: the 44 px floor kept, the
+/// horizontal padding Material gives a full-width action taken away.
+final ButtonStyle _compactButton = FilledButton.styleFrom(
+  padding: const EdgeInsets.symmetric(horizontal: 16),
+);
