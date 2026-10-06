@@ -145,11 +145,23 @@ export const boardQuerySchema = listProjectsQuerySchema;
 
 // ---- Tasks ----
 
+/**
+ * The time of day of a reminder: local wall clock, `HH:MM`, or null for "the
+ * day only". A time, not an instant, for the reason `remindAt` is a date --
+ * see `remindTime` on the Task model.
+ */
+const remindTimeSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "remindTime must be HH:MM")
+  .nullable()
+  .optional();
+
 export const createTaskSchema = z.object({
   title: z.string().trim().min(1, "title is required"),
   description: z.string().nullable().optional(),
   status: taskStatusSchema.optional(),
   remindAt: z.coerce.date().nullable().optional(),
+  remindTime: remindTimeSchema,
   /**
    * The dictation parse this task was made from (F14), if any: the row in
    * `dictation_parses` gets linked to the task, with a snapshot of what was
@@ -171,6 +183,7 @@ export const updateTaskSchema = z
     description: z.string().nullable().optional(),
     status: taskStatusSchema.optional(),
     remindAt: z.coerce.date().nullable().optional(),
+    remindTime: remindTimeSchema,
     /** A `task_tidy` answer being saved into this task (F15). */
     dictationParseId: dictationParseIdSchema,
   })

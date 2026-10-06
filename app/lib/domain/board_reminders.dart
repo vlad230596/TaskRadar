@@ -25,6 +25,7 @@ List<TaskReminder> remindersFromBoard(Iterable<BoardProject> board) {
           taskId: task.id,
           taskTitle: task.title,
           remindAt: remindAt,
+          remindTime: task.remindTime,
           projectName: entry.project.name,
         ),
       );

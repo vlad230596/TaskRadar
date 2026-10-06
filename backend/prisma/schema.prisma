@@ -156,6 +156,13 @@ model Task {
   // used when the gap between two neighbours is exhausted.
   position    Float
   remindAt    DateTime?
+  /// The time of day of the reminder, local wall clock "HH:MM", or null for
+  /// "the day only" (the app then fires it at the hour from its settings).
+  /// Kept apart from `remindAt` rather than folded into it: `remindAt` is a
+  /// calendar date stored as UTC midnight and every reader takes its
+  /// `YYYY-MM-DD` prefix, which a real instant would break east of UTC.
+  /// Meaningless without `remindAt`; the routes clear both together.
+  remindTime  String?
 
   /// When this task was put into the working set -- the 2-5 tasks the "work"
   /// mode shows one at a time (F11). `null` means it is not in the set.

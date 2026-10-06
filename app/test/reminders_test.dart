@@ -185,6 +185,63 @@ void main() {
     test('shows an unreadable value instead of hiding it', () {
       expect(formatReminderDate('не-дата'), 'не-дата');
     });
+
+    test('adds the time of day when there is one', () {
+      expect(
+        formatReminderDate('2026-08-18T00:00:00.000Z', '07:05'),
+        '18.08 в 07:05',
+      );
+      // An unreadable time reads as "the day only", as everywhere else.
+      expect(formatReminderDate('2026-08-18T00:00:00.000Z', '7:5'), '18.08');
+    });
+  });
+
+  group('a reminder with a time of day', () {
+    const remindAt = '2026-08-18T00:00:00.000Z';
+
+    test('is not due earlier on its day', () {
+      expect(
+        isReminderDue(
+          remindAt,
+          remindTime: '15:00',
+          now: DateTime(2026, 8, 18, 14, 59),
+        ),
+        isFalse,
+      );
+    });
+
+    test('is due from that minute on', () {
+      expect(
+        isReminderDue(
+          remindAt,
+          remindTime: '15:00',
+          now: DateTime(2026, 8, 18, 15),
+        ),
+        isTrue,
+      );
+    });
+
+    test('is due on any later day, whatever the hour', () {
+      expect(
+        isReminderDue(
+          remindAt,
+          remindTime: '23:00',
+          now: DateTime(2026, 8, 19, 1),
+        ),
+        isTrue,
+      );
+    });
+
+    test('is not due the day before, even late in the evening', () {
+      expect(
+        isReminderDue(
+          remindAt,
+          remindTime: '00:30',
+          now: DateTime(2026, 8, 17, 23, 59),
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('a malformed remindAt', () {

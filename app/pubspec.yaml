@@ -11,6 +11,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  # Russian for the framework's own text: the date and time pickers' months,
+  # weekdays and hints, which were English until the reminder got a time.
+  flutter_localizations:
+    sdk: flutter
 
   cupertino_icons: ^1.0.8
 

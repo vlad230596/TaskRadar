@@ -147,6 +147,7 @@ class FakeProjectBackend {
     String status = 'pending',
     String? description,
     String? remindAt,
+    String? remindTime,
     double? position,
 
     /// Задача, уже взятая в работу (F11). Null — обычная задача вне набора;
@@ -163,6 +164,7 @@ class FakeProjectBackend {
       'status': status,
       'position': position ?? _appendPosition(projectId),
       'remindAt': remindAt,
+      'remindTime': remindTime,
       'createdAt': '2026-08-01T10:00:00.000Z',
       'updatedAt': '2026-08-01T10:00:00.000Z',
       'focusedAt': focused ? _nextFocusStamp() : null,
@@ -512,6 +514,7 @@ class FakeProjectBackend {
         'status': body['status'] ?? 'pending',
         'position': _appendPosition(projectId),
         'remindAt': body['remindAt'],
+        'remindTime': body['remindAt'] == null ? null : body['remindTime'],
         'createdAt': '2026-09-16T12:00:00.000Z',
         'updatedAt': '2026-09-16T12:00:00.000Z',
       };
@@ -666,9 +669,34 @@ class FakeProjectBackend {
             ? null
             : '${(value as String).substring(0, 10)}T00:00:00.000Z';
       }
+      // The time goes with the date: cleared with it, refused without one.
+      if (body.containsKey('remindAt') && body['remindAt'] == null) {
+        task['remindTime'] = null;
+      } else if (body.containsKey('remindTime')) {
+        if (task['remindAt'] == null && body['remindTime'] != null) {
+          return _error(400, 'remindTime needs a reminder date (remindAt)');
+        }
+        task['remindTime'] = body['remindTime'];
+      }
       task['updatedAt'] = '2026-09-16T12:30:00.000Z';
 
       return jsonResponse(task);
+    });
+
+    // `routes/tasks.ts`: the task becomes a sandbox line -- its title, and the
+    // description on the next line -- and is gone.
+    backend.on('POST', '/tasks/:id/unfile', (match) {
+      final task = _task(match.params['id']!);
+      if (task == null) return _notFound('Task');
+
+      final description = (task['description'] as String?)?.trim() ?? '';
+      final itemId = addInboxItem(
+        text: description.isEmpty
+            ? task['title'] as String
+            : '${task['title']}\n$description',
+      );
+      tasks.remove(task);
+      return jsonResponse(_inboxItem(itemId), statusCode: 201);
     });
 
     backend.on('DELETE', '/tasks/:id', (match) {

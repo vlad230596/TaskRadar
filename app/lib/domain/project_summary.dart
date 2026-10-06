@@ -51,7 +51,9 @@ class ProjectSummary {
       // An unreadable date is skipped rather than shown: see [isReminderDue].
       if (date == null) continue;
 
-      if (isReminderDue(remindAt, now: now)) due.add(task);
+      if (isReminderDue(remindAt, remindTime: task.remindTime, now: now)) {
+        due.add(task);
+      }
 
       // Earliest wins. Compared as `YYYY-MM-DD` strings for the same reason the
       // rest of this file does -- zero-padded big-endian dates sort

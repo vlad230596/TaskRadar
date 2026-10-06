@@ -20,6 +20,7 @@ import '../widgets/dictation.dart';
 import '../widgets/focus_toggle.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mutation_feedback.dart';
+import '../widgets/reminder_time_picker.dart';
 
 /// One task, large enough to read and edit (F12; compact blocks, variant A).
 ///
@@ -219,6 +220,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     await _pickReminder();
   }
 
+  /// A new reminder: the day, then the time of day.
   Future<void> _pickReminder() async {
     // Read fresh rather than taken from the caller: this is reached straight
     // after a status change, and the row the caller is holding is the one from
@@ -226,6 +228,103 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     final task = _find(ref.read(projectTasksProvider(widget.projectId)).value);
     if (task == null) return;
 
+    final picked = await _pickDay(task);
+    if (picked == null || !mounted) return;
+
+    // Then the time of day; dismissing it means "the day only".
+    final time = await pickReminderTime(context, ref, task);
+    if (!mounted) return;
+
+    await runMutation(
+      context,
+      () => _tasks.setRemindAt(task, picked, time: time),
+      failure: 'Не удалось сохранить дату напоминания.',
+    );
+  }
+
+  /// An existing reminder, tapped: one menu for what can be changed in it --
+  /// the day, the time, or taking the time off. Removing the whole reminder
+  /// is the red cross on the row itself, one tap away, not in here.
+  Future<void> _editReminder(Task task) async {
+    final remindAt = task.remindAt;
+    if (remindAt == null) return _pickReminder();
+    final hasTime = task.remindTime != null;
+
+    final choice = await showModalBottomSheet<_ReminderEdit>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              title: Text(
+                'Напомнить ${formatReminderDate(remindAt, task.remindTime)}',
+                style: AppText.action,
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_outlined),
+              title: const Text('Изменить дату'),
+              onTap: () => Navigator.of(context).pop(_ReminderEdit.date),
+            ),
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: Text(hasTime ? 'Изменить время' : 'Добавить время'),
+              onTap: () => Navigator.of(context).pop(_ReminderEdit.time),
+            ),
+            if (hasTime)
+              ListTile(
+                leading: const Icon(Icons.timer_off_outlined),
+                title: const Text('Убрать время'),
+                subtitle: const Text('Напомню в час из настроек'),
+                onTap: () => Navigator.of(context).pop(_ReminderEdit.noTime),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+
+    final day = reminderCalendarDate(remindAt);
+    switch (choice) {
+      case _ReminderEdit.date:
+        final picked = await _pickDay(task);
+        if (picked == null || !mounted) return;
+        await runMutation(
+          context,
+          // The time stays: changing the day of "в 14:30" keeps "в 14:30".
+          () => _tasks.setRemindAt(task, picked, time: task.remindTime),
+          failure: 'Не удалось изменить дату напоминания.',
+        );
+      case _ReminderEdit.time:
+        if (day == null) return;
+        // "Отмена" here, not "Без времени": this menu has its own line for
+        // that, and dismissing a picker opened to change a time should change
+        // nothing.
+        final time = await pickReminderTime(
+          context,
+          ref,
+          task,
+          cancelText: 'Отмена',
+        );
+        if (time == null || !mounted) return;
+        await runMutation(
+          context,
+          () => _tasks.setRemindAt(task, day, time: time),
+          failure: 'Не удалось изменить время напоминания.',
+        );
+      case _ReminderEdit.noTime:
+        if (day == null) return;
+        await runMutation(
+          context,
+          () => _tasks.setRemindAt(task, day),
+          failure: 'Не удалось убрать время напоминания.',
+        );
+    }
+  }
+
+  /// The day picker, as `YYYY-MM-DD`, or null when dismissed.
+  Future<String?> _pickDay(Task task) async {
     final picked = await showDatePicker(
       context: context,
       // Re-assembled from its calendar parts rather than parsed as an instant;
@@ -242,13 +341,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       cancelText: 'Отмена',
       confirmText: 'Готово',
     );
-    if (picked == null || !mounted) return;
-
-    await runMutation(
-      context,
-      () => _tasks.setRemindAt(task, calendarDateForApi(picked)),
-      failure: 'Не удалось сохранить дату напоминания.',
-    );
+    return picked == null ? null : calendarDateForApi(picked);
   }
 
   Future<void> _clearReminder(Task task) async {
@@ -257,6 +350,32 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       () => _tasks.setRemindAt(task, null),
       failure: 'Не удалось убрать дату напоминания.',
     );
+  }
+
+  /// Back to the sandbox: for a task filed into the wrong project, typically
+  /// one whose right project does not exist yet.
+  Future<void> _unfile(Task task) async {
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Вернуть в песочницу?',
+      message:
+          '«${task.title}» снова станет строкой в песочнице. Статус, '
+          'напоминание и история задачи не сохранятся.',
+      confirmLabel: 'Вернуть',
+    );
+    if (!confirmed || !mounted) return;
+
+    final navigator = Navigator.of(context);
+    final ok = await runMutation(
+      context,
+      () => _tasks.unfile(task),
+      failure: 'Не удалось вернуть задачу в песочницу.',
+      // The task disappears from here, so say where it went.
+      success: 'Задача вернулась в песочницу.',
+    );
+    // Leaving, as after a delete: every control here addresses a row that is
+    // gone.
+    if (ok && navigator.canPop()) navigator.pop();
   }
 
   Future<void> _delete(Task task) async {
@@ -550,6 +669,11 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
               ),
             ),
           IconButton(
+            tooltip: 'Вернуть в песочницу',
+            onPressed: () => unawaited(_unfile(task)),
+            icon: const Icon(Icons.move_to_inbox_outlined, size: 21),
+          ),
+          IconButton(
             tooltip: 'Удалить задачу',
             onPressed: () => unawaited(_delete(task)),
             icon: const Icon(Icons.delete_outline, size: 21),
@@ -640,7 +764,9 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
   Widget _reminderRow(Task task) {
     final remindAt = task.remindAt;
-    final due = remindAt != null && isReminderDue(remindAt);
+    final due =
+        remindAt != null &&
+        isReminderDue(remindAt, remindTime: task.remindTime);
     // A blocker keeps its amber; a plain open task's reminder is neutral.
     final blocked = task.status == TaskStatus.blocked;
     final ink = blocked ? AppColors.waitingInk : AppColors.indigoLink;
@@ -649,7 +775,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       color: blocked ? AppColors.waitingFill : AppColors.card,
       borderRadius: BorderRadius.circular(Radii.card),
       child: InkWell(
-        onTap: () => unawaited(_pickReminder()),
+        onTap: () => unawaited(_editReminder(task)),
         borderRadius: BorderRadius.circular(Radii.card),
         child: Container(
           height: 52,
@@ -674,7 +800,8 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                 child: Text(
                   remindAt == null
                       ? 'Напомнить когда-нибудь…'
-                      : 'Напомнить ${formatReminderDate(remindAt)}',
+                      : 'Напомнить '
+                            '${formatReminderDate(remindAt, task.remindTime)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppText.action.copyWith(color: ink),
@@ -686,11 +813,13 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                   child: Icon(Icons.chevron_right, size: 18, color: ink),
                 )
               else
+                // The one thing done to a reminder from the row: removing it,
+                // date and time together. Everything else is in its menu.
                 IconButton(
-                  tooltip: 'Убрать дату напоминания',
+                  tooltip: 'Убрать напоминание',
                   onPressed: () => unawaited(_clearReminder(task)),
-                  icon: const Icon(Icons.event_busy, size: 18),
-                  color: ink,
+                  icon: const Icon(Icons.close, size: 20),
+                  color: AppColors.alarm,
                 ),
             ],
           ),
@@ -866,6 +995,9 @@ class _FieldChip extends StatelessWidget {
 /// `pending -> blocked -> done` is the order a task actually travels in, and it
 /// puts the destructive-feeling "done" at the far end. Same order as the React
 /// client's `STATUS_ORDER`, so muscle memory survives the migration.
+/// What the menu of an existing reminder can do to it.
+enum _ReminderEdit { date, time, noTime }
+
 const List<TaskStatus> _statusOrder = <TaskStatus>[
   TaskStatus.pending,
   TaskStatus.blocked,

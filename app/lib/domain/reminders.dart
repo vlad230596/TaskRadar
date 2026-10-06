@@ -1,9 +1,10 @@
 /// Port of `frontend/src/lib/reminders.ts`.
 ///
-/// Helpers for the reminder date of a `blocked` task (see the README: a blocked
-/// task can carry the day it is worth asking about again). `remindAt` has **day
-/// granularity** -- it is picked in a date picker, there is no meaningful
-/// time-of-day component to it at all.
+/// Helpers for the reminder of an open task. `remindAt` has **day
+/// granularity** -- it is picked in a date picker, and the time-of-day part of
+/// the stored timestamp means nothing. A time of day, when the user picked one,
+/// travels separately as `remindTime` (`HH:MM`, local wall clock), so the date
+/// below stays a pure calendar date.
 ///
 /// ## The trap, carried over verbatim from the TypeScript
 ///
@@ -104,36 +105,55 @@ DateTime? remindAtAsLocalDay(String remindAt) {
   return DateTime(date.year, date.month, date.day);
 }
 
-/// True once the reminder's calendar date has arrived or passed.
+/// True once the reminder's calendar date has arrived or passed -- and, for a
+/// reminder with a [remindTime], once that time of day has come on its date.
 ///
-/// A reminder dated exactly today counts as due, not just strictly-past ones --
-/// the point of the date is "come back to this on that day", and a badge that
-/// only appears the day *after* would be useless.
+/// A day-only reminder dated exactly today counts as due, not just
+/// strictly-past ones -- the point of the date is "come back to this on that
+/// day", and a badge that only appears the day *after* would be useless. One
+/// with a time is due from that time on: "в 15:00" shown as "пора" at 9 in the
+/// morning would be the badge crying wolf.
+///
+/// An unreadable [remindTime] is ignored, i.e. read as "the day only".
 ///
 /// A malformed `remindAt` is **not** due. The alternative (letting the string
 /// comparison decide) would make the answer depend on where the garbage sorts
 /// relative to a date, which is arbitrary; and a loud red "deal with this now"
 /// badge is the wrong reaction to a value the app could not read. The scheduler
 /// makes the same call for the same reason (`SkipReason.malformedDate`).
-bool isReminderDue(String remindAt, {DateTime? now}) {
+bool isReminderDue(String remindAt, {String? remindTime, DateTime? now}) {
   final date = reminderCalendarDate(remindAt);
   if (date == null) return false;
 
   // String comparison, not date arithmetic: `YYYY-MM-DD` is zero-padded and
   // big-endian, so lexicographic order *is* chronological order.
-  return date.compareTo(localTodayCalendarDate(now)) <= 0;
+  final clock = now ?? DateTime.now();
+  final order = date.compareTo(localTodayCalendarDate(clock));
+  if (order != 0) return order < 0;
+
+  final time = reminderTimeFromString(remindTime);
+  if (time == null) return true;
+  return clock.hour * 60 + clock.minute >= time.hour * 60 + time.minute;
 }
 
-/// Formats a `remindAt` as `DD.MM`, matching the rest of the app's date display.
+/// Formats a `remindAt` as `DD.MM`, matching the rest of the app's date display,
+/// and as `DD.MM в HH:MM` when the reminder has a readable [remindTime].
 ///
 /// Falls back to the raw value when the date cannot be read. Showing the
 /// unreadable string is deliberate: it is the only way a malformed row is ever
 /// visible to the person who can fix it, whereas an empty string or a `??`
 /// placeholder would hide the problem.
-String formatReminderDate(String remindAt) {
+String formatReminderDate(String remindAt, [String? remindTime]) {
   final date = calendarDateFromRemindAt(remindAt);
   if (date == null) return remindAt;
 
-  return '${date.day.toString().padLeft(2, '0')}.'
+  final day =
+      '${date.day.toString().padLeft(2, '0')}.'
       '${date.month.toString().padLeft(2, '0')}';
+  final time = reminderTimeFromString(remindTime);
+  return time == null ? day : '$day в ${time.format()}';
 }
+
+/// A picked time of day as the `HH:MM` the server stores in `remindTime`.
+String reminderTimeForApi(int hour, int minute) =>
+    ReminderTime(hour, minute).format();

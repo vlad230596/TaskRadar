@@ -51,6 +51,12 @@ abstract class Task with _$Task {
     /// `blocked` task. Only ever compare this by its `YYYY-MM-DD` prefix -- see
     /// the note on [Project] and `frontend/src/lib/reminders.ts`.
     required String? remindAt,
+
+    /// The reminder's time of day, local wall clock `HH:MM`, or null for "the
+    /// day only" -- which fires at the hour from the settings
+    /// (`domain/reminder_schedule.dart`). Never set without [remindAt]: the
+    /// server clears the two together.
+    String? remindTime,
     required String createdAt,
     required String updatedAt,
 

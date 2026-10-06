@@ -130,8 +130,8 @@ class ParsedDictation extends TidyResult {
   /// in (see `ProjectApi.updateTask`) -- or null.
   final String? remindDate;
 
-  /// `HH:MM`, or null. Returned by the server, but not stored anywhere yet:
-  /// reminders have day granularity (`domain/reminders.dart`).
+  /// `HH:MM`, or null: the reminder's time of day, saved as the task's
+  /// `remindTime`. Only meaningful with [remindDate].
   final String? remindTime;
 
   /// The server's record of this parse in its dataset, sent back when the

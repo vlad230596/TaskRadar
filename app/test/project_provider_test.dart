@@ -11,6 +11,7 @@ import 'package:taskradar/domain/reminders.dart';
 import 'package:taskradar/models/task_status.dart';
 import 'package:taskradar/providers/board_providers.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/inbox_providers.dart';
 import 'package:taskradar/providers/project_providers.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
@@ -496,6 +497,55 @@ void main() {
     });
   });
 
+  group('back to the sandbox', () {
+    test('the row goes, the current task is re-read, and the line joins '
+        'the pile', () async {
+      final projectId = server.addProject(name: 'Дача');
+      final first = server.addTask(
+        projectId: projectId,
+        title: 'Не сюда',
+        description: 'В другой проект',
+      );
+      server.addTask(projectId: projectId, title: 'Вторая');
+
+      final container = makeContainer();
+      container.listen(inboxProvider, (_, _) {});
+      await container.read(inboxProvider.future);
+      final tasks = await loadTasks(container, projectId);
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .unfile(tasks.first);
+
+      expect(server.tasks.any((row) => row['id'] == first), isFalse);
+      final after = tasksNow(container, projectId);
+      expect(titles(after), <String>['Вторая']);
+      expect(after.single.isCurrent, isTrue);
+      expect(
+        container.read(inboxProvider).requireValue.map((item) => item.text),
+        <String>['Не сюда\nВ другой проект'],
+      );
+    });
+
+    test('a failed request puts the row back', () async {
+      final projectId = server.addProject(name: 'Дача');
+      server.addTask(projectId: projectId, title: 'Задача');
+
+      final container = makeContainer();
+      final tasks = await loadTasks(container, projectId);
+      backend.alwaysFailToConnect();
+
+      await expectLater(
+        container
+            .read(projectTasksProvider(projectId).notifier)
+            .unfile(tasks.single),
+        throwsA(isA<NetworkException>()),
+      );
+
+      expect(titles(tasksNow(container, projectId)), <String>['Задача']);
+    });
+  });
+
   group('reordering', () {
     test('the new order is shown at once and persisted', () async {
       final projectId = server.addProject(name: 'Дача');
@@ -581,6 +631,7 @@ void main() {
     /// A blocked task in a fresh project, plus the container that owns it.
     Future<(ProviderContainer, String, Task)> blockedTask({
       String? remindAt,
+      String? remindTime,
     }) async {
       final projectId = server.addProject(name: 'Dacha');
       server.addTask(
@@ -588,6 +639,7 @@ void main() {
         title: 'Waiting for the cable',
         status: 'blocked',
         remindAt: remindAt,
+        remindTime: remindTime,
       );
 
       final container = makeContainer();
@@ -612,8 +664,10 @@ void main() {
             'would be off by the local offset',
       );
       // And nothing else was touched -- a `description: null` here would erase
-      // text nobody edited, with a 200.
-      expect(patch.body.keys, <String>['remindAt']);
+      // text nobody edited, with a 200. The time is part of the reminder: a
+      // date picked without one says "the day only", and clears an old time.
+      expect(patch.body.keys, <String>['remindAt', 'remindTime']);
+      expect(patch.body['remindTime'], isNull);
     });
 
     test(
@@ -630,6 +684,77 @@ void main() {
         expect(reminderCalendarDate(stored!), '2026-10-01');
       },
     );
+
+    test('sends the time of day with the date', () async {
+      final (container, projectId, task) = await blockedTask();
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, '2026-10-01', time: '14:30');
+
+      expect(server.patches.last.body, <String, dynamic>{
+        'remindAt': '2026-10-01',
+        'remindTime': '14:30',
+      });
+      final stored = tasksNow(container, projectId).single;
+      expect(stored.remindTime, '14:30');
+      expect(
+        formatReminderDate(stored.remindAt!, stored.remindTime),
+        '01.10 в 14:30',
+      );
+    });
+
+    test('a date with no time clears a time picked before', () async {
+      final (container, projectId, task) = await blockedTask(
+        remindAt: '2026-10-01T00:00:00.000Z',
+        remindTime: '14:30',
+      );
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, '2026-10-02');
+
+      expect(server.patches.last.body.containsKey('remindTime'), isTrue);
+      expect(server.patches.last.body['remindTime'], isNull);
+      expect(tasksNow(container, projectId).single.remindTime, isNull);
+    });
+
+    test('clearing the date takes the time with it', () async {
+      final (container, projectId, task) = await blockedTask(
+        remindAt: '2026-10-01T00:00:00.000Z',
+        remindTime: '14:30',
+      );
+
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, null);
+
+      // The server clears the time on its own; sending it too would be a
+      // second way to say the same thing.
+      expect(server.patches.last.body, <String, dynamic>{'remindAt': null});
+      expect(tasksNow(container, projectId).single.remindTime, isNull);
+    });
+
+    test('the alarm fires at the picked time, not the settings hour', () async {
+      final projectId = server.addProject(name: 'Dacha');
+      server.addTask(projectId: projectId, title: 'Call the plumber');
+
+      final container = makeContainer();
+      container.listen(boardViewProvider, (_, _) {});
+      container.listen(boardReminderBridgeProvider, (_, _) {});
+      await container.read(boardProvider.future);
+      await pumpEventQueue();
+
+      final task = (await loadTasks(container, projectId)).single;
+      await container
+          .read(projectTasksProvider(projectId).notifier)
+          .setRemindAt(task, remindAt(2).substring(0, 10), time: '14:30');
+      await pumpEventQueue();
+
+      await container.read(reminderSyncProvider.future);
+      final fireAt = gateway.queue.values.single.fireAt;
+      expect((fireAt.hour, fireAt.minute), (14, 30));
+    });
 
     test('clearing sends an explicit null, not an omitted key', () async {
       final (container, projectId, task) = await blockedTask(

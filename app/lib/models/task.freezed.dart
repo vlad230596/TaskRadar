@@ -44,7 +44,11 @@ mixin _$Task {
  double get position;/// Calendar date (stored server-side as UTC midnight) to be reminded about a
 /// `blocked` task. Only ever compare this by its `YYYY-MM-DD` prefix -- see
 /// the note on [Project] and `frontend/src/lib/reminders.ts`.
- String? get remindAt; String get createdAt; String get updatedAt;/// Computed by the server, never stored: the first task in `position` order
+ String? get remindAt;/// The reminder's time of day, local wall clock `HH:MM`, or null for "the
+/// day only" -- which fires at the hour from the settings
+/// (`domain/reminder_schedule.dart`). Never set without [remindAt]: the
+/// server clears the two together.
+ String? get remindTime; String get createdAt; String get updatedAt;/// Computed by the server, never stored: the first task in `position` order
 /// that is neither done nor blocked.
 ///
 /// It is a property of the *list*, not of the row, so it is only meaningful
@@ -64,16 +68,16 @@ $TaskCopyWith<Task> get copyWith => _$TaskCopyWithImpl<Task>(this as Task, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,createdAt,updatedAt,isCurrent);
+int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,createdAt,updatedAt,isCurrent);
 
 @override
 String toString() {
-  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
+  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
 }
 
 
@@ -84,7 +88,7 @@ abstract mixin class $TaskCopyWith<$Res>  {
   factory $TaskCopyWith(Task value, $Res Function(Task) _then) = _$TaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String createdAt, String updatedAt, bool isCurrent
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String createdAt, String updatedAt, bool isCurrent
 });
 
 
@@ -101,7 +105,7 @@ class _$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
@@ -110,6 +114,7 @@ as String,description: freezed == description ? _self.description : description 
 as String?,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as TaskStatus,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as double,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
+as String?,remindTime: freezed == remindTime ? _self.remindTime : remindTime // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable
@@ -198,10 +203,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
   return orElse();
 
 }
@@ -219,10 +224,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  bool isCurrent)  $default,) {final _that = this;
 switch (_that) {
 case _Task():
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -239,10 +244,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
   return null;
 
 }
@@ -254,7 +259,7 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 @JsonSerializable()
 
 class _Task implements Task {
-  const _Task({required this.id, required this.projectId, required this.title, required this.description, required this.status, required this.position, required this.remindAt, required this.createdAt, required this.updatedAt, required this.isCurrent});
+  const _Task({required this.id, required this.projectId, required this.title, required this.description, required this.status, required this.position, required this.remindAt, this.remindTime, required this.createdAt, required this.updatedAt, required this.isCurrent});
   factory _Task.fromJson(Map<String, dynamic> json) => _$TaskFromJson(json);
 
 @override final  String id;
@@ -293,6 +298,11 @@ class _Task implements Task {
 /// `blocked` task. Only ever compare this by its `YYYY-MM-DD` prefix -- see
 /// the note on [Project] and `frontend/src/lib/reminders.ts`.
 @override final  String? remindAt;
+/// The reminder's time of day, local wall clock `HH:MM`, or null for "the
+/// day only" -- which fires at the hour from the settings
+/// (`domain/reminder_schedule.dart`). Never set without [remindAt]: the
+/// server clears the two together.
+@override final  String? remindTime;
 @override final  String createdAt;
 @override final  String updatedAt;
 /// Computed by the server, never stored: the first task in `position` order
@@ -317,16 +327,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,createdAt,updatedAt,isCurrent);
+int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,createdAt,updatedAt,isCurrent);
 
 @override
 String toString() {
-  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
+  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
 }
 
 
@@ -337,7 +347,7 @@ abstract mixin class _$TaskCopyWith<$Res> implements $TaskCopyWith<$Res> {
   factory _$TaskCopyWith(_Task value, $Res Function(_Task) _then) = __$TaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String createdAt, String updatedAt, bool isCurrent
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String createdAt, String updatedAt, bool isCurrent
 });
 
 
@@ -354,7 +364,7 @@ class __$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
   return _then(_Task(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
@@ -363,6 +373,7 @@ as String,description: freezed == description ? _self.description : description 
 as String?,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
 as TaskStatus,position: null == position ? _self.position : position // ignore: cast_nullable_to_non_nullable
 as double,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
+as String?,remindTime: freezed == remindTime ? _self.remindTime : remindTime // ignore: cast_nullable_to_non_nullable
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable

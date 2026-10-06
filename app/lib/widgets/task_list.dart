@@ -17,6 +17,7 @@ import '../theme/tokens.dart';
 import 'glance.dart';
 import 'mutation_feedback.dart';
 import 'overflow_fade_text.dart';
+import 'reminder_time_picker.dart';
 
 /// The task half of the project screen: rows you can read, and one way to add
 /// one (F12).
@@ -766,8 +767,9 @@ void _offerUndo(
 String _reminderSuffix(String lead, Task task, DateTime? now) {
   final remindAt = task.remindAt;
   if (remindAt == null) return lead;
-  final date = formatReminderDate(remindAt);
-  final label = isReminderDue(remindAt, now: now) ? 'пора · $date' : date;
+  final date = formatReminderDate(remindAt, task.remindTime);
+  final due = isReminderDue(remindAt, remindTime: task.remindTime, now: now);
+  final label = due ? 'пора · $date' : date;
   return lead.isEmpty ? label : '$lead · $label';
 }
 
@@ -782,8 +784,9 @@ String _blockedLine(Task task, int? age, DateTime? now) {
     return waited == null ? 'без даты' : '$waited · без даты';
   }
 
-  final date = formatReminderDate(remindAt);
-  final label = isReminderDue(remindAt, now: now) ? 'пора · $date' : date;
+  final date = formatReminderDate(remindAt, task.remindTime);
+  final due = isReminderDue(remindAt, remindTime: task.remindTime, now: now);
+  final label = due ? 'пора · $date' : date;
   return waited == null ? label : '$label · $waited';
 }
 
@@ -1029,7 +1032,11 @@ Future<void> _restore(
     final reopened = fresh();
     if (reopened != null && reopened.status != TaskStatus.done) {
       // The `YYYY-MM-DD` prefix is the calendar date; see [calendarDateForApi].
-      await tasks.setRemindAt(reopened, remindAt.substring(0, 10));
+      await tasks.setRemindAt(
+        reopened,
+        remindAt.substring(0, 10),
+        time: previous.remindTime,
+      );
     }
   }
 
@@ -1129,12 +1136,14 @@ Future<bool> setTaskStatus(
     confirmText: 'Готово',
   );
   if (picked == null || !context.mounted) return true;
+  final time = await pickReminderTime(context, ref, fresh);
+  if (!context.mounted) return true;
 
   await runMutation(
     context,
     () => ref
         .read(projectTasksProvider(projectId).notifier)
-        .setRemindAt(fresh, calendarDateForApi(picked)),
+        .setRemindAt(fresh, calendarDateForApi(picked), time: time),
     failure: 'Не удалось сохранить дату напоминания.',
   );
   return true;

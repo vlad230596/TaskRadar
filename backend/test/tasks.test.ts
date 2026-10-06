@@ -41,6 +41,7 @@ const prismaMock = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   taskEvent: { findMany: vi.fn(), create: vi.fn() },
+  inboxItem: { create: vi.fn() },
   dictationParse: { updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
@@ -66,6 +67,7 @@ interface TaskRow {
   status: Status;
   position: number;
   remindAt: Date | null;
+  remindTime: string | null;
   focusedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -113,6 +115,8 @@ let projects: ProjectRow[] = [];
 let parses: ParseRow[] = [];
 let tasks: TaskRow[] = [];
 let events: EventRow[] = [];
+/** Lines put back into the sandbox by `POST /tasks/:id/unfile`. */
+let inbox: { id: string; userId: string; text: string }[] = [];
 let nextId = 0;
 
 function task(row: Partial<TaskRow> & Pick<TaskRow, "id" | "projectId" | "title">): TaskRow {
@@ -121,6 +125,7 @@ function task(row: Partial<TaskRow> & Pick<TaskRow, "id" | "projectId" | "title"
     status: "pending",
     position: 1000,
     remindAt: null,
+    remindTime: null,
     focusedAt: null,
     createdAt: NOW,
     updatedAt: NOW,
@@ -422,6 +427,15 @@ beforeEach(() => {
     return tasks.splice(index, 1)[0]!;
   });
 
+  inbox = [];
+  prismaMock.inboxItem.create.mockImplementation(
+    (args: { data: { userId: string; text: string } }) => {
+      const row = { id: `inb-${++nextId}`, ...args.data };
+      inbox.push(row);
+      return { ...row };
+    },
+  );
+
   prismaMock.taskEvent.create.mockImplementation((args: { data: Partial<EventRow> }) => {
     const row = event({
       taskId: args.data.taskId!,
@@ -484,9 +498,11 @@ beforeEach(() => {
     const tasksBefore = tasks.map((t) => ({ ...t }));
     const eventsBefore = events.map((e) => ({ ...e }));
     const parsesBefore = parses.map((p) => ({ ...p }));
+    const inboxBefore = inbox.map((i) => ({ ...i }));
     try {
       return await run(prismaMock);
     } catch (error) {
+      inbox = inboxBefore;
       tasks = tasksBefore;
       events = eventsBefore;
       parses = parsesBefore;
@@ -666,6 +682,72 @@ describe("PATCH /tasks/:id", () => {
   it("refuses a body that carries only the sample's id", async () => {
     const res = await call("PATCH", "/tasks/tsk-1", { dictationParseId: "dp-9" });
     expect(res.statusCode).toBe(400);
+  });
+
+  it("stores a reminder's time of day next to its date", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", { remindAt: "2026-10-09", remindTime: "14:30" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      remindAt: "2026-10-09T00:00:00.000Z",
+      remindTime: "14:30",
+    });
+  });
+
+  it("clears the time together with the date", async () => {
+    await call("PATCH", "/tasks/tsk-1", { remindAt: "2026-10-09", remindTime: "14:30" });
+    const res = await call("PATCH", "/tasks/tsk-1", { remindAt: null });
+
+    expect(res.json()).toMatchObject({ remindAt: null, remindTime: null });
+  });
+
+  it("refuses a time on a task with no reminder date", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", { remindTime: "14:30" });
+
+    expect(res.statusCode).toBe(400);
+    expect(tasks.find((t) => t.id === "tsk-1")!.remindTime).toBeNull();
+  });
+
+  it("refuses a time that is not HH:MM", async () => {
+    for (const remindTime of ["9:00", "24:00", "12:60", "noon"]) {
+      const res = await call("PATCH", "/tasks/tsk-1", { remindAt: "2026-10-09", remindTime });
+      expect(res.statusCode, remindTime).toBe(400);
+    }
+  });
+});
+
+describe("POST /tasks/:id/unfile", () => {
+  it("puts the task back into the sandbox as one line, and removes it", async () => {
+    await call("PATCH", "/tasks/tsk-1", { description: "Прокладка, 1/2 дюйма" });
+
+    const res = await call("POST", "/tasks/tsk-1/unfile");
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ userId: USER_A.id, text: "Починить кран\nПрокладка, 1/2 дюйма" });
+    expect(inbox).toHaveLength(1);
+    expect(tasks.some((t) => t.id === "tsk-1")).toBe(false);
+    expect(events.some((e) => e.taskId === "tsk-1")).toBe(false);
+  });
+
+  it("is just the title for a task with no description", async () => {
+    const res = await call("POST", "/tasks/tsk-5/unfile");
+    expect(res.json()).toMatchObject({ text: "Свежая" });
+  });
+
+  it("leaves the task where it was when the transaction fails", async () => {
+    prismaMock.task.delete.mockImplementationOnce(() => {
+      throw new Error("boom");
+    });
+
+    const res = await call("POST", "/tasks/tsk-1/unfile");
+
+    expect(res.statusCode).toBe(500);
+    expect(inbox).toHaveLength(0);
+    expect(tasks.some((t) => t.id === "tsk-1")).toBe(true);
+  });
+
+  it("404s for an unknown task", async () => {
+    expect((await call("POST", "/tasks/tsk-nope/unfile")).statusCode).toBe(404);
   });
 });
 
@@ -891,6 +973,7 @@ describe("one user's tasks are invisible to another", () => {
       ["PATCH", "/tasks/tsk-1/position", { afterTaskId: "tsk-5" }],
       ["GET", "/tasks/tsk-1/events"],
       ["DELETE", "/tasks/tsk-1"],
+      ["POST", "/tasks/tsk-1/unfile"],
       ["POST", "/tasks/tsk-1/focus"],
       // tsk-2 is in A's working set: B must not be able to take it out either.
       ["DELETE", "/tasks/tsk-2/focus"],

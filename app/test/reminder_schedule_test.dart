@@ -135,8 +135,8 @@ void main() {
 
       test('23:59 stays on the picked date and does not spill into the next', () {
         final fireAt = reminderFireTime(
-          remindAt: '2026-09-18T00:00:00.000Z',
-          at: const ReminderTime(23, 59),
+        remindAt: '2026-09-18T00:00:00.000Z',
+        at: const ReminderTime(23, 59),
           location: moscow,
           now: tz.TZDateTime(moscow, 2026, 9, 18, 8),
         );
@@ -144,6 +144,30 @@ void main() {
         expect(fireAt!.day, 18);
         expect(fireAt.hour, 23);
         expect(fireAt.minute, 59);
+      });
+
+      test("the task's own time wins over the settings hour", () {
+        final fireAt = reminderFireTime(
+          remindAt: '2026-09-18T00:00:00.000Z',
+          remindTime: '14:30',
+          at: ReminderTime.defaultMorning,
+          location: moscow,
+          now: tz.TZDateTime(moscow, 2026, 9, 18, 10),
+        );
+
+        expect(fireAt, tz.TZDateTime(moscow, 2026, 9, 18, 14, 30));
+      });
+
+      test('an unreadable time falls back to the settings hour', () {
+        final fireAt = reminderFireTime(
+          remindAt: '2026-09-18T00:00:00.000Z',
+          remindTime: '25:00',
+          at: ReminderTime.defaultMorning,
+          location: moscow,
+          now: tz.TZDateTime(moscow, 2026, 9, 17),
+        );
+
+        expect(fireAt, tz.TZDateTime(moscow, 2026, 9, 18, 9));
       });
 
       test('a reminder for today is armed while the hour is still ahead', () {

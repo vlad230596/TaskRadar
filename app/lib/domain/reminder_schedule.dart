@@ -28,6 +28,7 @@ class TaskReminder {
     required this.taskId,
     required this.taskTitle,
     required this.remindAt,
+    this.remindTime,
     this.projectName,
   });
 
@@ -38,18 +39,21 @@ class TaskReminder {
   /// `2026-09-18T00:00:00.000Z`.
   final String remindAt;
 
+  /// The time of day the user picked, `HH:MM` local, or null for "the day
+  /// only" -- see [reminderFireTime].
+  final String? remindTime;
+
   /// Shown in the notification body so the reminder is actionable from the
   /// lock screen ("TaskRadar: Жду кабель" says much less than "TaskRadar /
   /// Кухня: Жду кабель").
   final String? projectName;
 }
 
-/// The hour of the local morning reminders fire at.
+/// A local wall-clock time of day: the hour reminders fire at.
 ///
-/// A reminder has day granularity -- the user picked a date in a date picker,
-/// there is no time-of-day in the data at all -- so the hour is a *setting*,
-/// not information derived from the task. F4 adds the settings UI and persists
-/// it; F1 keeps it in memory with the default below.
+/// Two sources. A reminder that carries its own time (`remindTime`, picked
+/// with the date) fires at that; one that carries only a date fires at the
+/// hour from the settings (F4), with the default below.
 class ReminderTime {
   const ReminderTime(this.hour, this.minute)
     : assert(hour >= 0 && hour <= 23, 'hour must be 0..23'),
@@ -144,6 +148,18 @@ CalendarDate? calendarDateFromRemindAt(String remindAt) {
 
 final RegExp _datePrefix = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
 
+/// Reads a `remindTime` (`HH:MM`, local wall clock), or null when there is
+/// none or it cannot be read -- a reminder with an unreadable time still fires,
+/// at the settings hour, rather than not at all.
+ReminderTime? reminderTimeFromString(String? remindTime) {
+  if (remindTime == null) return null;
+  final match = _timePattern.firstMatch(remindTime);
+  if (match == null) return null;
+  return ReminderTime(int.parse(match.group(1)!), int.parse(match.group(2)!));
+}
+
+final RegExp _timePattern = RegExp(r'^([01]\d|2[0-3]):([0-5]\d)$');
+
 /// The instant an alarm for [remindAt] should fire, or null if it should not be
 /// armed at all.
 ///
@@ -159,14 +175,19 @@ final RegExp _datePrefix = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
 /// TaskRadar notifications away without reading them. An overdue reminder is
 /// surfaced by the board badge instead -- that is what `isReminderDue` in
 /// `reminders.ts` is for.
+///
+/// [remindTime], when the task has one, wins over [at]: [at] is the settings
+/// hour for reminders that only have a day.
 tz.TZDateTime? reminderFireTime({
   required String remindAt,
+  String? remindTime,
   required ReminderTime at,
   required tz.Location location,
   required tz.TZDateTime now,
 }) {
   final date = calendarDateFromRemindAt(remindAt);
   if (date == null) return null;
+  final time = reminderTimeFromString(remindTime) ?? at;
 
   // Wall-clock construction in [location]: this is where the calendar date and
   // the local hour are finally joined, and the tz package resolves the offset
@@ -180,8 +201,8 @@ tz.TZDateTime? reminderFireTime({
     date.year,
     date.month,
     date.day,
-    at.hour,
-    at.minute,
+    time.hour,
+    time.minute,
   );
 
   if (!fireAt.isAfter(now)) return null;
@@ -356,6 +377,7 @@ ReminderSchedule buildReminderSchedule({
   for (final reminder in reminders) {
     final fireAt = reminderFireTime(
       remindAt: reminder.remindAt,
+      remindTime: reminder.remindTime,
       at: at,
       location: location,
       now: now,

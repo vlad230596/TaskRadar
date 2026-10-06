@@ -84,6 +84,20 @@ class InboxApi {
     await _client.delete('/inbox/$itemId');
   }
 
+  /// `POST /tasks/:id/unfile` -- [fileItem] backwards: the task becomes a line
+  /// in the sandbox again (its title, and the description on the next line),
+  /// and stops being a task. Answers with the new line.
+  ///
+  /// For a task filed into the wrong project -- typically because the right
+  /// one did not exist yet. Status, reminder and journal do not come along: a
+  /// sandbox line has none of those, on purpose.
+  Future<InboxItem> unfileTask(String taskId) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/tasks/$taskId/unfile',
+    );
+    return InboxItem.fromJson(json);
+  }
+
   /// `POST /inbox/:id/file` -- the item becomes a task at the end of
   /// [projectId], and stops being an inbox item.
   ///

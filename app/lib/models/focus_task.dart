@@ -38,6 +38,7 @@ abstract class FocusTask with _$FocusTask {
     required TaskStatus status,
     required double position,
     required String? remindAt,
+    String? remindTime,
     required String createdAt,
     required String updatedAt,
 

@@ -560,7 +560,7 @@ final class ProjectTasksProvider
   }
 }
 
-String _$projectTasksHash() => r'4fe56bc548ca6bb82823ed14980def4dc5473b54';
+String _$projectTasksHash() => r'a3b39ffac9b8ea6663369edaa0dfc2df74bcb1aa';
 
 /// One project's tasks, and every write that touches them.
 

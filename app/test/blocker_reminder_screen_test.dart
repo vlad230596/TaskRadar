@@ -97,10 +97,20 @@ void main() {
   /// Tapping a number rather than typing into the input: the number is what a
   /// person taps, and the whole risk being tested is that the day they see is
   /// not the day that gets sent.
-  Future<void> pickDay(WidgetTester tester, int dayOfMonth) async {
+  ///
+  /// The time picker that follows is dismissed with "Без времени" unless
+  /// [time] is true, in which case it is accepted as it opens.
+  Future<void> pickDay(
+    WidgetTester tester,
+    int dayOfMonth, {
+    bool time = false,
+  }) async {
     await tester.tap(find.text('$dayOfMonth').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Готово'));
+    await tester.pumpAndSettle();
+    expect(find.text('Во сколько напомнить'), findsOneWidget);
+    await tester.tap(find.text(time ? 'Готово' : 'Без времени'));
     await settle(tester);
   }
 
@@ -139,7 +149,9 @@ void main() {
       await pickDay(tester, today.day);
 
       final patch = server.patches.last;
-      expect(patch.body.keys, <String>['remindAt']);
+      // A day with no time: "the day only", at the settings hour.
+      expect(patch.body.keys, <String>['remindAt', 'remindTime']);
+      expect(patch.body['remindTime'], isNull);
       expect(
         patch.body['remindAt'],
         '${_pad4(today.year)}-${_pad2(today.month)}-${_pad2(today.day)}',
@@ -150,6 +162,134 @@ void main() {
         find.textContaining('Напомнить ${_pad2(today.day)}.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('a time of day picked after the day goes with it', (
+      tester,
+    ) async {
+      server.addTask(projectId: projectId, title: 'Позвонить');
+      await pumpProject(tester);
+      await openTask(tester, 'Позвонить');
+
+      await tester.tap(find.text('Напомнить когда-нибудь…'));
+      await tester.pumpAndSettle();
+      final today = DateTime.now();
+      // The time picker opens on the settings hour, 09:00 by default.
+      await pickDay(tester, today.day, time: true);
+
+      expect(server.patches.last.body['remindTime'], '09:00');
+      expect(
+        find.textContaining(
+          'Напомнить ${_pad2(today.day)}.${_pad2(today.month)} в 09:00',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the time can be taken off, keeping the day', (tester) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Позвонить',
+        remindAt: storedRemindAt(2),
+        remindTime: '14:30',
+      );
+      await pumpProject(tester);
+      await openTask(tester, 'Позвонить');
+      expect(find.textContaining(' в 14:30'), findsOneWidget);
+
+      await tester.tap(find.textContaining('Напомнить '));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Убрать время'));
+      await settle(tester);
+
+      final day = storedRemindAt(2).substring(0, 10);
+      expect(server.patches.last.body, <String, dynamic>{
+        'remindAt': day,
+        'remindTime': null,
+      });
+      expect(find.textContaining(' в 14:30'), findsNothing);
+      expect(
+        find.text('Напомнить ${day.substring(8, 10)}.${day.substring(5, 7)}'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a day-only reminder offers to add a time, not remove one', (
+      tester,
+    ) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Позвонить',
+        remindAt: storedRemindAt(2),
+      );
+      await pumpProject(tester);
+      await openTask(tester, 'Позвонить');
+      await tester.tap(find.textContaining('Напомнить '));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Изменить дату'), findsOneWidget);
+      expect(find.text('Добавить время'), findsOneWidget);
+      expect(find.text('Убрать время'), findsNothing);
+
+      // Adding one: the time picker, then the day kept as it was.
+      await tester.tap(find.text('Добавить время'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+
+      expect(server.patches.last.body, <String, dynamic>{
+        'remindAt': storedRemindAt(2).substring(0, 10),
+        'remindTime': '09:00',
+      });
+    });
+
+    testWidgets('changing the time of a reminder can be cancelled', (
+      tester,
+    ) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Позвонить',
+        remindAt: storedRemindAt(2),
+        remindTime: '14:30',
+      );
+      await pumpProject(tester);
+      await openTask(tester, 'Позвонить');
+      await tester.tap(find.textContaining('Напомнить '));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Изменить время'));
+      await tester.pumpAndSettle();
+
+      // "Отмена", not "Без времени": the menu has its own line for that.
+      expect(find.text('Без времени'), findsNothing);
+      await tester.tap(find.text('Отмена'));
+      await settle(tester);
+
+      expect(server.patches, isEmpty);
+      expect(find.textContaining(' в 14:30'), findsOneWidget);
+    });
+
+    testWidgets('changing the day keeps the time', (tester) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Позвонить',
+        remindAt: storedRemindAt(2),
+        remindTime: '14:30',
+      );
+      await pumpProject(tester);
+      await openTask(tester, 'Позвонить');
+      await tester.tap(find.textContaining('Напомнить '));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Изменить дату'));
+      await tester.pumpAndSettle();
+      // Confirm the day it opens on; no time picker follows.
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+
+      expect(find.text('Во сколько напомнить'), findsNothing);
+      expect(server.patches.last.body, <String, dynamic>{
+        'remindAt': storedRemindAt(2).substring(0, 10),
+        'remindTime': '14:30',
+      });
     });
 
     testWidgets('changing an existing date opens on the day already set', (
@@ -173,6 +313,8 @@ void main() {
       // ...and the task screen is where it is changed.
       await openTask(tester, 'Жду кабель');
       await tester.tap(find.textContaining('Напомнить '));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Изменить дату'));
       await tester.pumpAndSettle();
 
       // The picker's own header is the proof it opened on the stored day rather
@@ -220,11 +362,31 @@ void main() {
         await pumpProject(tester);
         await openTask(tester, 'Жду кабель');
 
-        await tester.tap(find.byTooltip('Убрать дату напоминания'));
+        await tester.tap(find.byTooltip('Убрать напоминание'));
         await settle(tester);
 
         expect(server.patches.last.body.containsKey('remindAt'), isTrue);
         expect(server.patches.last.body['remindAt'], isNull);
+        expect(find.text('Напомнить когда-нибудь…'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'one cross takes the time with the date',
+      (tester) async {
+        server.addTask(
+          projectId: projectId,
+          title: 'Позвонить',
+          remindAt: storedRemindAt(3),
+          remindTime: '14:30',
+        );
+        await pumpProject(tester);
+        await openTask(tester, 'Позвонить');
+
+        await tester.tap(find.byTooltip('Убрать напоминание'));
+        await settle(tester);
+
+        expect(server.patches.last.body, <String, dynamic>{'remindAt': null});
         expect(find.text('Напомнить когда-нибудь…'), findsOneWidget);
       },
     );
@@ -242,7 +404,7 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Жду кабель');
 
-      await tester.tap(find.byTooltip('Убрать дату напоминания'));
+      await tester.tap(find.byTooltip('Убрать напоминание'));
       await tester.pump();
 
       expect(find.byType(AlertDialog), findsNothing);
@@ -398,7 +560,7 @@ void main() {
       await pickDay(tester, today.day);
 
       expect(server.tasks.single['status'], 'pending');
-      expect(server.patches.last.body.keys, <String>['remindAt']);
+      expect(server.patches.last.body.keys, <String>['remindAt', 'remindTime']);
       expect(
         find.textContaining('Напомнить ${_pad2(today.day)}.'),
         findsOneWidget,

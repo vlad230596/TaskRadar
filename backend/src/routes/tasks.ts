@@ -67,6 +67,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
           description: body.description ?? null,
           ...(body.status !== undefined ? { status: body.status } : {}),
           remindAt: body.remindAt ?? null,
+          // A time with no day is not a reminder; see `remindTime` on the model.
+          remindTime: body.remindAt ? (body.remindTime ?? null) : null,
           position,
         },
       });
@@ -128,12 +130,28 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       description?: string | null;
       status?: "pending" | "done" | "blocked";
       remindAt?: Date | null;
+      remindTime?: string | null;
       focusedAt?: Date | null;
     } = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
     if (body.status !== undefined) data.status = body.status;
     if (body.remindAt !== undefined) data.remindAt = body.remindAt;
+    /*
+     * The time of day goes with the date (`remindTime` on the model): clearing
+     * the date clears the time, and a time is refused on a task that would be
+     * left without a date -- it would sit there invisibly and come back the day
+     * somebody sets a date, at an hour they never picked for it.
+     */
+    if (body.remindAt === null) {
+      data.remindTime = null;
+    } else if (body.remindTime !== undefined) {
+      const date = body.remindAt !== undefined ? body.remindAt : before.remindAt;
+      if (date === null && body.remindTime !== null) {
+        throw new ValidationError("remindTime needs a reminder date (remindAt)");
+      }
+      data.remindTime = body.remindTime;
+    }
     if (movement.leavesFocus) data.focusedAt = null;
 
     /*
@@ -255,6 +273,45 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { at: "asc" },
     });
     reply.send(events);
+  });
+
+  /*
+   * Back to the sandbox: the task becomes an inbox line again, and stops being
+   * a task -- `POST /inbox/:id/file` run backwards.
+   *
+   * For the task filed into the wrong project, typically because the right
+   * one does not exist yet: moving it would need that project first, and the
+   * sandbox is exactly the place for a thought whose home is not decided.
+   *
+   * The line is the title, and the description under it on its own line. A
+   * line break always ends the title when the line is filed again
+   * (../domain/inboxSplit.ts), so filing it back gives the same title and
+   * description -- nothing the user wrote is lost on the way round.
+   *
+   * What does not survive is what only a task has: status, reminder, place in
+   * the working set, and the journal (`onDelete: Cascade`). That is the point
+   * rather than a loss -- an inbox item has none of those on purpose (see the
+   * note at the top of ./inbox.ts), and a re-filed line starts a new life.
+   *
+   * One transaction, for the same two half-done states filing avoids: the
+   * line created and the task left behind, or the task gone and no line.
+   */
+  app.post("/tasks/:id/unfile", async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params);
+    const userId = userIdOf(request);
+    const task = await getTaskOrThrow(userId, id);
+
+    const text = task.description?.trim()
+      ? `${task.title}\n${task.description.trim()}`
+      : task.title;
+
+    const item = await prisma.$transaction(async (tx) => {
+      const created = await tx.inboxItem.create({ data: { userId, text } });
+      await tx.task.delete({ where: { id } });
+      return created;
+    });
+
+    reply.status(201).send(item);
   });
 
   /*

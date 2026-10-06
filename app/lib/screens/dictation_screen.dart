@@ -177,6 +177,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// user can take it off without throwing the rest of the proposal away.
   String? _remindDate;
 
+  /// Its time of day, `HH:MM`, when the dictation named one ("в пятницу в
+  /// 10"). Read only together with [_remindDate]: taking the date off takes
+  /// this with it.
+  String? _remindTime;
+
   /// Why the last "Разобрать" did not work, said under the words. Null once
   /// anything else happens.
   String? _tidyProblem;
@@ -318,6 +323,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         final title = parsed ? _title.text.trim() : '';
         final description = parsed ? _description.text.trim() : '';
         final remindDate = proposal is ParsedDictation ? _remindDate : null;
+        final remindTime = remindDate == null ? null : _remindTime;
         final ok = await runMutation(
           context,
           () => _createTask(
@@ -325,6 +331,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             title.isEmpty ? text : title,
             description: description.isEmpty ? null : description,
             remindAt: remindDate,
+            remindTime: remindTime,
             // Only when the proposal is what is being saved: after "Как
             // надиктовано" the task is the raw words, and labelling the sample
             // with them would score the model against an answer it never gave.
@@ -332,7 +339,8 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
           ),
           success: remindDate == null
               ? 'Задача добавлена в «$name».'
-              : 'Задача добавлена в «$name», напомню ${_shortDate(remindDate)}.',
+              : 'Задача добавлена в «$name», напомню '
+                    '${_shortDate(remindDate, remindTime)}.',
           failure: 'Не удалось добавить задачу.',
         );
         if (ok) await _leave(null);
@@ -455,10 +463,16 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     _result = result;
     _showSource = false;
     switch (result) {
-      case ParsedDictation(:final title, :final description, :final remindDate):
+      case ParsedDictation(
+        :final title,
+        :final description,
+        :final remindDate,
+        :final remindTime,
+      ):
         _title.text = title;
         _description.text = description ?? '';
         _remindDate = remindDate;
+        _remindTime = remindTime;
       case TidiedTask(:final title, :final description):
         _title.text = title;
         _description.text = description ?? '';
@@ -552,6 +566,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     String title, {
     String? description,
     String? remindAt,
+    String? remindTime,
     String? dictationParseId,
   }) async {
     final provider = projectTasksProvider(projectId);
@@ -564,6 +579,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             title,
             description: description,
             remindAt: remindAt,
+            remindTime: remindTime,
             dictationParseId: dictationParseId,
           );
     } finally {
@@ -571,10 +587,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     }
   }
 
-  /// `2026-09-25` as `25.09`.
-  static String _shortDate(String date) {
+  /// `2026-09-25` as `25.09`, and `25.09 в 10:00` with a [time].
+  static String _shortDate(String date, [String? time]) {
     final parts = date.split('-');
-    return parts.length == 3 ? '${parts[2]}.${parts[1]}' : date;
+    final day = parts.length == 3 ? '${parts[2]}.${parts[1]}' : date;
+    return time == null ? day : '$day в $time';
   }
 
   Future<void> _leave(FieldDictation? result) async {
@@ -1038,7 +1055,8 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                   child: Text(
                     // Said plainly, because it changes the task: a reminder
                     // only fires for a blocked one.
-                    'Напомнить ${_shortDate(remindDate)} · задача будет ждать',
+                    'Напомнить ${_shortDate(remindDate, _remindTime)} · '
+                    'задача будет ждать',
                     style: const TextStyle(
                       fontWeight: FontWeight.w500,
                       fontSize: 15,

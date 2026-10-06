@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'navigation/app_routes.dart';
@@ -41,6 +42,9 @@ import 'widgets/notification_link_scope.dart';
 /// F4 reuses that: `AppRoutes.openProjectFromBackground` needs only the
 /// navigator key wired in below, and the notification handler becomes a caller
 /// rather than a reason to restructure this widget.
+/// The app's one language; see the note on `MaterialApp.locale` below.
+const Locale appLocale = Locale('ru');
+
 class TaskRadarApp extends ConsumerWidget {
   const TaskRadarApp({super.key});
 
@@ -80,6 +84,12 @@ class TaskRadarApp extends ConsumerWidget {
           // until then; see `navigation/app_routes.dart`.
           navigatorKey: appNavigatorKey,
           onGenerateRoute: AppRoutes.onGenerateRoute,
+          // Russian, fixed rather than taken from the device: every word the
+          // app itself says is Russian, and a phone set to English would
+          // otherwise get "October 2026" in the middle of "Когда напомнить".
+          locale: appLocale,
+          supportedLocales: const <Locale>[appLocale],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           // F12: one theme, built from the palette in the app's own icon rather
           // than generated from a seed, and deliberately the same in both slots.
           // `ColorScheme.fromSeed(brightness: dark)` used to invent a second skin

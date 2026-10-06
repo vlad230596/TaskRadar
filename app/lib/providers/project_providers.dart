@@ -9,12 +9,14 @@ import '../api/project_api.dart';
 import '../domain/reminders.dart';
 import '../domain/task_reorder.dart';
 import '../models/board_project.dart';
+import '../models/inbox_item.dart';
 import '../models/note.dart';
 import '../models/project.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
+import 'inbox_providers.dart';
 
 part 'project_providers.g.dart';
 
@@ -155,6 +157,7 @@ class ProjectTasks extends _$ProjectTasks {
     String title, {
     String? description,
     String? remindAt,
+    String? remindTime,
     String? dictationParseId,
   }) {
     final trimmed = title.trim();
@@ -169,6 +172,7 @@ class ProjectTasks extends _$ProjectTasks {
             rows,
             description: description,
             remindAt: remindAt,
+            remindTime: remindAt == null ? null : remindTime,
           ),
         ],
         send: () async {
@@ -177,6 +181,7 @@ class ProjectTasks extends _$ProjectTasks {
             title: trimmed,
             description: description,
             remindAt: remindAt,
+            remindTime: remindAt == null ? null : remindTime,
             dictationParseId: dictationParseId,
           );
           return null; // reconcile: the new row may be the current one now
@@ -213,6 +218,8 @@ class ProjectTasks extends _$ProjectTasks {
           rows[index].copyWith(
             status: status,
             remindAt: clearsDate ? null : rows[index].remindAt,
+            // The server clears the time with the date.
+            remindTime: clearsDate ? null : rows[index].remindTime,
             // The one optimistic touch of `isCurrent` anywhere, and it is a
             // weakening, never an invention: a task that is not `pending`
             // cannot be current, so dropping the highlight is knowledge, not a
@@ -234,7 +241,9 @@ class ProjectTasks extends _$ProjectTasks {
     });
   }
 
-  /// Sets or clears an open (not done) task's reminder date (F4).
+  /// Sets or clears an open (not done) task's reminder date (F4), and its
+  /// time of day: [time] is `HH:MM` local, or null for "the day only" (which
+  /// fires at the settings hour). Clearing the date clears the time too.
   ///
   /// [date] is a calendar date as `YYYY-MM-DD`, never an instant -- see
   /// [calendarDateForApi] for the two obvious serialisations that are both off
@@ -260,7 +269,7 @@ class ProjectTasks extends _$ProjectTasks {
   /// (`remindersFromBoard` filters on the status), so setting one would be a
   /// write whose entire effect is a value that resurfaces if the task is
   /// reopened -- which is the exact bug [setStatus] clears the date to avoid.
-  Future<void> setRemindAt(Task task, String? date) {
+  Future<void> setRemindAt(Task task, String? date, {String? time}) {
     if (task.status == TaskStatus.done) {
       throw StateError(
         'task ${task.id} is done; a finished task has no reminder date',
@@ -274,10 +283,17 @@ class ProjectTasks extends _$ProjectTasks {
       // `2026-10-01T00:00:00.000Z` -- and every reader in the app takes the
       // `YYYY-MM-DD` prefix, so both render and compare identically. That is the
       // representation earning its keep rather than an accident.
-      (rows, index) => rows[index].copyWith(remindAt: date),
+      (rows, index) => rows[index].copyWith(
+        remindAt: date,
+        remindTime: date == null ? null : time,
+      ),
       () => _api.updateTask(
         task.id,
         remindAt: PatchField<String>.toOrClear(date),
+        // Not sent with a clear: the server drops the time with the date.
+        remindTime: date == null
+            ? const PatchField<String>.keep()
+            : PatchField<String>.toOrClear(time),
       ),
     );
   }
@@ -346,6 +362,32 @@ class ProjectTasks extends _$ProjectTasks {
         dictationParseId: dictationParseId,
       ),
     );
+  }
+
+  /// Puts a task back into the sandbox (`POST /tasks/:id/unfile`): it leaves
+  /// this list, and its line joins the pile.
+  ///
+  /// For the task filed into the wrong project, when the right one does not
+  /// exist yet. Shaped like [remove], because to this list it *is* a removal
+  /// -- including the reconcile, since the task may have been the current one.
+  Future<void> unfile(Task task) {
+    return _mutate((rows) {
+      if (!rows.any((row) => row.id == task.id)) return null;
+
+      return _MutationPlan(
+        optimistic: <Task>[
+          for (final row in rows)
+            if (row.id != task.id) row,
+        ],
+        send: () async {
+          final item = await ref.read(inboxApiProvider).unfileTask(task.id);
+          // Into the pile without a round trip; a pile that has not loaded
+          // yet simply fetches the line with everything else.
+          ref.read(inboxProvider.notifier).adoptAll(<InboxItem>[item]);
+          return null;
+        },
+      );
+    });
   }
 
   Future<void> remove(Task task) {
@@ -507,6 +549,7 @@ class ProjectTasks extends _$ProjectTasks {
     String? description,
     TaskStatus? status,
     String? remindAt,
+    String? remindTime,
   }) {
     final now = DateTime.now().toUtc().toIso8601String();
 
@@ -520,6 +563,7 @@ class ProjectTasks extends _$ProjectTasks {
       // ever does sort. It is discarded by the reconcile a moment later.
       position: rows.isEmpty ? 1000 : rows.last.position + 1000,
       remindAt: remindAt,
+      remindTime: remindTime,
       createdAt: now,
       updatedAt: now,
       isCurrent: false,

@@ -231,6 +231,7 @@ class FocusSet extends _$FocusSet {
     status: task.status,
     position: task.position,
     remindAt: task.remindAt,
+    remindTime: task.remindTime,
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     focusedAt: DateTime.now().toUtc().toIso8601String(),

@@ -191,8 +191,8 @@ class _ReminderTimeTile extends ConsumerWidget {
             // answer. Showing the default during it would be a lie that
             // occasionally flashes the wrong number at someone who set 07:30.
             ? 'Загружаем…'
-            : 'Напоминания приходят в ${time.format()} по местному времени '
-                  'в выбранный день.',
+            : 'Напоминания без времени приходят в ${time.format()} по '
+                  'местному времени в выбранный день.',
       ),
       trailing: time == null
           ? null

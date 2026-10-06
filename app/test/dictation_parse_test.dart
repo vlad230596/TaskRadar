@@ -227,9 +227,8 @@ void main() {
       });
     });
 
-    testWidgets('a proposed reminder makes an open task with that date', (
-      tester,
-    ) async {
+    testWidgets('a proposed reminder makes an open task with that date and '
+        'time', (tester) async {
       modelAnswers(<String, dynamic>{
         'title': 'Купить кабель',
         'description': null,
@@ -239,14 +238,18 @@ void main() {
 
       await dictate(tester);
       await tidy(tester);
-      expect(find.text('Напомнить 25.09 · задача будет ждать'), findsOneWidget);
+      expect(
+        find.text('Напомнить 25.09 в 10:00 · задача будет ждать'),
+        findsOneWidget,
+      );
       await save(tester);
 
       expect(server.tasks.single['status'], 'pending');
       // The calendar date, not an instant -- see `ProjectApi.updateTask`.
       expect(server.tasks.single['remindAt'], '2026-09-25');
+      expect(server.tasks.single['remindTime'], '10:00');
       expect(
-        find.text('Задача добавлена в «Дом», напомню 25.09.'),
+        find.text('Задача добавлена в «Дом», напомню 25.09 в 10:00.'),
         findsOneWidget,
       );
     });

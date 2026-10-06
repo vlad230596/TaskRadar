@@ -188,7 +188,7 @@ class ProjectApi {
   /// fires for any task that is not done (`domain/board_reminders.dart`).
   ///
   /// [remindAt] is the `YYYY-MM-DD` calendar date, for the reason given on
-  /// [updateTask].
+  /// [updateTask]; [remindTime] its time of day, `HH:MM` local, if any.
   ///
   /// [dictationParseId] links the server's dataset record of the parse this
   /// task came from (F14), so the prompt can later be scored against what was
@@ -199,6 +199,7 @@ class ProjectApi {
     String? description,
     TaskStatus? status,
     String? remindAt,
+    String? remindTime,
     String? dictationParseId,
   }) async {
     final json = await _client.post<Map<String, dynamic>>(
@@ -208,6 +209,7 @@ class ProjectApi {
         'description': ?description,
         'status': ?status?.name,
         'remindAt': ?remindAt,
+        'remindTime': ?remindTime,
         'dictationParseId': ?dictationParseId,
       },
     );
@@ -228,13 +230,16 @@ class ProjectApi {
   /// [remindAt] is the `YYYY-MM-DD` calendar date, not an instant: the server
   /// runs it through `z.coerce.date()`, which turns a bare date into UTC
   /// midnight of that day -- exactly the representation
-  /// `lib/domain/reminders.dart` depends on.
+  /// `lib/domain/reminders.dart` depends on. [remindTime] is the time of day
+  /// that goes with it, `HH:MM` local wall clock; the server clears it on its
+  /// own when [remindAt] is cleared, and refuses one on a task with no date.
   Future<Task> updateTask(
     String taskId, {
     String? title,
     PatchField<String> description = const PatchField<String>.keep(),
     TaskStatus? status,
     PatchField<String> remindAt = const PatchField<String>.keep(),
+    PatchField<String> remindTime = const PatchField<String>.keep(),
     String? dictationParseId,
   }) async {
     final body = <String, dynamic>{};
@@ -242,6 +247,7 @@ class ProjectApi {
     if (status != null) body['status'] = status.name;
     description.writeTo(body, 'description');
     remindAt.writeTo(body, 'remindAt');
+    remindTime.writeTo(body, 'remindTime');
 
     // The server rejects `{}` with a 400 ("At least one field must be
     // provided"). Failing here instead says *which* call was empty, and it
