@@ -491,7 +491,7 @@ void main() {
     await pumpTask(tester, id);
 
     // No journal for this task: the whole life belongs to "open".
-    expect(find.textContaining(RegExp(r'^открыта \d+ дн')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^открыта \d+ (день|дн)')), findsOneWidget);
     expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsNothing);
   });
 

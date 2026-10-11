@@ -13,6 +13,7 @@ import '../models/inbox_item.dart';
 import '../models/note.dart';
 import '../models/project.dart';
 import '../models/task.dart';
+import '../models/task_category.dart';
 import '../models/task_status.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
@@ -156,6 +157,7 @@ class ProjectTasks extends _$ProjectTasks {
   Future<void> create(
     String title, {
     String? description,
+    String? categoryId,
     String? remindAt,
     String? remindTime,
     String? dictationParseId,
@@ -171,6 +173,7 @@ class ProjectTasks extends _$ProjectTasks {
             trimmed,
             rows,
             description: description,
+            categoryId: categoryId,
             remindAt: remindAt,
             remindTime: remindAt == null ? null : remindTime,
           ),
@@ -180,6 +183,7 @@ class ProjectTasks extends _$ProjectTasks {
             projectId: projectId,
             title: trimmed,
             description: description,
+            categoryId: categoryId,
             remindAt: remindAt,
             remindTime: remindAt == null ? null : remindTime,
             dictationParseId: dictationParseId,
@@ -370,6 +374,36 @@ class ProjectTasks extends _$ProjectTasks {
   /// For the task filed into the wrong project, when the right one does not
   /// exist yet. Shaped like [remove], because to this list it *is* a removal
   /// -- including the reconcile, since the task may have been the current one.
+  /// Moves the task into another group of the project screen, or out of all
+  /// of them (null). Optimistic: the row jumps to its new group at once.
+  Future<void> setCategory(Task task, String? categoryId) {
+    if (task.categoryId == categoryId) return Future<void>.value();
+
+    return _editText(
+      task,
+      (rows, index) => rows[index].copyWith(categoryId: categoryId),
+      () => _api.updateTask(
+        task.id,
+        categoryId: PatchField<String>.toOrClear(categoryId),
+      ),
+    );
+  }
+
+  /// What the server has just done to the tasks of a deleted category
+  /// (`ON DELETE SET NULL`), done to the rows here without a round trip.
+  void dropCategory(String categoryId) {
+    final rows = state.value;
+    if (rows == null || !rows.any((row) => row.categoryId == categoryId)) {
+      return;
+    }
+    final next = List<Task>.unmodifiable(<Task>[
+      for (final row in rows)
+        row.categoryId == categoryId ? row.copyWith(categoryId: null) : row,
+    ]);
+    state = AsyncData(next);
+    ref.read(boardProvider.notifier).applyProjectTasks(projectId, next);
+  }
+
   Future<void> unfile(Task task) {
     return _mutate((rows) {
       if (!rows.any((row) => row.id == task.id)) return null;
@@ -547,6 +581,7 @@ class ProjectTasks extends _$ProjectTasks {
     String title,
     List<Task> rows, {
     String? description,
+    String? categoryId,
     TaskStatus? status,
     String? remindAt,
     String? remindTime,
@@ -564,6 +599,7 @@ class ProjectTasks extends _$ProjectTasks {
       position: rows.isEmpty ? 1000 : rows.last.position + 1000,
       remindAt: remindAt,
       remindTime: remindTime,
+      categoryId: categoryId,
       createdAt: now,
       updatedAt: now,
       isCurrent: false,
@@ -582,6 +618,96 @@ bool isOptimisticId(String id) => id.startsWith('local:');
 /// server-computed field and no ordering key, so `POST` and `PATCH` return the
 /// complete truth about the row and there is nothing to reconcile. Notes also
 /// never appear on the board, so nothing is pushed there.
+/// The project's task categories, in the order their groups are drawn.
+///
+/// Its own provider rather than a field of the task list: the list is re-read
+/// after almost every task write (`isCurrent` may have moved), the categories
+/// change only when someone edits them here.
+///
+/// Renames and deletes are optimistic, like everything else on the project
+/// screen. Creating is not: the caller usually wants the new category's id
+/// straight away -- to put a task into it -- and a placeholder id would be one
+/// the server rejects.
+@Riverpod(retry: noAutomaticRetry)
+class ProjectCategories extends _$ProjectCategories {
+  @override
+  Future<List<TaskCategory>> build(String projectId) =>
+      ref.watch(projectApiProvider).fetchCategories(projectId);
+
+  ProjectApi get _api => ref.read(projectApiProvider);
+
+  /// Creates a category at the end of the list and returns it.
+  Future<TaskCategory> create(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw ArgumentError.value(name, 'name', 'empty');
+
+    final created = await _api.createCategory(
+      projectId: projectId,
+      name: trimmed,
+    );
+    if (ref.mounted) {
+      state = AsyncData(
+        List<TaskCategory>.unmodifiable(<TaskCategory>[
+          ...?state.value,
+          created,
+        ]),
+      );
+    }
+    return created;
+  }
+
+  Future<void> rename(TaskCategory category, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed == category.name) return;
+
+    final previous = state.value;
+    if (previous == null) return;
+    state = AsyncData(
+      List<TaskCategory>.unmodifiable(<TaskCategory>[
+        for (final row in previous)
+          row.id == category.id ? row.copyWith(name: trimmed) : row,
+      ]),
+    );
+
+    try {
+      final saved = await _api.renameCategory(category.id, name: trimmed);
+      if (!ref.mounted) return;
+      state = AsyncData(
+        List<TaskCategory>.unmodifiable(<TaskCategory>[
+          for (final row in state.value ?? previous)
+            row.id == saved.id ? saved : row,
+        ]),
+      );
+    } catch (error) {
+      if (ref.mounted) state = AsyncData(previous);
+      rethrow;
+    }
+  }
+
+  /// Deletes the category; its tasks stay in the project, ungrouped.
+  Future<void> remove(TaskCategory category) async {
+    final previous = state.value;
+    if (previous == null) return;
+    state = AsyncData(
+      List<TaskCategory>.unmodifiable(<TaskCategory>[
+        for (final row in previous)
+          if (row.id != category.id) row,
+      ]),
+    );
+
+    try {
+      await _api.deleteCategory(category.id);
+      if (!ref.mounted) return;
+      ref
+          .read(projectTasksProvider(projectId).notifier)
+          .dropCategory(category.id);
+    } catch (error) {
+      if (ref.mounted) state = AsyncData(previous);
+      rethrow;
+    }
+  }
+}
+
 @Riverpod(retry: noAutomaticRetry)
 class ProjectNotes extends _$ProjectNotes {
   @override

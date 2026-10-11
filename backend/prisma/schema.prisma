@@ -134,8 +134,9 @@ model Project {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  tasks Task[]
-  notes Note[]
+  tasks      Task[]
+  notes      Note[]
+  categories TaskCategory[]
 
   @@index([scopeId])
   @@map("projects")
@@ -163,6 +164,13 @@ model Task {
   /// `YYYY-MM-DD` prefix, which a real instant would break east of UTC.
   /// Meaningless without `remindAt`; the routes clear both together.
   remindTime  String?
+
+  /// The group the task is drawn in on the project screen, or null for "без
+  /// категории". One at most, by choice: a task in two groups would be drawn
+  /// twice, and the list is a list of what is left to do, not an index.
+  /// `SetNull`: deleting a category ungroups its tasks, never deletes them.
+  categoryId String?
+  category   TaskCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
 
   /// When this task was put into the working set -- the 2-5 tasks the "work"
   /// mode shows one at a time (F11). `null` means it is not in the set.
@@ -193,7 +201,36 @@ model Task {
   dictationParses DictationParse[]
 
   @@index([projectId, position])
+  @@index([categoryId])
   @@map("tasks")
+}
+
+/// A group of tasks inside one project -- "Кухня", "Документы", "Закупки".
+///
+/// Per project rather than global or per scope: what groups the tasks of a
+/// renovation has nothing to do with what groups the tasks of a job search, and
+/// a shared list would fill every project's picker with the others' words.
+///
+/// Grouping only. It changes neither the order of the project's tasks (one
+/// `Task.position` per project, as before) nor which one is current
+/// (`isCurrent` is still the first open task of the whole project): a group is
+/// a slice of the list, not a list of its own.
+model TaskCategory {
+  id        String  @id @default(cuid())
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name      String
+  /// Order of the groups on the screen: the same gapped-float scheme as
+  /// `Task.position` (see src/domain/position.ts). New ones go last.
+  position  Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks Task[]
+
+  @@index([projectId, position])
+  @@map("task_categories")
 }
 
 /// One row per thing that happened to a task (F11).

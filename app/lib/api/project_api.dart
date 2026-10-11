@@ -1,6 +1,7 @@
 import '../models/note.dart';
 import '../models/project.dart';
 import '../models/task.dart';
+import '../models/task_category.dart';
 import '../models/task_status.dart';
 import 'api_client.dart';
 import 'patch_field.dart';
@@ -197,6 +198,7 @@ class ProjectApi {
     required String projectId,
     required String title,
     String? description,
+    String? categoryId,
     TaskStatus? status,
     String? remindAt,
     String? remindTime,
@@ -207,6 +209,7 @@ class ProjectApi {
       body: <String, dynamic>{
         'title': title,
         'description': ?description,
+        'categoryId': ?categoryId,
         'status': ?status?.name,
         'remindAt': ?remindAt,
         'remindTime': ?remindTime,
@@ -237,6 +240,7 @@ class ProjectApi {
     String taskId, {
     String? title,
     PatchField<String> description = const PatchField<String>.keep(),
+    PatchField<String> categoryId = const PatchField<String>.keep(),
     TaskStatus? status,
     PatchField<String> remindAt = const PatchField<String>.keep(),
     PatchField<String> remindTime = const PatchField<String>.keep(),
@@ -246,6 +250,7 @@ class ProjectApi {
     if (title != null) body['title'] = title;
     if (status != null) body['status'] = status.name;
     description.writeTo(body, 'description');
+    categoryId.writeTo(body, 'categoryId');
     remindAt.writeTo(body, 'remindAt');
     remindTime.writeTo(body, 'remindTime');
 
@@ -306,6 +311,45 @@ class ProjectApi {
   /// -- an empty response is the *correct* answer here.
   Future<void> deleteTask(String taskId) =>
       _client.delete<dynamic>('/tasks/$taskId');
+
+  // --- categories ------------------------------------------------------------
+
+  /// `GET /projects/:id/categories`, in the order the groups are drawn.
+  Future<List<TaskCategory>> fetchCategories(String projectId) async {
+    final json = await _client.get<List<dynamic>>(
+      '/projects/$projectId/categories',
+    );
+    return List<TaskCategory>.unmodifiable(
+      json.map((dynamic e) => TaskCategory.fromJson(e as Map<String, dynamic>)),
+    );
+  }
+
+  /// Appended after the last one. A 409 when the project already has the name.
+  Future<TaskCategory> createCategory({
+    required String projectId,
+    required String name,
+  }) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/projects/$projectId/categories',
+      body: <String, dynamic>{'name': name},
+    );
+    return TaskCategory.fromJson(json);
+  }
+
+  Future<TaskCategory> renameCategory(
+    String categoryId, {
+    required String name,
+  }) async {
+    final json = await _client.patch<Map<String, dynamic>>(
+      '/categories/$categoryId',
+      body: <String, dynamic>{'name': name},
+    );
+    return TaskCategory.fromJson(json);
+  }
+
+  /// The tasks stay, ungrouped: the server clears their `categoryId`.
+  Future<void> deleteCategory(String categoryId) =>
+      _client.delete<dynamic>('/categories/$categoryId');
 
   // --- notes -----------------------------------------------------------------
 

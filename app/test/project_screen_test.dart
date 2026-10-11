@@ -125,9 +125,8 @@ void main() {
 
   /// Holds `GET .../notes` until [gate] completes; everything else is served.
   void holdNotes(Completer<void> gate) {
-    backend.delay = (options) => options.path.endsWith('/notes')
-        ? gate.future
-        : Future<void>.value();
+    backend.delay = (options) =>
+        options.path.endsWith('/notes') ? gate.future : Future<void>.value();
   }
 
   /// Opens one task on its own screen -- which is where every edit lives now.
@@ -364,13 +363,13 @@ void main() {
       expect(border.top.width, 1.5);
     });
 
-    testWidgets('the header counts done against total', (tester) async {
+    testWidgets('the header counts what is still open', (tester) async {
       await pumpProject(tester);
 
       // Same rule as the planning row, and the same counter drawn the same way:
       // arriving here continues the row that was tapped rather than describing
-      // the project a second way. Blocked is not done.
-      expect(find.text('1 / 3'), findsOneWidget);
+      // the project a second way. Blocked is still open.
+      expect(find.text('2 открытые'), findsOneWidget);
     });
 
     testWidgets(
@@ -553,11 +552,11 @@ void main() {
       await openDraft(tester);
       // The field this screen exists for: sized to its text, at 16.5 px.
       expect(find.byType(TaskScreen), findsOneWidget);
-      final field = tester.widget<TextField>(find.byType(TextField));
+      final field = tester.widget<TextField>(find.byType(TextField).first);
       expect(field.style?.fontSize, 16.5);
       expect(field.maxLines, isNull);
 
-      await tester.enterText(find.byType(TextField), 'Позвонить прорабу');
+      await tester.enterText(find.byType(TextField).first, 'Позвонить прорабу');
       await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
 
@@ -575,7 +574,7 @@ void main() {
       await openDraft(tester);
       backend.alwaysFailToConnect();
 
-      await tester.enterText(find.byType(TextField), 'Не доедет');
+      await tester.enterText(find.byType(TextField).first, 'Не доедет');
       await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
 
@@ -593,7 +592,7 @@ void main() {
       // gone; a screen that is still open can simply keep it.
       expect(find.byType(TaskScreen), findsOneWidget);
       expect(
-        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
         'Не доедет',
       );
     });
@@ -770,6 +769,220 @@ void main() {
       expect(server.patches.last.body.containsKey('description'), isTrue);
       expect(server.patches.last.body['description'], isNull);
       expect(server.tasks.single['description'], isNull);
+    });
+  });
+
+  group('categories and «Упорядочить»', () {
+    late String kitchen;
+    late String papers;
+
+    setUp(() {
+      kitchen = server.addCategory(projectId: projectId, name: 'Кухня');
+      papers = server.addCategory(projectId: projectId, name: 'Документы');
+      server.addTask(projectId: projectId, title: 'Без группы');
+      server.addTask(
+        projectId: projectId,
+        title: 'Плитка',
+        categoryId: kitchen,
+      );
+      server.addTask(
+        projectId: projectId,
+        title: 'Паспорт',
+        categoryId: papers,
+      );
+      server.addTask(projectId: projectId, title: 'Мойка', categoryId: kitchen);
+    });
+
+    testWidgets('open tasks sit under their categories, ungrouped last', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+
+      expect(find.text('КУХНЯ · 2'), findsOneWidget);
+      expect(find.text('ДОКУМЕНТЫ · 1'), findsOneWidget);
+      expect(find.text('БЕЗ КАТЕГОРИИ · 1'), findsOneWidget);
+      expect(
+        titlesOnScreen(tester, <String>[
+          'КУХНЯ · 2',
+          'Плитка',
+          'Мойка',
+          'ДОКУМЕНТЫ · 1',
+          'Паспорт',
+          'БЕЗ КАТЕГОРИИ · 1',
+          'Без группы',
+        ]),
+        <String>[
+          'КУХНЯ · 2',
+          'Плитка',
+          'Мойка',
+          'ДОКУМЕНТЫ · 1',
+          'Паспорт',
+          'БЕЗ КАТЕГОРИИ · 1',
+          'Без группы',
+        ],
+      );
+      expect(find.text('Категории · 2'), findsOneWidget);
+    });
+
+    testWidgets('«Упорядочить» swaps the focus targets for grips', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      expect(find.byIcon(Icons.drag_indicator), findsNothing);
+
+      await tester.tap(find.text('Упорядочить'));
+      await settle(tester);
+      expect(
+        find.descendant(
+          of: find.byType(TaskRow),
+          matching: find.byIcon(Icons.drag_indicator),
+        ),
+        findsNWidgets(4),
+      );
+      expect(find.byIcon(Icons.adjust), findsNothing);
+
+      await tester.tap(find.text('Готово'));
+      await settle(tester);
+      expect(find.byIcon(Icons.drag_indicator), findsNothing);
+      expect(find.byIcon(Icons.adjust), findsNWidgets(4));
+    });
+
+    testWidgets('a grip drags at once, and only inside its group', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      await tester.tap(find.text('Упорядочить'));
+      await settle(tester);
+
+      // The grip of "Плитка", the first in "Кухня": no long press.
+      final grip = find.descendant(
+        of: find.ancestor(
+          of: find.text('Плитка'),
+          matching: find.byType(TaskRow),
+        ),
+        matching: find.byIcon(Icons.drag_indicator),
+      );
+      final gesture = await tester.startGesture(tester.getCenter(grip));
+      await tester.pump(const Duration(milliseconds: 20));
+      for (var i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(0, 18));
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      await tester.pump(const Duration(milliseconds: 50));
+      await gesture.up();
+      await settle(tester);
+      await settle(tester);
+
+      // "Мойка" now comes before "Плитка"; the other groups did not move.
+      expect(server.titlesInOrder(projectId), <String>[
+        'Без группы',
+        'Паспорт',
+        'Мойка',
+        'Плитка',
+      ]);
+    });
+
+    testWidgets('the task screen moves a task into another category', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      await openTask(tester, 'Без группы');
+
+      expect(find.text('Без категории'), findsOneWidget);
+      await tester.tap(find.text('Без категории'));
+      await settle(tester);
+      await tester.tap(find.text('Документы'));
+      await settle(tester);
+
+      expect(
+        server.tasks.firstWhere(
+          (t) => t['title'] == 'Без группы',
+        )['categoryId'],
+        papers,
+      );
+      expect(find.text('Категория: Документы'), findsOneWidget);
+    });
+
+    testWidgets('a new category made from the picker is picked at once', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      await openTask(tester, 'Без группы');
+
+      await tester.tap(find.text('Без категории'));
+      await settle(tester);
+      await tester.tap(find.text('Новая категория…'));
+      await settle(tester);
+      await tester.enterText(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.byType(TextField),
+        ),
+        'Закупки',
+      );
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Создать'));
+      await settle(tester);
+
+      final created = server.categories.firstWhere(
+        (c) => c['name'] == 'Закупки',
+      );
+      expect(
+        server.tasks.firstWhere(
+          (t) => t['title'] == 'Без группы',
+        )['categoryId'],
+        created['id'],
+      );
+      expect(find.text('Категория: Закупки'), findsOneWidget);
+    });
+
+    testWidgets('deleting a category keeps its tasks, ungrouped', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+
+      await tester.tap(find.text('Категории · 2'));
+      await settle(tester);
+      await tester.tap(
+        find.descendant(
+          of: find.widgetWithText(ListTile, 'Кухня'),
+          matching: find.byTooltip('Удалить категорию'),
+        ),
+      );
+      await settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Удалить'));
+      await settle(tester);
+      Navigator.of(tester.element(find.text('Категории проекта'))).pop();
+      await settle(tester);
+
+      expect(server.categories.map((c) => c['name']), <String>['Документы']);
+      expect(find.text('КУХНЯ · 2'), findsNothing);
+      expect(find.text('БЕЗ КАТЕГОРИИ · 3'), findsOneWidget);
+      expect(find.text('Плитка'), findsOneWidget);
+      expect(find.text('Мойка'), findsOneWidget);
+    });
+
+    testWidgets('a new task gets its description and category from the draft', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      await openDraft(tester);
+
+      // The description is there from the start, not behind a button.
+      expect(find.text('ЗАМЕТКА'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).first, 'Смеситель');
+      await tester.enterText(find.byType(TextField).last, 'Хром, не латунь');
+      await tester.tap(find.text('Без категории'));
+      await settle(tester);
+      await tester.tap(find.text('Кухня'));
+      await settle(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+
+      final row = server.tasks.firstWhere((t) => t['title'] == 'Смеситель');
+      expect(row['description'], 'Хром, не латунь');
+      expect(row['categoryId'], kitchen);
+      expect(find.text('КУХНЯ · 3'), findsOneWidget);
     });
   });
 
@@ -1050,19 +1263,20 @@ void main() {
       expect(find.text('Кабель заказан 3 сентября.'), findsOneWidget);
     });
 
-    testWidgets('both panes stay live: a note can be written without a tab switch', (
-      tester,
-    ) async {
-      useDesktopWindow(tester);
-      await pumpProject(tester);
+    testWidgets(
+      'both panes stay live: a note can be written without a tab switch',
+      (tester) async {
+        useDesktopWindow(tester);
+        await pumpProject(tester);
 
-      await tester.enterText(composerIn(NoteListView), 'Что выяснил');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
-      await settle(tester);
+        await tester.enterText(composerIn(NoteListView), 'Что выяснил');
+        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await settle(tester);
 
-      expect(server.notes.single['title'], 'Что выяснил');
-      expect(find.text('Заметки · 1'), findsOneWidget);
-    });
+        expect(server.notes.single['title'], 'Что выяснил');
+        expect(find.text('Заметки · 1'), findsOneWidget);
+      },
+    );
 
     testWidgets('the project menu is reachable, as on the phone', (
       tester,
@@ -1128,7 +1342,7 @@ void main() {
 
       await pumpProject(tester);
 
-      expect(find.text('0 / 1'), findsOneWidget);
+      expect(find.text('1 открытая'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

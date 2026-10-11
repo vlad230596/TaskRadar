@@ -54,7 +54,7 @@ final class LoginControllerProvider
   LoginController create() => LoginController();
 }
 
-String _$loginControllerHash() => r'b4cb55830e41becf249e4fbc93af67f674c72809';
+String _$loginControllerHash() => r'f55236f929db36722d1962b67a5b706ff0d060eb';
 
 /// Submission state for the login form: idle / in flight / failed.
 ///

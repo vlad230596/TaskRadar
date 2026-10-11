@@ -199,20 +199,33 @@ class _Dot extends StatelessWidget {
   }
 }
 
-/// "0 / 6" -- done out of total, in tabular figures so it does not twitch.
-class TaskCount extends StatelessWidget {
-  const TaskCount({required this.done, required this.total, super.key});
+/// "3 открытых" -- what is left in a project, for the planning board's rows.
+/// Not done-out-of-total: that pair only ever grows, and a project with forty
+/// finished tasks and two open ones is a small project, not a big one.
+class OpenTaskCount extends StatelessWidget {
+  const OpenTaskCount({required this.count, super.key});
 
-  final int done;
-  final int total;
+  final int count;
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      '$done / $total',
+      '$count ${_openWord(count)}',
       maxLines: 1,
       softWrap: false,
       style: AppText.chip,
     );
   }
 }
+
+/// «открытая / открытые / открытых» for [n].
+String _openWord(int n) {
+  final mod10 = n % 10;
+  final mod100 = n % 100;
+  if (mod10 == 1 && mod100 != 11) return 'открытая';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return 'открытые';
+  }
+  return 'открытых';
+}
+

@@ -60,6 +60,23 @@ Future<String?> askForScopeName(
   );
 }
 
+/// The name of a task category: the same dialog, with a hint of what a
+/// category is for.
+Future<String?> askForCategoryName(
+  BuildContext context, {
+  required String title,
+  required String confirmLabel,
+  String initialName = '',
+}) {
+  return askForProjectName(
+    context,
+    title: title,
+    confirmLabel: confirmLabel,
+    initialName: initialName,
+    hint: 'Кухня, Документы, Закупки…',
+  );
+}
+
 class _NameDialog extends StatefulWidget {
   const _NameDialog({
     required this.title,

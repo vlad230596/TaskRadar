@@ -57,6 +57,7 @@ class FakeProjectBackend {
   ];
   final List<Map<String, dynamic>> tasks = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> notes = <Map<String, dynamic>>[];
+  final List<Map<String, dynamic>> categories = <Map<String, dynamic>>[];
 
   /// The sandbox (F8), in capture order -- the server sends it oldest first.
   final List<Map<String, dynamic>> inbox = <Map<String, dynamic>>[];
@@ -149,6 +150,7 @@ class FakeProjectBackend {
     String? remindAt,
     String? remindTime,
     double? position,
+    String? categoryId,
 
     /// Задача, уже взятая в работу (F11). Null — обычная задача вне набора;
     /// `true` ставит следующую по порядку метку, так что порядок набора в тесте
@@ -165,12 +167,64 @@ class FakeProjectBackend {
       'position': position ?? _appendPosition(projectId),
       'remindAt': remindAt,
       'remindTime': remindTime,
+      'categoryId': categoryId,
       'createdAt': '2026-08-01T10:00:00.000Z',
       'updatedAt': '2026-08-01T10:00:00.000Z',
       'focusedAt': focused ? _nextFocusStamp() : null,
     });
     return taskId;
   }
+
+  String addCategory({
+    required String projectId,
+    required String name,
+    String? id,
+  }) {
+    final categoryId = id ?? _id('cat');
+    final mine = _categoriesOf(projectId);
+    categories.add(<String, dynamic>{
+      'id': categoryId,
+      'projectId': projectId,
+      'name': name,
+      'position': mine.isEmpty
+          ? positionGap
+          : (mine.last['position'] as double) + positionGap,
+      'createdAt': '2026-08-01T09:30:00.000Z',
+      'updatedAt': '2026-08-01T09:30:00.000Z',
+    });
+    return categoryId;
+  }
+
+  List<Map<String, dynamic>> _categoriesOf(String projectId) {
+    final rows = <Map<String, dynamic>>[
+      for (final row in categories)
+        if (row['projectId'] == projectId) row,
+    ];
+    rows.sort(
+      (a, b) => (a['position'] as double).compareTo(b['position'] as double),
+    );
+    return rows;
+  }
+
+  Map<String, dynamic>? _category(String id) {
+    for (final row in categories) {
+      if (row['id'] == id) return row;
+    }
+    return null;
+  }
+
+  /// `assertCategoryInProject` in `routes/tasks.ts`.
+  bool _categoryFits(Object? categoryId, String projectId) =>
+      categoryId == null ||
+      _category(categoryId as String)?['projectId'] == projectId;
+
+  /// `assertNameFree` in `routes/categories.ts`.
+  bool _nameTaken(String projectId, String name, {String? exceptId}) =>
+      _categoriesOf(projectId).any(
+        (row) =>
+            row['id'] != exceptId &&
+            (row['name'] as String).toLowerCase() == name.toLowerCase(),
+      );
 
   String addNote({
     required String projectId,
@@ -231,7 +285,10 @@ class FakeProjectBackend {
     backend.on('POST', '/scopes', (match) {
       final name = (match.body['name'] as String?)?.trim() ?? '';
       if (name.isEmpty) return _error(400, 'name is required');
-      final id = addScope(name: name, position: _lastScopePosition() + positionGap);
+      final id = addScope(
+        name: name,
+        position: _lastScopePosition() + positionGap,
+      );
       return jsonResponse(_scope(id), statusCode: 201);
     });
 
@@ -248,7 +305,8 @@ class FakeProjectBackend {
 
       final before = beforeId == null ? null : _scope(beforeId);
       final after = afterId == null ? null : _scope(afterId);
-      if ((beforeId != null && before == null) || (afterId != null && after == null)) {
+      if ((beforeId != null && before == null) ||
+          (afterId != null && after == null)) {
         return _error(400, 'Neighbor scope was not found');
       }
 
@@ -297,7 +355,10 @@ class FakeProjectBackend {
       // Archived projects count, exactly as the real guard counts them.
       final holds = projects.values.any((project) => project['scopeId'] == id);
       if (holds) {
-        return _error(409, 'Scope still has projects; move or delete them first');
+        return _error(
+          409,
+          'Scope still has projects; move or delete them first',
+        );
       }
       if (scopes.length <= 1) {
         return _error(409, 'The last scope cannot be deleted');
@@ -506,11 +567,15 @@ class FakeProjectBackend {
       if (_project(projectId) == null) return _notFound('Project');
 
       final body = match.body;
+      if (!_categoryFits(body['categoryId'], projectId)) {
+        return _error(400, 'Category was not found in this project');
+      }
       final row = <String, dynamic>{
         'id': _id('tsk'),
         'projectId': projectId,
         'title': body['title'] as String,
         'description': body['description'],
+        'categoryId': body['categoryId'],
         'status': body['status'] ?? 'pending',
         'position': _appendPosition(projectId),
         'remindAt': body['remindAt'],
@@ -522,6 +587,54 @@ class FakeProjectBackend {
 
       // 201 with the *raw* row: no `isCurrent`. See the class comment.
       return jsonResponse(row, statusCode: 201);
+    });
+
+    // --- categories ---------------------------------------------------------
+
+    backend.on('GET', '/projects/:id/categories', (match) {
+      final projectId = match.params['id']!;
+      if (_project(projectId) == null) return _notFound('Project');
+      return jsonResponse(_categoriesOf(projectId));
+    });
+
+    backend.on('POST', '/projects/:id/categories', (match) {
+      final projectId = match.params['id']!;
+      if (_project(projectId) == null) return _notFound('Project');
+      final name = (match.body['name'] as String?)?.trim() ?? '';
+      if (name.isEmpty) return _error(400, 'name is required');
+      if (_nameTaken(projectId, name)) {
+        return _error(409, 'A category with this name already exists');
+      }
+      final id = addCategory(projectId: projectId, name: name);
+      return jsonResponse(_category(id), statusCode: 201);
+    });
+
+    backend.on('PATCH', '/categories/:id', (match) {
+      final row = _category(match.params['id']!);
+      if (row == null) return _notFound('Category');
+      final name = (match.body['name'] as String?)?.trim() ?? '';
+      if (name.isEmpty) return _error(400, 'name is required');
+      if (_nameTaken(
+        row['projectId'] as String,
+        name,
+        exceptId: row['id'] as String,
+      )) {
+        return _error(409, 'A category with this name already exists');
+      }
+      row['name'] = name;
+      return jsonResponse(row);
+    });
+
+    // `ON DELETE SET NULL`: the tasks stay, ungrouped.
+    backend.on('DELETE', '/categories/:id', (match) {
+      final id = match.params['id']!;
+      final row = _category(id);
+      if (row == null) return _notFound('Category');
+      categories.remove(row);
+      for (final task in tasks) {
+        if (task['categoryId'] == id) task['categoryId'] = null;
+      }
+      return ResponseBody.fromString('', 204);
     });
 
     backend.on('GET', '/projects/:id/notes', (match) {
@@ -658,7 +771,17 @@ class FakeProjectBackend {
       // Блокер из набора не выводит — намеренно, там же.
       if (body['status'] == 'done') task['focusedAt'] = null;
 
-      for (final field in <String>['title', 'description', 'status']) {
+      if (body.containsKey('categoryId') &&
+          !_categoryFits(body['categoryId'], task['projectId'] as String)) {
+        return _error(400, 'Category was not found in this project');
+      }
+
+      for (final field in <String>[
+        'title',
+        'description',
+        'status',
+        'categoryId',
+      ]) {
         if (body.containsKey(field)) task[field] = body[field];
       }
       if (body.containsKey('remindAt')) {

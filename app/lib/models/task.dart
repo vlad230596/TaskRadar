@@ -57,6 +57,12 @@ abstract class Task with _$Task {
     /// (`domain/reminder_schedule.dart`). Never set without [remindAt]: the
     /// server clears the two together.
     String? remindTime,
+
+    /// The project's category this task is grouped under, or null for "без
+    /// категории" -- see `task_category.dart`. Optional on the wire: older
+    /// servers and the board snapshot cached before categories do not carry
+    /// it, and "not told" draws the same as "none".
+    String? categoryId,
     required String createdAt,
     required String updatedAt,
 

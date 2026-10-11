@@ -829,7 +829,7 @@ class _ProjectRow extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(child: TaskDots(tasks: entry.tasks)),
-                  TaskCount(done: summary.doneCount, total: summary.totalCount),
+                  OpenTaskCount(count: summary.openCount),
                   _NoteCount(count: entry.noteCount, gap: 12),
                 ],
               ),
@@ -890,7 +890,11 @@ class _ProjectTile extends StatelessWidget {
                     child: _NoteCount(count: entry.noteCount, gap: 0),
                   ),
                   const SizedBox(width: 8),
-                  Text('${summary.totalCount}', style: AppText.number),
+                  Semantics(
+                    label: 'открытых задач: ${summary.openCount}',
+                    excludeSemantics: true,
+                    child: Text('${summary.openCount}', style: AppText.number),
+                  ),
                 ],
               ),
               const SizedBox(height: 10),

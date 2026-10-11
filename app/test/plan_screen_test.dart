@@ -214,16 +214,17 @@ void main() {
       expect(names, <String>['Стройка', 'Дача', 'Ремонт']);
     });
 
-    testWidgets('the counter counts done against total', (tester) async {
+    testWidgets('the counter counts what is still open', (tester) async {
       await pumpShell(tester);
 
-      expect(find.text('2 / 3'), findsOneWidget, reason: 'Стройка');
+      // Стройка (2 of 3 done) and Ремонт (none of 1).
+      expect(find.text('1 открытая'), findsNWidgets(2));
       expect(
-        find.text('0 / 2'),
+        find.text('2 открытые'),
         findsOneWidget,
-        reason: 'Дача: blocked is not done',
+        reason: 'Дача: blocked is still open',
       );
-      expect(find.text('0 / 1'), findsOneWidget, reason: 'Ремонт');
+      expect(find.textContaining(' / '), findsNothing);
     });
 
     testWidgets('the current task is the one the server flagged', (
@@ -370,8 +371,8 @@ void main() {
         // One icon: "Семья" has 0 and "Старое" did not say, and neither draws.
         expect(find.byIcon(Icons.sticky_note_2_outlined), findsOneWidget);
         expect(find.text('3'), findsOneWidget);
-        // Beside "0 / 1", on the same line.
-        final counter = tester.getCenter(find.text('0 / 1'));
+        // Beside "1 открытая", on the same line.
+        final counter = tester.getCenter(find.text('1 открытая'));
         final notes = tester.getCenter(
           find.byIcon(Icons.sticky_note_2_outlined),
         );
@@ -530,7 +531,7 @@ void main() {
 
       // The rows are there...
       expect(find.text('Стройка'), findsOneWidget);
-      expect(find.text('2 / 3'), findsOneWidget);
+      expect(find.text('1 открытая'), findsWidgets);
 
       // ...and so is the fact that they are yesterday's.
       expect(find.text('Не удалось обновить'), findsOneWidget);

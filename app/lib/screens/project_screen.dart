@@ -173,7 +173,7 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
     // The switch counts what is left to do, as the reference does: the done
     // ones are folded away at the bottom of the list and are not what "Задачи"
     // means at a glance.
-    final openCount = summary.totalCount - summary.doneCount;
+    final openCount = summary.openCount;
 
     final taskPane = TaskListView(
       projectId: projectId,
@@ -298,10 +298,7 @@ class _ProjectHeader extends StatelessWidget {
                       child: TaskDots(tasks: view.tasks, size: 9, maxDots: 10),
                     ),
                     const SizedBox(width: 4),
-                    TaskCount(
-                      done: summary.doneCount,
-                      total: summary.totalCount,
-                    ),
+                    OpenTaskCount(count: summary.openCount),
                   ],
                 ),
               ],

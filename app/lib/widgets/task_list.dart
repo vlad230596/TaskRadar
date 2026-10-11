@@ -6,14 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error_message.dart';
 import '../domain/reminders.dart';
 import '../domain/task_age.dart';
+import '../domain/task_groups.dart';
 import '../domain/task_reorder.dart';
 import '../models/task.dart';
+import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/focus_providers.dart';
 import '../providers/project_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'category_sheets.dart';
 import 'glance.dart';
 import 'mutation_feedback.dart';
 import 'overflow_fade_text.dart';
@@ -83,6 +86,20 @@ import 'reminder_time_picker.dart';
 /// Раздел «выполнено» свёрнут при каждом входе на экран и не запоминается:
 /// история проекта нужна изредка, а открывать экран ради неё каждый раз —
 /// нет.
+///
+/// ## Категории и «Упорядочить»
+///
+/// Открытые задачи собраны под категориями проекта ([groupOpenTasks]): у
+/// каждой категории свой заголовок и свой [SliverReorderableList], задачи без
+/// категории — последней группой. Порядок по-прежнему один на проект:
+/// перетаскивание внутри группы переводится в индексы всего списка тем же
+/// [mapSectionReorder]. Между группами не тащат — категорию меняют на экране
+/// задачи, как статус меняют кружком, а не жестом.
+///
+/// Долгое нажатие по тексту так и осталось, но его никто не нашёл. Поэтому над
+/// списком — кнопка «Упорядочить»: она ставит на открытые строки ручку на
+/// место мишени «взять в работу», и ручка тащит сразу, без задержки, — и
+/// пальцем, и мышью. «Готово» возвращает мишени.
 class TaskListView extends ConsumerStatefulWidget {
   const TaskListView({
     required this.projectId,
@@ -117,10 +134,41 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   /// Свёрнут при каждом входе — см. заметку к [TaskListView].
   bool _showDone = false;
 
+  /// Режим «Упорядочить»: ручки вместо мишеней «взять в работу».
+  bool _arranging = false;
+
+  void _reorder(List<int> indices, int oldIndex, int newIndex) {
+    final full = mapSectionReorder(indices, oldIndex, newIndex);
+    if (full == null) return;
+    // No `await`, no error handling here: `move` is optimistic, so the list
+    // has already settled into its new order by the time this returns, and a
+    // failure rolls it back and reports itself.
+    runMutation(
+      context,
+      () => ref
+          .read(projectTasksProvider(widget.projectId).notifier)
+          .move(full.$1, full.$2),
+      failure: 'Не удалось сохранить порядок задач.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tasks = widget.tasks;
     final sections = TaskSections.of(tasks, ref.watch(focusedTaskIdsProvider));
+    // Without categories (or before they load) the open tasks are one group
+    // with no heading -- the list as it always was.
+    final categories =
+        ref.watch(projectCategoriesProvider(widget.projectId)).value ??
+        const <TaskCategory>[];
+    final groups = groupOpenTasks(
+      sections.open,
+      sections.openIndices,
+      categories,
+    );
+    final grouped = groups.any((group) => group.category != null);
+    final canArrange = sections.open.length > 1;
+    final arranging = _arranging && canArrange;
 
     // A heading is worth its line only when there is another section to tell
     // this one apart from.
@@ -131,22 +179,22 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
       sliver: sliver,
     );
 
-    Widget row(Task task, {int index = 0, bool reorderable = false}) =>
-        Padding(
-          // Keyed by id for the reorder animation.
-          key: ValueKey<String>(task.id),
-          padding: const EdgeInsets.only(bottom: 8),
-          child: TaskRow(
-            projectId: widget.projectId,
-            projectName: widget.projectName,
-            task: task,
-            index: index,
-            reorderable: reorderable,
-            inWork: sections.inWork.contains(task),
-            isHighlighted: task.id == widget.highlightTaskId,
-            now: widget.now,
-          ),
-        );
+    Widget row(Task task, {int index = 0, bool reorderable = false}) => Padding(
+      // Keyed by id for the reorder animation.
+      key: ValueKey<String>(task.id),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: TaskRow(
+        projectId: widget.projectId,
+        projectName: widget.projectName,
+        task: task,
+        index: index,
+        reorderable: reorderable,
+        arranging: arranging && reorderable,
+        inWork: sections.inWork.contains(task),
+        isHighlighted: task.id == widget.highlightTaskId,
+        now: widget.now,
+      ),
+    );
 
     return RefreshIndicator(
       onRefresh: () =>
@@ -160,7 +208,23 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         // pull-to-refresh on a two-task project does nothing.
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: <Widget>[
-          const SliverToBoxAdapter(child: SizedBox(height: 12)),
+          const SliverToBoxAdapter(child: SizedBox(height: 4)),
+          if (tasks.isNotEmpty)
+            padded(
+              SliverToBoxAdapter(
+                child: _ListToolbar(
+                  categoryCount: categories.length,
+                  canArrange: canArrange,
+                  arranging: arranging,
+                  onCategories: () => unawaited(
+                    showCategoryManager(context, projectId: widget.projectId),
+                  ),
+                  onArrange: () => setState(() => _arranging = !arranging),
+                ),
+              ),
+            )
+          else
+            const SliverToBoxAdapter(child: SizedBox(height: 8)),
           if (sections.inWork.isNotEmpty) ...<Widget>[
             padded(
               const SliverToBoxAdapter(
@@ -175,8 +239,20 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
               ),
             ),
           ],
-          if (sections.open.isNotEmpty) ...<Widget>[
-            if (labelled)
+          for (final group in groups) ...<Widget>[
+            if (grouped)
+              padded(
+                SliverToBoxAdapter(
+                  child: _SectionLabel(
+                    (group.category?.name ?? 'Без категории').toUpperCase(),
+                    colour: group.category == null
+                        ? AppColors.muted
+                        : AppColors.ink,
+                    count: group.tasks.length,
+                  ),
+                ),
+              )
+            else if (labelled)
               padded(
                 const SliverToBoxAdapter(
                   child: _SectionLabel('ОТКРЫТЫЕ', colour: AppColors.muted),
@@ -184,32 +260,12 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
               ),
             padded(
               SliverReorderableList(
-                itemCount: sections.open.length,
-                itemBuilder: (context, index) => row(
-                  sections.open[index],
-                  index: index,
-                  reorderable: true,
-                ),
+                itemCount: group.tasks.length,
+                itemBuilder: (context, index) =>
+                    row(group.tasks[index], index: index, reorderable: true),
                 proxyDecorator: _liftedRow,
-                onReorder: (oldIndex, newIndex) {
-                  final full = mapSectionReorder(
-                    sections.openIndices,
-                    oldIndex,
-                    newIndex,
-                  );
-                  if (full == null) return;
-                  // No `await`, no error handling here: `move` is optimistic,
-                  // so the list has already settled into its new order by the
-                  // time this returns, and a failure rolls it back and reports
-                  // itself.
-                  runMutation(
-                    context,
-                    () => ref
-                        .read(projectTasksProvider(widget.projectId).notifier)
-                        .move(full.$1, full.$2),
-                    failure: 'Не удалось сохранить порядок задач.',
-                  );
-                },
+                onReorder: (oldIndex, newIndex) =>
+                    _reorder(group.indices, oldIndex, newIndex),
               ),
             ),
           ],
@@ -318,24 +374,131 @@ class TaskSections {
 }
 
 class _SectionLabel extends StatelessWidget {
-  const _SectionLabel(this.text, {required this.colour});
+  const _SectionLabel(this.text, {required this.colour, this.count});
 
   final String text;
   final Color colour;
 
+  /// How many rows the group holds, after the name, muted. Drawn on category
+  /// headings, where it tells a long group from a short one before scrolling.
+  final int? count;
+
   @override
   Widget build(BuildContext context) {
+    final style = AppText.sectionLabel.copyWith(
+      fontSize: 11,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.9,
+      color: colour,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 4, 2, 6),
-      child: Text(
-        text,
-        style: AppText.sectionLabel.copyWith(
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.9,
-          color: colour,
+      child: Text.rich(
+        TextSpan(
+          text: text,
+          children: <InlineSpan>[
+            if (count != null)
+              TextSpan(
+                text: ' · $count',
+                style: style.copyWith(color: AppColors.muted),
+              ),
+          ],
         ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: style,
       ),
+    );
+  }
+}
+
+/// «Категории» and «Упорядочить» over the list.
+///
+/// Text buttons rather than icons in the header: both did exist in some form
+/// before (the order as a long press, nothing at all for categories), and what
+/// nobody can find has to say its name.
+class _ListToolbar extends StatelessWidget {
+  const _ListToolbar({
+    required this.categoryCount,
+    required this.canArrange,
+    required this.arranging,
+    required this.onCategories,
+    required this.onArrange,
+  });
+
+  final int categoryCount;
+  final bool canArrange;
+  final bool arranging;
+  final VoidCallback onCategories;
+  final VoidCallback onArrange;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextButton.styleFrom(
+      foregroundColor: AppColors.muted,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      minimumSize: const Size(0, Targets.minimum),
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            TextButton.icon(
+              style: style,
+              onPressed: onCategories,
+              icon: const Icon(Icons.label_outline, size: 18),
+              label: Text(
+                categoryCount == 0 ? 'Категории' : 'Категории · $categoryCount',
+              ),
+            ),
+            const Spacer(),
+            if (arranging)
+              FilledButton.tonalIcon(
+                onPressed: onArrange,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 36),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
+                icon: const Icon(Icons.check, size: 18),
+                label: const Text('Готово'),
+              )
+            else if (canArrange)
+              TextButton.icon(
+                style: style,
+                onPressed: onArrange,
+                icon: const Icon(Icons.swap_vert, size: 18),
+                label: const Text('Упорядочить'),
+              ),
+          ],
+        ),
+        if (arranging)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
+            // The grip as an icon, not "⠿": the app's fonts have no braille.
+            child: Text.rich(
+              const TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(text: 'Перетаскивайте задачи за '),
+                  WidgetSpan(
+                    alignment: PlaceholderAlignment.middle,
+                    child: Icon(
+                      Icons.drag_indicator,
+                      size: 16,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' справа, внутри своей категории. Категорию '
+                        'задачи меняют на её экране.',
+                  ),
+                ],
+              ),
+              style: AppText.hint.copyWith(fontSize: 12.5),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -401,6 +564,7 @@ class TaskRow extends ConsumerWidget {
     required this.task,
     required this.index,
     this.reorderable = true,
+    this.arranging = false,
     this.inWork = false,
     this.isHighlighted = false,
     this.now,
@@ -418,6 +582,10 @@ class TaskRow extends ConsumerWidget {
   /// Whether a long press on the text starts a drag. Only the open section's
   /// rows are -- see [TaskListView].
   final bool reorderable;
+
+  /// «Упорядочить» is on: a grip on the right instead of "взять в работу",
+  /// which drags at once (no long press). Only for [reorderable] rows.
+  final bool arranging;
 
   /// Drawn in the "в работе" section: an indigo border, which is what makes
   /// the section read as a different kind of row rather than a heading.
@@ -596,6 +764,25 @@ class TaskRow extends ConsumerWidget {
                 ),
               ),
             )
+          else if (arranging)
+            ReorderableDragStartListener(
+              index: index,
+              child: const Tooltip(
+                message: 'Перетащить',
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.grab,
+                  child: SizedBox(
+                    width: Targets.minimum,
+                    height: Targets.row,
+                    child: Icon(
+                      Icons.drag_indicator,
+                      size: 22,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                ),
+              ),
+            )
           else
             _FocusTarget(task: task, projectName: projectName),
         ],
@@ -658,7 +845,11 @@ class _FocusTarget extends ConsumerWidget {
     );
   }
 
-  Future<void> _toggle(BuildContext context, WidgetRef ref, bool inFocus) async {
+  Future<void> _toggle(
+    BuildContext context,
+    WidgetRef ref,
+    bool inFocus,
+  ) async {
     // Both resolved before the await: the row moves to another section the
     // moment the optimistic write lands, and this element goes with it.
     final messenger = ScaffoldMessenger.of(context);
@@ -860,13 +1051,12 @@ class _StatusTargetState extends ConsumerState<_StatusTarget>
   );
 
   /// 1 -> 0.8 -> 1.15 -> 1: pressed in, then the check lands.
-  late final Animation<double> _scale = TweenSequence<double>(
-    <TweenSequenceItem<double>>[
-      TweenSequenceItem<double>(tween: Tween(begin: 1, end: 0.8), weight: 30),
-      TweenSequenceItem<double>(tween: Tween(begin: 0.8, end: 1.15), weight: 40),
-      TweenSequenceItem<double>(tween: Tween(begin: 1.15, end: 1), weight: 30),
-    ],
-  ).animate(CurvedAnimation(parent: _pop, curve: Curves.easeOut));
+  late final Animation<double>
+  _scale = TweenSequence<double>(<TweenSequenceItem<double>>[
+    TweenSequenceItem<double>(tween: Tween(begin: 1, end: 0.8), weight: 30),
+    TweenSequenceItem<double>(tween: Tween(begin: 0.8, end: 1.15), weight: 40),
+    TweenSequenceItem<double>(tween: Tween(begin: 1.15, end: 1), weight: 30),
+  ]).animate(CurvedAnimation(parent: _pop, curve: Curves.easeOut));
 
   /// True while the check is showing ahead of the write.
   bool _completing = false;

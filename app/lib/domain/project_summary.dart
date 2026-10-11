@@ -98,6 +98,11 @@ class ProjectSummary {
   /// null if none of them carries a date. Used for the badge label.
   final String? nextReminderAt;
 
+  /// Everything not `done` -- `pending` and `blocked` alike: what the
+  /// planning board counts, because "how much is left here" is the question it
+  /// answers, and a lifetime total only grows.
+  int get openCount => totalCount - doneCount;
+
   int get blockedCount => blockedTasks.length;
 
   bool get hasBlocker => blockedTasks.isNotEmpty;

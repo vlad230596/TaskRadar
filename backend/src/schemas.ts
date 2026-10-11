@@ -156,9 +156,16 @@ const remindTimeSchema = z
   .nullable()
   .optional();
 
+/**
+ * The task's category in its own project, or null for "без категории". The
+ * route checks that the category belongs to the task's project.
+ */
+const taskCategoryIdSchema = z.string().min(1).max(100).nullable().optional();
+
 export const createTaskSchema = z.object({
   title: z.string().trim().min(1, "title is required"),
   description: z.string().nullable().optional(),
+  categoryId: taskCategoryIdSchema,
   status: taskStatusSchema.optional(),
   remindAt: z.coerce.date().nullable().optional(),
   remindTime: remindTimeSchema,
@@ -181,6 +188,7 @@ export const updateTaskSchema = z
   .object({
     title: z.string().trim().min(1, "title is required").optional(),
     description: z.string().nullable().optional(),
+    categoryId: taskCategoryIdSchema,
     status: taskStatusSchema.optional(),
     remindAt: z.coerce.date().nullable().optional(),
     remindTime: remindTimeSchema,
@@ -201,6 +209,18 @@ export const updateTaskPositionSchema = z
     message:
       "At least one of beforeTaskId/afterTaskId must be provided (use null for 'no neighbour on that side')",
   });
+
+// ---- Task categories ----
+
+/**
+ * A category's name. Trimmed and non-empty like a title, and short: it is a
+ * heading over a group of rows on a phone, not a sentence.
+ */
+const categoryNameSchema = z.string().trim().min(1, "name is required").max(60, "name is too long");
+
+export const createCategorySchema = z.object({ name: categoryNameSchema });
+
+export const updateCategorySchema = z.object({ name: categoryNameSchema });
 
 // ---- History (F11) ----
 

@@ -7,6 +7,7 @@ import { scopeRoutes } from "./routes/scopes";
 import { projectRoutes } from "./routes/projects";
 import { taskRoutes } from "./routes/tasks";
 import { noteRoutes } from "./routes/notes";
+import { categoryRoutes } from "./routes/categories";
 import { inboxRoutes } from "./routes/inbox";
 import { focusRoutes } from "./routes/focus";
 import { historyRoutes } from "./routes/history";
@@ -105,6 +106,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(projectRoutes);
   await app.register(taskRoutes);
   await app.register(noteRoutes);
+  await app.register(categoryRoutes);
   await app.register(inboxRoutes);
   await app.register(focusRoutes);
   await app.register(historyRoutes);

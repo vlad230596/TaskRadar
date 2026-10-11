@@ -560,7 +560,7 @@ final class ProjectTasksProvider
   }
 }
 
-String _$projectTasksHash() => r'a3b39ffac9b8ea6663369edaa0dfc2df74bcb1aa';
+String _$projectTasksHash() => r'f3b4bf38dd929ba9b222d2d592f89071ae92c7db';
 
 /// One project's tasks, and every write that touches them.
 
@@ -620,9 +620,19 @@ abstract class _$ProjectTasks extends $AsyncNotifier<List<Task>> {
 /// server-computed field and no ordering key, so `POST` and `PATCH` return the
 /// complete truth about the row and there is nothing to reconcile. Notes also
 /// never appear on the board, so nothing is pushed there.
+/// The project's task categories, in the order their groups are drawn.
+///
+/// Its own provider rather than a field of the task list: the list is re-read
+/// after almost every task write (`isCurrent` may have moved), the categories
+/// change only when someone edits them here.
+///
+/// Renames and deletes are optimistic, like everything else on the project
+/// screen. Creating is not: the caller usually wants the new category's id
+/// straight away -- to put a task into it -- and a placeholder id would be one
+/// the server rejects.
 
-@ProviderFor(ProjectNotes)
-final projectNotesProvider = ProjectNotesFamily._();
+@ProviderFor(ProjectCategories)
+final projectCategoriesProvider = ProjectCategoriesFamily._();
 
 /// One project's notes, and their CRUD.
 ///
@@ -630,14 +640,175 @@ final projectNotesProvider = ProjectNotesFamily._();
 /// server-computed field and no ordering key, so `POST` and `PATCH` return the
 /// complete truth about the row and there is nothing to reconcile. Notes also
 /// never appear on the board, so nothing is pushed there.
-final class ProjectNotesProvider
-    extends $AsyncNotifierProvider<ProjectNotes, List<Note>> {
+/// The project's task categories, in the order their groups are drawn.
+///
+/// Its own provider rather than a field of the task list: the list is re-read
+/// after almost every task write (`isCurrent` may have moved), the categories
+/// change only when someone edits them here.
+///
+/// Renames and deletes are optimistic, like everything else on the project
+/// screen. Creating is not: the caller usually wants the new category's id
+/// straight away -- to put a task into it -- and a placeholder id would be one
+/// the server rejects.
+final class ProjectCategoriesProvider
+    extends $AsyncNotifierProvider<ProjectCategories, List<TaskCategory>> {
   /// One project's notes, and their CRUD.
   ///
   /// Much simpler than [ProjectTasks] for one structural reason: a note has no
   /// server-computed field and no ordering key, so `POST` and `PATCH` return the
   /// complete truth about the row and there is nothing to reconcile. Notes also
   /// never appear on the board, so nothing is pushed there.
+  /// The project's task categories, in the order their groups are drawn.
+  ///
+  /// Its own provider rather than a field of the task list: the list is re-read
+  /// after almost every task write (`isCurrent` may have moved), the categories
+  /// change only when someone edits them here.
+  ///
+  /// Renames and deletes are optimistic, like everything else on the project
+  /// screen. Creating is not: the caller usually wants the new category's id
+  /// straight away -- to put a task into it -- and a placeholder id would be one
+  /// the server rejects.
+  ProjectCategoriesProvider._({
+    required ProjectCategoriesFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: noAutomaticRetry,
+         name: r'projectCategoriesProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
+
+  @override
+  String debugGetCreateSourceHash() => _$projectCategoriesHash();
+
+  @override
+  String toString() {
+    return r'projectCategoriesProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  ProjectCategories create() => ProjectCategories();
+
+  @override
+  bool operator ==(Object other) {
+    return other is ProjectCategoriesProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$projectCategoriesHash() => r'1397de8df2d76f63e14d9499b1baf714e8e72a9f';
+
+/// One project's notes, and their CRUD.
+///
+/// Much simpler than [ProjectTasks] for one structural reason: a note has no
+/// server-computed field and no ordering key, so `POST` and `PATCH` return the
+/// complete truth about the row and there is nothing to reconcile. Notes also
+/// never appear on the board, so nothing is pushed there.
+/// The project's task categories, in the order their groups are drawn.
+///
+/// Its own provider rather than a field of the task list: the list is re-read
+/// after almost every task write (`isCurrent` may have moved), the categories
+/// change only when someone edits them here.
+///
+/// Renames and deletes are optimistic, like everything else on the project
+/// screen. Creating is not: the caller usually wants the new category's id
+/// straight away -- to put a task into it -- and a placeholder id would be one
+/// the server rejects.
+
+final class ProjectCategoriesFamily extends $Family
+    with
+        $ClassFamilyOverride<
+          ProjectCategories,
+          AsyncValue<List<TaskCategory>>,
+          List<TaskCategory>,
+          FutureOr<List<TaskCategory>>,
+          String
+        > {
+  ProjectCategoriesFamily._()
+    : super(
+        retry: noAutomaticRetry,
+        name: r'projectCategoriesProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
+
+  /// One project's notes, and their CRUD.
+  ///
+  /// Much simpler than [ProjectTasks] for one structural reason: a note has no
+  /// server-computed field and no ordering key, so `POST` and `PATCH` return the
+  /// complete truth about the row and there is nothing to reconcile. Notes also
+  /// never appear on the board, so nothing is pushed there.
+  /// The project's task categories, in the order their groups are drawn.
+  ///
+  /// Its own provider rather than a field of the task list: the list is re-read
+  /// after almost every task write (`isCurrent` may have moved), the categories
+  /// change only when someone edits them here.
+  ///
+  /// Renames and deletes are optimistic, like everything else on the project
+  /// screen. Creating is not: the caller usually wants the new category's id
+  /// straight away -- to put a task into it -- and a placeholder id would be one
+  /// the server rejects.
+
+  ProjectCategoriesProvider call(String projectId) =>
+      ProjectCategoriesProvider._(argument: projectId, from: this);
+
+  @override
+  String toString() => r'projectCategoriesProvider';
+}
+
+/// One project's notes, and their CRUD.
+///
+/// Much simpler than [ProjectTasks] for one structural reason: a note has no
+/// server-computed field and no ordering key, so `POST` and `PATCH` return the
+/// complete truth about the row and there is nothing to reconcile. Notes also
+/// never appear on the board, so nothing is pushed there.
+/// The project's task categories, in the order their groups are drawn.
+///
+/// Its own provider rather than a field of the task list: the list is re-read
+/// after almost every task write (`isCurrent` may have moved), the categories
+/// change only when someone edits them here.
+///
+/// Renames and deletes are optimistic, like everything else on the project
+/// screen. Creating is not: the caller usually wants the new category's id
+/// straight away -- to put a task into it -- and a placeholder id would be one
+/// the server rejects.
+
+abstract class _$ProjectCategories extends $AsyncNotifier<List<TaskCategory>> {
+  late final _$args = ref.$arg as String;
+  String get projectId => _$args;
+
+  FutureOr<List<TaskCategory>> build(String projectId);
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref =
+        this.ref as $Ref<AsyncValue<List<TaskCategory>>, List<TaskCategory>>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<List<TaskCategory>>, List<TaskCategory>>,
+              AsyncValue<List<TaskCategory>>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, () => build(_$args));
+  }
+}
+
+@ProviderFor(ProjectNotes)
+final projectNotesProvider = ProjectNotesFamily._();
+
+final class ProjectNotesProvider
+    extends $AsyncNotifierProvider<ProjectNotes, List<Note>> {
   ProjectNotesProvider._({
     required ProjectNotesFamily super.from,
     required String super.argument,
@@ -676,13 +847,6 @@ final class ProjectNotesProvider
 
 String _$projectNotesHash() => r'6176502eb03d166b7747a454f555983331c1d692';
 
-/// One project's notes, and their CRUD.
-///
-/// Much simpler than [ProjectTasks] for one structural reason: a note has no
-/// server-computed field and no ordering key, so `POST` and `PATCH` return the
-/// complete truth about the row and there is nothing to reconcile. Notes also
-/// never appear on the board, so nothing is pushed there.
-
 final class ProjectNotesFamily extends $Family
     with
         $ClassFamilyOverride<
@@ -701,26 +865,12 @@ final class ProjectNotesFamily extends $Family
         isAutoDispose: true,
       );
 
-  /// One project's notes, and their CRUD.
-  ///
-  /// Much simpler than [ProjectTasks] for one structural reason: a note has no
-  /// server-computed field and no ordering key, so `POST` and `PATCH` return the
-  /// complete truth about the row and there is nothing to reconcile. Notes also
-  /// never appear on the board, so nothing is pushed there.
-
   ProjectNotesProvider call(String projectId) =>
       ProjectNotesProvider._(argument: projectId, from: this);
 
   @override
   String toString() => r'projectNotesProvider';
 }
-
-/// One project's notes, and their CRUD.
-///
-/// Much simpler than [ProjectTasks] for one structural reason: a note has no
-/// server-computed field and no ordering key, so `POST` and `PATCH` return the
-/// complete truth about the row and there is nothing to reconcile. Notes also
-/// never appear on the board, so nothing is pushed there.
 
 abstract class _$ProjectNotes extends $AsyncNotifier<List<Note>> {
   late final _$args = ref.$arg as String;

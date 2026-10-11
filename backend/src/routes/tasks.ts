@@ -31,12 +31,29 @@ export async function getTaskOrThrow(userId: string, id: string) {
   return task;
 }
 
+/**
+ * Refuses a category that is not one of this project's. Null and undefined
+ * pass: "без категории" and "unchanged" need no lookup.
+ *
+ * A 400 rather than a 404: the task exists, the request is what is wrong. And
+ * the same answer for a category of another project as for one of another
+ * user, so the reply says nothing about what exists elsewhere.
+ */
+async function assertCategoryInProject(categoryId: string | null | undefined, projectId: string): Promise<void> {
+  if (categoryId === null || categoryId === undefined) return;
+  const category = await prisma.taskCategory.findFirst({ where: { id: categoryId, projectId } });
+  if (!category) {
+    throw new ValidationError(`Category ${categoryId} was not found in this project`);
+  }
+}
+
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
     const userId = userIdOf(request);
     const body = createTaskSchema.parse(request.body);
     await getProjectOrThrow(userId, projectId);
+    await assertCategoryInProject(body.categoryId, projectId);
 
     const last = await prisma.task.aggregate({
       where: { projectId },
@@ -65,6 +82,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
           projectId,
           title: body.title,
           description: body.description ?? null,
+          categoryId: body.categoryId ?? null,
           ...(body.status !== undefined ? { status: body.status } : {}),
           remindAt: body.remindAt ?? null,
           // A time with no day is not a reminder; see `remindTime` on the model.
@@ -116,6 +134,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     const userId = userIdOf(request);
     const body = updateTaskSchema.parse(request.body);
     const before = await getTaskOrThrow(userId, id);
+    await assertCategoryInProject(body.categoryId, before.projectId);
 
     /*
      * What this change means for the journal and for the working set, decided
@@ -128,6 +147,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     const data: {
       title?: string;
       description?: string | null;
+      categoryId?: string | null;
       status?: "pending" | "done" | "blocked";
       remindAt?: Date | null;
       remindTime?: string | null;
@@ -135,6 +155,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     } = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
+    if (body.categoryId !== undefined) data.categoryId = body.categoryId;
     if (body.status !== undefined) data.status = body.status;
     if (body.remindAt !== undefined) data.remindAt = body.remindAt;
     /*

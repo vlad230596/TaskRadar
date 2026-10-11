@@ -8,6 +8,7 @@ import '../domain/reminders.dart';
 import '../domain/task_age.dart';
 import '../models/history_task_event.dart';
 import '../models/task.dart';
+import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/history_providers.dart';
@@ -15,6 +16,7 @@ import '../providers/project_providers.dart';
 import 'dictation_screen.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/category_sheets.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
 import '../widgets/focus_toggle.dart';
@@ -119,6 +121,17 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   /// hold no answer.
   String? _tidyParseId;
 
+  /// The category a draft will be created in. An existing task's category is
+  /// the task's own and is written the moment it is picked.
+  String? _draftCategoryId;
+
+  @override
+  void initState() {
+    super.initState();
+    // A new task has no "folded because empty": the field is the invitation.
+    _noteOpen = _draft;
+  }
+
   @override
   void dispose() {
     _title.dispose();
@@ -154,6 +167,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
       () => _tasks.create(
         title,
         description: note.isEmpty ? null : note,
+        categoryId: _draftCategoryId,
         dictationParseId: _tidyParseId,
       ),
       failure: 'Не удалось добавить задачу.',
@@ -594,6 +608,15 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                     ),
                     const SizedBox(height: Insets.gap),
                     _statusRow(task),
+                    const SizedBox(height: Insets.gap),
+                    _categoryRow(
+                      current: task.categoryId,
+                      onPicked: (id) => runMutation(
+                        context,
+                        () => _tasks.setCategory(task, id),
+                        failure: 'Не удалось сменить категорию.',
+                      ),
+                    ),
                     if (task.status != TaskStatus.done) ...<Widget>[
                       const SizedBox(height: Insets.gap),
                       _reminderRow(task),
@@ -655,12 +678,17 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
                     _textField(dictateTooltip: 'Продиктовать'),
-                    // Only once there is a note to show -- "Причесать" can
-                    // give a new task its description before it exists.
-                    if (_noteOpen) ...<Widget>[
-                      const SizedBox(height: Insets.gap),
-                      _noteSection(),
-                    ],
+                    // Open from the start, unlike on an existing task: here it
+                    // was folded away until "Причесать" filled it, and nobody
+                    // found the place to write the details of a new task.
+                    const SizedBox(height: Insets.gap),
+                    _noteSection(),
+                    const SizedBox(height: Insets.gap),
+                    _categoryRow(
+                      current: _draftCategoryId,
+                      onPicked: (id) async =>
+                          setState(() => _draftCategoryId = id),
+                    ),
                   ],
                 ),
               ),
@@ -802,6 +830,63 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
             if (status != _statusOrder.last) const SizedBox(width: 3),
           ],
         ],
+      ),
+    );
+  }
+
+  /// «Категория: Кухня ›» -- which group of the project's list the task is
+  /// drawn in. Opens [pickTaskCategory].
+  Widget _categoryRow({
+    required String? current,
+    required Future<void> Function(String? categoryId) onPicked,
+  }) {
+    final categories =
+        ref.watch(projectCategoriesProvider(widget.projectId)).value ??
+        const <TaskCategory>[];
+    String? name;
+    for (final category in categories) {
+      if (category.id == current) name = category.name;
+    }
+
+    return Material(
+      color: AppColors.card,
+      borderRadius: BorderRadius.circular(Radii.card),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.card),
+        onTap: () async {
+          final choice = await pickTaskCategory(
+            context,
+            projectId: widget.projectId,
+            current: current,
+          );
+          if (choice == null || choice.categoryId == current) return;
+          await onPicked(choice.categoryId);
+        },
+        child: Container(
+          height: 52,
+          padding: const EdgeInsets.fromLTRB(14, 0, 8, 0),
+          decoration: BoxDecoration(
+            border: Border.all(color: AppColors.line),
+            borderRadius: BorderRadius.circular(Radii.card),
+          ),
+          child: Row(
+            children: <Widget>[
+              const Icon(Icons.label_outline, size: 20, color: AppColors.muted),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  name == null ? 'Без категории' : 'Категория: $name',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppText.action.copyWith(
+                    color: name == null ? AppColors.muted : AppColors.ink,
+                  ),
+                ),
+              ),
+              const Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+            ],
+          ),
+        ),
       ),
     );
   }
