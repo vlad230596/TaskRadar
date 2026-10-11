@@ -660,7 +660,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                 // after all -- the user is typing into the text by then, and on
                 // a phone those 90 px were most of what the keyboard left of
                 // it (the words shrank to two lines and scrolled out of sight).
-                if (recording || (!keyboard && _result == null))
+                // And while "Разобрать" runs: the stages card takes the bottom
+                // of the words' area, and the held space above them only
+                // pushed their end under the card.
+                if (recording ||
+                    (!keyboard && _result == null && _progress == null))
                   Padding(
                     padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
                     child: recording

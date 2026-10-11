@@ -262,6 +262,33 @@ void main() {
     await settle(tester);
   });
 
+  // "Разобрать" on a long dictation, while the model is still thinking: the
+  // stages card under the words.
+  testWidgets('Dictate-Tidying — the model at work', (tester) async {
+    final events = StreamController<String>();
+    addTearDown(events.close);
+    backend.responder = (options) => options.path == '/dictation/parse'
+        ? sseStreamResponse(events.stream)
+        : _respond(options);
+    final recognizer = FakeSpeechRecognizer()
+      ..text =
+          'Надо в выходные разобраться с вентилятором в туалете, он опять не '
+          'включается. Сначала посмотреть автомат в щитке, второй слева. Если '
+          'дело не в нём, то снять решётку и проверить, крутится ли он от '
+          'руки. Потом уже звонить мастеру.';
+    await pump(tester, const DictationScreen(), recognizer: recognizer);
+    await tester.tap(find.text('Готово'));
+    await settle(tester);
+    await tester.tap(find.text('Разобрать'));
+    events
+      ..add(sseEvent('accepted', <String, dynamic>{'kind': 'sandbox'}))
+      ..add(
+        sseEvent('model_started', <String, dynamic>{'model': 'deepseek-chat'}),
+      );
+    await settle(tester);
+    await shot(tester, 'Dictate-Tidying');
+  });
+
   testWidgets('Settings — the settings screen', (tester) async {
     await pump(tester, const SettingsScreen());
     await shot(tester, 'Settings');

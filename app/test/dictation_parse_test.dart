@@ -97,6 +97,7 @@ void main() {
       projectId: 'prj_1',
       name: 'Дом',
     ),
+    String heard = 'Купить кабель',
   }) async {
     // A phone: the size the keyboard bug was seen at.
     tester.view.physicalSize = const Size(390, 844);
@@ -108,7 +109,9 @@ void main() {
         overrides: [
           apiClientProvider.overrideWithValue(backend.client),
           voiceRecorderProvider.overrideWithValue(FakeVoiceRecorder()),
-          speechRecognizerProvider.overrideWithValue(FakeSpeechRecognizer()),
+          speechRecognizerProvider.overrideWithValue(
+            FakeSpeechRecognizer()..text = heard,
+          ),
           voiceModelInstallationProvider.overrideWith(_ReadyModel.new),
           deviceTimeZoneNameProvider.overrideWith(
             (ref) async => 'Europe/Moscow',
@@ -421,6 +424,36 @@ void main() {
         expect(find.byType(TidyProgressCard), findsNothing);
         expect(find.text('Разобрано — можно править'), findsOneWidget);
         expect(find.text('Купить кабель USB-C'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'while it runs, the words move up under the stage',
+      (tester) async {
+        final events = modelStreams();
+
+        await dictate(
+          tester,
+          destination: const SandboxDestination(),
+          heard:
+              'Надо в выходные разобраться с вентилятором в туалете, он опять '
+              'не включается. Сначала посмотреть автомат в щитке, второй '
+              'слева. Если дело не в нём, то снять решётку и проверить, '
+              'крутится ли он от руки. Потом уже звонить мастеру.',
+        );
+        await tester.tap(find.text('Разобрать'));
+        events
+          ..add(sseEvent('accepted', <String, dynamic>{'kind': 'sandbox'}))
+          ..add(sseEvent('model_started', <String, dynamic>{'model': 'm'}));
+        await settle(tester);
+        expect(find.byType(TidyProgressCard), findsOneWidget);
+
+        // The room held for the level meter is for the moment the recording
+        // stops; with the card under the words it only pushed them down, and
+        // the card cut off their end.
+        final stage = tester.getRect(find.text('Разбираю'));
+        final field = tester.getRect(find.byType(TextField));
+        expect(field.top - stage.bottom, lessThan(40));
       },
     );
 
