@@ -27,7 +27,7 @@
 		max_size 1MB
 	}
 
-	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /notes/* /inbox /inbox/* /dictation/*
+	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /categories/* /notes/* /inbox /inbox/* /dictation/*
 	handle @api {
 		# Unbuffered, as in production: see the note there.
 		reverse_proxy backend:3001 {
