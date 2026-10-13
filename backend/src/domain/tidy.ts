@@ -3,6 +3,7 @@ import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient"
 import type { DictationInput } from "./dictation";
 import { splitInboxText } from "./inboxSplit";
 import { createKindParser, KindParser, ParseSpec } from "./parsePipeline";
+import { cleanupRules, normaliseLevel } from "./aiLevels";
 import { DATA_RULES, inlineData, wrapUserText } from "./promptGuard";
 
 /*
@@ -99,25 +100,20 @@ export interface TidiedLine {
 }
 
 /** See `DICTATION_PROMPT_VERSION` in `./dictation.ts` for what bumping means. */
-/** 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`). */
-export const TASK_TIDY_PROMPT_VERSION = "tidy-2";
-export const NOTE_PROMPT_VERSION = "note-2";
+/**
+ * 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
+ * 3: the cleanup rules depend on the level (`./aiLevels.ts`).
+ */
+export const TASK_TIDY_PROMPT_VERSION = "tidy-3";
+export const NOTE_PROMPT_VERSION = "note-3";
 /**
  * 2: the reply carries the line as a task too, `title` and `description`.
  * 3: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
+ * 4: the cleanup rules depend on the level (`./aiLevels.ts`).
  */
-export const SANDBOX_PROMPT_VERSION = "sandbox-3";
+export const SANDBOX_PROMPT_VERSION = "sandbox-4";
 
-/** The rules every tidying prompt shares, word for word. */
-const CLEANUP_RULES = [
-  "Очистка:",
-  "- исправь ошибки распознавания речи и пунктуацию, запиши термины как принято («ю эс би си» → «USB-C»);",
-  "- убери слова-паразиты («ну», «так», «короче», «типа», «это самое», «в общем», «как его», «эээ») и повторы;",
-  "- при самоисправлении («в среду, нет, в четверг») оставь только исправленный вариант;",
-  "- НЕ добавляй фактов, которых не было в тексте. Имена, числа, суммы, ссылки сохраняй точно;",
-  "- НЕ добавляй дат, дней недели, сроков и времени, которых нет в тексте;",
-  "- если текст уже в порядке — верни его как есть.",
-];
+
 
 function parseJsonObject(content: string): unknown {
   try {
@@ -242,7 +238,7 @@ export function buildTaskTidyMessages(input: DictationInput): ChatMessage[] {
     "- несколько пунктов — список строками, каждая начинается с «- »;",
     "- если добавить нечего — null. Не повторяй название.",
     "",
-    ...CLEANUP_RULES,
+    ...cleanupRules(input.level, { dates: true }),
     "",
     "Напоминаний не ставь и о сроках ничего не придумывай: этой задаче они не нужны.",
     "",
@@ -307,10 +303,12 @@ export function buildNoteMessages(input: DictationInput): ChatMessage[] {
     "Текст:",
     "- разбей на абзацы по смыслу, абзацы разделяй пустой строкой;",
     "- перечисления оформи списком: каждая строка начинается с «- »;",
-    "- сохрани ВСЁ, что было сказано: каждый факт, имя, число, ссылку; не сокращай до пересказа;",
+    normaliseLevel(input.level) >= 3
+      ? "- сохрани каждый факт, имя, число, ссылку; формулировки можно сжимать;"
+      : "- сохрани ВСЁ, что было сказано: каждый факт, имя, число, ссылку; не сокращай до пересказа;",
     "- не добавляй заголовков разделов, выводов и советов от себя.",
     "",
-    ...CLEANUP_RULES,
+    ...cleanupRules(input.level, { dates: true }),
     "",
     "Заголовок:",
     title === ""
@@ -377,13 +375,15 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
     "",
     "Текст:",
     "- одна мысль остаётся одной строчкой: не делай списков без нужды;",
-    "- сохрани всё, что было сказано.",
+    normaliseLevel(input.level) >= 3
+      ? "- сохрани каждый факт; формулировку можно сжать."
+      : "- сохрани всё, что было сказано.",
     "",
     "Название и описание:",
     '- это тот же текст, что в "text", разложенный как задача: если строчку перенесут в проект, она станет задачей с этими полями;',
     '- ничего сверх "text"; описание не повторяет название.',
     "",
-    ...CLEANUP_RULES,
+    ...cleanupRules(input.level, { dates: true }),
     "",
     "Проект:",
     "- только id из списка, символ в символ; ничего не выдумывай;",

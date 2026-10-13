@@ -94,6 +94,7 @@ async function keepSample(
         requestedAt: input.now,
         model: trace.model,
         promptVersion: trace.promptVersion,
+        level: input.level ?? null,
         status: trace.result === null ? "failed" : "ok",
         rawReply: trace.rawReply,
         result: trace.result === null ? Prisma.JsonNull : { ...trace.result },
@@ -216,6 +217,7 @@ export function dictationRoutes(
         timeZone: body.timeZone,
         now: new Date(),
         noteTitle: body.noteTitle,
+        level: body.level,
       };
       const userId = userIdOf(request);
       const pipeline = pipelineFor(userId, feature, body.kind, request.log);

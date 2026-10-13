@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient";
 import { createKindParser, KindParser, ParseTrace } from "./parsePipeline";
+import { cleanupRules } from "./aiLevels";
 import { DATA_RULES, wrapUserText } from "./promptGuard";
 
 /*
@@ -53,6 +54,11 @@ export interface DictationInput {
    * then leaves the title alone. See `./tidy.ts`.
    */
   noteTitle?: string | undefined;
+  /**
+   * How freely the model may reword, `./aiLevels.ts`; the default level when
+   * absent.
+   */
+  level?: number | undefined;
 }
 
 /**
@@ -74,8 +80,9 @@ export type DictationParser = KindParser<DictationInput, ParsedDictation>;
  * format -- so that rows from different prompts are never compared as if they
  * were the same experiment.
  */
-export const DICTATION_PROMPT_VERSION = "2";
+export const DICTATION_PROMPT_VERSION = "3";
 // 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
+// 3: the cleanup rules depend on the level (`./aiLevels.ts`).
 
 /** How far ahead the calendar in the prompt reaches. */
 const CALENDAR_DAYS = 14;
@@ -239,11 +246,7 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
     "- если перечисляется несколько пунктов — список строками, каждая начинается с «- »;",
     "- если добавить нечего — null. Не повторяй название.",
     "",
-    "Очистка:",
-    "- убери слова-паразиты («ну», «так», «короче», «типа», «это самое», «в общем», «как его», «эээ»);",
-    "- при самоисправлении («в среду, нет, в четверг») оставь только исправленный вариант;",
-    "- исправь очевидные ошибки распознавания и запиши термины как принято («ю эс би си» → «USB-C»);",
-    "- НЕ добавляй фактов, которых не было в тексте. Имена, числа и суммы сохраняй точно.",
+    ...cleanupRules(input.level, { dates: false }),
     "",
     "Напоминание:",
     "- только если человек явно просит напомнить или вернуться к задаче в определённый день («напомни», «спросить в пятницу», «вернуться во вторник»);",

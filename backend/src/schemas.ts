@@ -1,3 +1,4 @@
+import { AI_LEVEL_DEFAULT, AI_LEVEL_MAX, AI_LEVEL_MIN } from "./domain/aiLevels";
 import { z } from "zod";
 import { HISTORY_RANGES } from "./domain/history";
 import { isValidTimeZone } from "./domain/dictation";
@@ -356,6 +357,11 @@ export const parseDictationSchema = z.object({
    * one (`domain/tidy.ts`). Ignored by the other kinds.
    */
   noteTitle: z.string().trim().max(500, "noteTitle is too long").optional(),
+  /**
+   * How freely the model may reword (`domain/aiLevels.ts`). Absent from old
+   * clients, which then get the default -- what they always got.
+   */
+  level: z.number().int().min(AI_LEVEL_MIN).max(AI_LEVEL_MAX).default(AI_LEVEL_DEFAULT),
 });
 
 /**

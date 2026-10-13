@@ -265,7 +265,7 @@ describe("sandbox", () => {
     const [system] = buildSandboxMessages({ ...input("колодки"), projects: choices });
     expect(system.content).toContain('"title"');
     expect(system.content).toContain('"description"');
-    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-3");
+    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-4");
   });
 
   it("keeps a project that is on the list, with its name from the list", () => {

@@ -451,6 +451,9 @@ model DictationParse {
   model         String
   /// `DICTATION_PROMPT_VERSION` in src/domain/dictation.ts at the time.
   promptVersion String
+  /// How freely the model could reword (src/domain/aiLevels.ts); null for
+  /// rows from before levels existed, which ran at today's default.
+  level         Int?
 
   /// `ok` or `failed`.
   status     String
