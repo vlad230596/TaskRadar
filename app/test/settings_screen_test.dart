@@ -23,21 +23,23 @@ void main() {
   late FakeVoiceModelStore voiceModels;
   late FakeBackend backend;
 
-  /// What `GET /dictation/model` answers, and every `PUT` body received. The
-  /// fake stores like the server does: the default by name is "no choice".
-  Map<String, dynamic>? dictationModel;
-  late List<Map<String, dynamic>> modelPuts;
+  /// What `GET /dictation/models` answers (null: no model on the server),
+  /// and every `PUT` and re-enable received. The fake stores like the
+  /// server: the list as sent, health kept by id.
+  Map<String, dynamic>? roster;
+  late List<List<dynamic>> rosterPuts;
+  late List<String> reenabled;
 
   setUp(() {
     backend = FakeBackend();
-    dictationModel = <String, dynamic>{
-      'model': 'stealth/space-bunny-alpha',
+    roster = <String, dynamic>{
+      'models': <dynamic>[],
       'defaultModel': 'stealth/space-bunny-alpha',
-      'override': null,
     };
-    modelPuts = <Map<String, dynamic>>[];
-    backend.on('GET', '/dictation/model', (match) {
-      final body = dictationModel;
+    rosterPuts = <List<dynamic>>[];
+    reenabled = <String>[];
+    backend.on('GET', '/dictation/models', (match) {
+      final body = roster;
       return body == null
           ? jsonResponse(<String, dynamic>{
               'error': 'DictationUnavailableError',
@@ -45,16 +47,36 @@ void main() {
             }, statusCode: 503)
           : jsonResponse(body);
     });
-    backend.on('PUT', '/dictation/model', (match) {
-      modelPuts.add(match.body);
-      final chosen = match.body['model'] as String?;
-      final fallback = dictationModel!['defaultModel'] as String;
-      dictationModel = <String, dynamic>{
-        'model': chosen ?? fallback,
-        'defaultModel': fallback,
-        'override': chosen,
+    backend.on('PUT', '/dictation/models', (match) {
+      final models = match.body['models'] as List<dynamic>;
+      rosterPuts.add(models);
+      roster = <String, dynamic>{
+        ...roster!,
+        'models': <dynamic>[
+          for (final (i, m) in models.indexed)
+            <String, dynamic>{
+              'id': (m as Map)['id'] ?? 'new-$i',
+              ...m.cast<String, dynamic>(),
+              'status': m['enabled'] == false ? 'disabled' : 'ok',
+            },
+        ],
       };
-      return jsonResponse(dictationModel);
+      return jsonResponse(roster);
+    });
+    backend.on('POST', '/dictation/models/m-1/reenable', (match) {
+      reenabled.add('m-1');
+      roster = <String, dynamic>{
+        ...roster!,
+        'models': <dynamic>[
+          <String, dynamic>{
+            'id': 'm-1',
+            'name': 'deepseek-chat',
+            'enabled': true,
+            'status': 'ok',
+          },
+        ],
+      };
+      return jsonResponse(roster);
     });
 
     gateway = FakeNotificationGateway();
@@ -278,80 +300,140 @@ void main() {
     });
   });
 
-  group('the dictation model (F14)', () {
-    testWidgets('shows the model in use, and that it is the default', (
+  group('the models (roster)', () {
+    Future<void> openModels(WidgetTester tester) async {
+      await pumpSettings(tester);
+      await tester.scrollUntilVisible(
+        find.text('Модели AI'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.tap(find.text('Модели AI'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('with an empty list, says which model the server uses', (
       tester,
     ) async {
       await pumpSettings(tester);
 
-      expect(find.text('Модель разбора диктовки'), findsOneWidget);
+      expect(find.text('Модели AI'), findsOneWidget);
       expect(
-        find.text('stealth/space-bunny-alpha · по умолчанию с сервера'),
+        find.text('Модель сервера: stealth/space-bunny-alpha'),
         findsOneWidget,
       );
     });
 
-    testWidgets('a model typed here is saved, and said to be chosen here', (
-      tester,
-    ) async {
-      await pumpSettings(tester);
+    testWidgets('a model added here is saved with the list', (tester) async {
+      await openModels(tester);
 
-      await tester.tap(find.text('Модель разбора диктовки'));
+      await tester.tap(find.byTooltip('Добавить модель'));
       await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), ' qwen/qwen3-14b ');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Модель у провайдера'),
+        ' qwen/qwen3-14b ',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Переменная с ключом'),
+        'LLM_QWEN_KEY',
+      );
       await tester.pump();
       await tester.tap(find.text('Сохранить'));
       await tester.pumpAndSettle();
 
-      expect(modelPuts, <Map<String, dynamic>>[
-        <String, dynamic>{'model': 'qwen/qwen3-14b'},
+      expect(rosterPuts.single, <dynamic>[
+        <String, dynamic>{
+          'name': 'qwen/qwen3-14b',
+          'label': null,
+          'baseUrl': null,
+          'apiKeyEnv': 'LLM_QWEN_KEY',
+          'enabled': true,
+        },
       ]);
-      expect(
-        find.text(
-          'qwen/qwen3-14b · выбрана здесь, '
-          'по умолчанию stealth/space-bunny-alpha',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('qwen/qwen3-14b'), findsOneWidget);
     });
 
-    testWidgets('"По умолчанию" goes back to the server\'s model', (
+    testWidgets('a key variable outside LLM_ is refused before it is sent', (
       tester,
     ) async {
-      dictationModel = <String, dynamic>{
-        'model': 'qwen/qwen3-14b',
-        'defaultModel': 'stealth/space-bunny-alpha',
-        'override': 'qwen/qwen3-14b',
+      await openModels(tester);
+
+      await tester.tap(find.byTooltip('Добавить модель'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Модель у провайдера'),
+        'x',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Переменная с ключом'),
+        'JWT_SECRET',
+      );
+      await tester.pump();
+
+      expect(
+        find.text('Имя переменной из .env, начинается с LLM_'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Сохранить'));
+      await tester.pumpAndSettle();
+      expect(rosterPuts, isEmpty);
+    });
+
+    testWidgets('moving a model down saves the new order', (tester) async {
+      roster = <String, dynamic>{
+        'models': <dynamic>[
+          <String, dynamic>{'id': 'a', 'name': 'first', 'status': 'ok'},
+          <String, dynamic>{'id': 'b', 'name': 'second', 'status': 'ok'},
+        ],
+        'defaultModel': 'env',
       };
-      await pumpSettings(tester);
+      await openModels(tester);
 
-      await tester.tap(find.text('Модель разбора диктовки'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('По умолчанию'));
+      await tester.tap(find.byTooltip('Ниже').first);
       await tester.pumpAndSettle();
 
-      expect(modelPuts, <Map<String, dynamic>>[
-        <String, dynamic>{'model': null},
+      expect(rosterPuts.single.map((m) => (m as Map)['id']), <String>[
+        'b',
+        'a',
       ]);
-      expect(
-        find.text('stealth/space-bunny-alpha · по умолчанию с сервера'),
-        findsOneWidget,
-      );
     });
 
-    testWidgets('no model on the server: said, with nothing to edit', (
+    testWidgets('a model its failures switched off says why, and comes back', (
       tester,
     ) async {
-      dictationModel = null;
+      roster = <String, dynamic>{
+        'models': <dynamic>[
+          <String, dynamic>{
+            'id': 'm-1',
+            'name': 'deepseek-chat',
+            'enabled': true,
+            'status': 'auto_disabled',
+            'autoDisabledReason': '6 неудач подряд с 2026-10-10',
+          },
+        ],
+        'defaultModel': 'env',
+      };
+      await openModels(tester);
+
+      expect(
+        find.text('Отключена автоматически: 6 неудач подряд с 2026-10-10'),
+        findsOneWidget,
+      );
+      await tester.tap(find.text('Включить снова'));
+      await tester.pumpAndSettle();
+
+      expect(reenabled, <String>['m-1']);
+      expect(find.text('Работает'), findsOneWidget);
+    });
+
+    testWidgets('no model on the server: said on the tile', (tester) async {
+      roster = null;
       await pumpSettings(tester);
 
       expect(
         find.text('Разбор не настроен на сервере: нет ключа модели в .env.'),
         findsOneWidget,
       );
-      await tester.tap(find.text('Модель разбора диктовки'));
-      await tester.pumpAndSettle();
-      expect(find.byType(AlertDialog), findsNothing);
     });
   });
 }

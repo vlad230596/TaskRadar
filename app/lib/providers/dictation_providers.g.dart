@@ -8,66 +8,65 @@ part of 'dictation_providers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// The model the server parses dictation with (F14), for the settings screen.
+/// The server's roster of models (`backend/src/domain/modelRoster.ts`), for
+/// the settings.
 ///
-/// Not kept alive: it is read when the settings screen opens and nowhere else,
-/// and a value cached from an hour ago would be exactly the stale answer a
-/// settings screen must not give.
+/// Not kept alive: it is read when the screen opens, and health that is an
+/// hour old is exactly the stale answer a settings screen must not give.
 
-@ProviderFor(DictationModelSetting)
-final dictationModelSettingProvider = DictationModelSettingProvider._();
+@ProviderFor(AiModelsSetting)
+final aiModelsSettingProvider = AiModelsSettingProvider._();
 
-/// The model the server parses dictation with (F14), for the settings screen.
+/// The server's roster of models (`backend/src/domain/modelRoster.ts`), for
+/// the settings.
 ///
-/// Not kept alive: it is read when the settings screen opens and nowhere else,
-/// and a value cached from an hour ago would be exactly the stale answer a
-/// settings screen must not give.
-final class DictationModelSettingProvider
-    extends $AsyncNotifierProvider<DictationModelSetting, DictationModel> {
-  /// The model the server parses dictation with (F14), for the settings screen.
+/// Not kept alive: it is read when the screen opens, and health that is an
+/// hour old is exactly the stale answer a settings screen must not give.
+final class AiModelsSettingProvider
+    extends $AsyncNotifierProvider<AiModelsSetting, AiModels> {
+  /// The server's roster of models (`backend/src/domain/modelRoster.ts`), for
+  /// the settings.
   ///
-  /// Not kept alive: it is read when the settings screen opens and nowhere else,
-  /// and a value cached from an hour ago would be exactly the stale answer a
-  /// settings screen must not give.
-  DictationModelSettingProvider._()
+  /// Not kept alive: it is read when the screen opens, and health that is an
+  /// hour old is exactly the stale answer a settings screen must not give.
+  AiModelsSettingProvider._()
     : super(
         from: null,
         argument: null,
         retry: noAutomaticRetry,
-        name: r'dictationModelSettingProvider',
+        name: r'aiModelsSettingProvider',
         isAutoDispose: true,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
 
   @override
-  String debugGetCreateSourceHash() => _$dictationModelSettingHash();
+  String debugGetCreateSourceHash() => _$aiModelsSettingHash();
 
   @$internal
   @override
-  DictationModelSetting create() => DictationModelSetting();
+  AiModelsSetting create() => AiModelsSetting();
 }
 
-String _$dictationModelSettingHash() =>
-    r'755c9c383bb5d1af257f22ae44606e516677d6a0';
+String _$aiModelsSettingHash() => r'5369a4f12a739dc079cf4f63084cd93f2dd2a14d';
 
-/// The model the server parses dictation with (F14), for the settings screen.
+/// The server's roster of models (`backend/src/domain/modelRoster.ts`), for
+/// the settings.
 ///
-/// Not kept alive: it is read when the settings screen opens and nowhere else,
-/// and a value cached from an hour ago would be exactly the stale answer a
-/// settings screen must not give.
+/// Not kept alive: it is read when the screen opens, and health that is an
+/// hour old is exactly the stale answer a settings screen must not give.
 
-abstract class _$DictationModelSetting extends $AsyncNotifier<DictationModel> {
-  FutureOr<DictationModel> build();
+abstract class _$AiModelsSetting extends $AsyncNotifier<AiModels> {
+  FutureOr<AiModels> build();
   @$mustCallSuper
   @override
   void runBuild() {
-    final ref = this.ref as $Ref<AsyncValue<DictationModel>, DictationModel>;
+    final ref = this.ref as $Ref<AsyncValue<AiModels>, AiModels>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<AsyncValue<DictationModel>, DictationModel>,
-              AsyncValue<DictationModel>,
+              AnyNotifier<AsyncValue<AiModels>, AiModels>,
+              AsyncValue<AiModels>,
               Object?,
               Object?
             >;
@@ -138,6 +137,64 @@ abstract class _$AiLevelSetting extends $AsyncNotifier<int> {
             as $ClassProviderElement<
               AnyNotifier<AsyncValue<int>, int>,
               AsyncValue<int>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
+  }
+}
+
+/// "Отправить в несколько" (`backend/src/domain/modelRoster.ts`): parses ask
+/// the first two models of the server's list at once, and the answers can be
+/// switched between. Remembered between parses, as agreed; off at first.
+
+@ProviderFor(AiMultiSetting)
+final aiMultiSettingProvider = AiMultiSettingProvider._();
+
+/// "Отправить в несколько" (`backend/src/domain/modelRoster.ts`): parses ask
+/// the first two models of the server's list at once, and the answers can be
+/// switched between. Remembered between parses, as agreed; off at first.
+final class AiMultiSettingProvider
+    extends $AsyncNotifierProvider<AiMultiSetting, bool> {
+  /// "Отправить в несколько" (`backend/src/domain/modelRoster.ts`): parses ask
+  /// the first two models of the server's list at once, and the answers can be
+  /// switched between. Remembered between parses, as agreed; off at first.
+  AiMultiSettingProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'aiMultiSettingProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$aiMultiSettingHash();
+
+  @$internal
+  @override
+  AiMultiSetting create() => AiMultiSetting();
+}
+
+String _$aiMultiSettingHash() => r'df1f90051472064fe5d4fc86b93ffc58e339ce43';
+
+/// "Отправить в несколько" (`backend/src/domain/modelRoster.ts`): parses ask
+/// the first two models of the server's list at once, and the answers can be
+/// switched between. Remembered between parses, as agreed; off at first.
+
+abstract class _$AiMultiSetting extends $AsyncNotifier<bool> {
+  FutureOr<bool> build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<AsyncValue<bool>, bool>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<bool>, bool>,
+              AsyncValue<bool>,
               Object?,
               Object?
             >;

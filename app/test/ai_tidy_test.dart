@@ -13,6 +13,7 @@ import 'package:taskradar/widgets/ai_tidy.dart';
 import 'package:taskradar/widgets/project_name_dialog.dart';
 import 'package:taskradar/widgets/tidy_progress.dart';
 
+import 'support/fake_settings_store.dart';
 import 'support/fake_backend.dart';
 
 /// "Причесать" (F15): the tidy screen every entry point but the dictation
@@ -49,6 +50,26 @@ void main() {
         ]);
       }
       final answer = answers[(parses.length - 1).clamp(0, answers.length - 1)];
+      // "Отправить в несколько": two models, each answer as it comes.
+      if (match.body['multi'] == true) {
+        return sseResponse(<String>[
+          sseEvent('accepted', <String, dynamic>{'kind': match.body['kind']}),
+          sseEvent('candidate', <String, dynamic>{
+            'model': 'fast',
+            'modelLabel': 'Быстрая',
+            'result': <String, dynamic>{...answer, 'parseId': 'dp-fast'},
+          }),
+          sseEvent('candidate', <String, dynamic>{
+            'model': 'slow',
+            'modelLabel': 'Умная',
+            'result': <String, dynamic>{
+              'content': 'Ответ умной модели.',
+              'parseId': 'dp-slow',
+            },
+          }),
+          sseEvent('result', answer),
+        ]);
+      }
       return sseResponse(<String>[
         sseEvent('accepted', <String, dynamic>{'kind': match.body['kind']}),
         sseEvent('model_started', <String, dynamic>{'model': 'm'}),
@@ -74,6 +95,7 @@ void main() {
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(backend.client),
+          settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
           deviceTimeZoneNameProvider.overrideWith(
             (ref) async => 'Europe/Moscow',
           ),
@@ -176,6 +198,26 @@ void main() {
       expect(parses.map((body) => body['level']), <int>[2, 3]);
       expect(parses[1]['text'], 'ну значит гвозди и краска');
       expect(find.text('Гвозди, краска.'), findsOneWidget);
+    });
+
+    testWidgets('two models: both answers can be switched between', (
+      tester,
+    ) async {
+      answers.add(<String, dynamic>{'content': 'Гвозди и краска.'});
+      await open(tester);
+      expect(parses.single['multi'], isNull);
+
+      await tester.tap(find.byTooltip('Отправить в две модели и сравнить'));
+      await settle(tester);
+
+      expect(parses[1]['multi'], isTrue);
+      expect(find.text('Быстрая'), findsOneWidget);
+      expect(find.text('Умная'), findsOneWidget);
+      expect(find.text('Гвозди и краска.'), findsOneWidget);
+
+      await tester.tap(find.text('Умная'));
+      await settle(tester);
+      expect(find.text('Ответ умной модели.'), findsOneWidget);
     });
 
     testWidgets('"Разобрать заново" runs from the source, never the answer', (

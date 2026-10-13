@@ -163,6 +163,17 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// then whatever the switch over the answer says (`TidyLevelSwitch`).
   int? _level;
 
+  /// "Отправить в несколько", from the settings and the toggle.
+  bool? _multi;
+
+  /// Each model's answer in "отправить в несколько", in arrival order, and
+  /// which one is on screen.
+  List<TidyCandidate> _candidates = const <TidyCandidate>[];
+  int _chosen = 0;
+
+  /// The model of a single answer, when the server says.
+  String? _answeredBy;
+
   /// The model's answer, once "Разобрать" has been pressed and answered.
   /// Non-null means "Результат AI | Исходник" is on screen, and the answer is
   /// what "Готово" saves. Of the subtype [_kind] asked for.
@@ -397,14 +408,33 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
     final level = _level ??=
         ref.read(aiLevelSettingProvider).value ?? aiLevelDefault;
+    final multi = _multi ??= ref.read(aiMultiSettingProvider).value ?? false;
+    _candidates = const <TidyCandidate>[];
+    _answeredBy = null;
     late final TidyJob job;
     job = TidyJob.start(
       ref,
       kind: _kind,
       text: _source(text),
       level: level,
+      multi: multi,
       onProgress: () {
         if (mounted && _job == job) setState(() {});
+      },
+      // The first answer is shown the moment it arrives; the slower model's
+      // joins the switch when it comes.
+      onCandidate: (candidate) {
+        if (!mounted || _job != job) return;
+        setState(() {
+          _candidates = <TidyCandidate>[..._candidates, candidate];
+          final result = candidate.result;
+          if (result != null && _candidates.where((c) => c.ok).length == 1) {
+            _tidying = false;
+            _progress = null;
+            _chosen = _candidates.length - 1;
+            _showResult(result);
+          }
+        });
       },
       onDone: (result) {
         if (!mounted || _job != job) return;
@@ -412,7 +442,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
           _job = null;
           _tidying = false;
           _progress = null;
-          _showResult(result);
+          if (!_candidates.any((c) => c.ok)) {
+            _showResult(result);
+            _answeredBy = job.answeredBy;
+          }
         });
       },
       onFailed: (failure) {
@@ -1024,6 +1057,19 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       children: <Widget>[
+        if (_candidates.isNotEmpty || _answeredBy != null) ...<Widget>[
+          TidyCandidateSwitch(
+            candidates: _candidates,
+            chosen: _chosen,
+            waiting: _job != null,
+            answeredBy: _answeredBy,
+            onChoose: (index) => setState(() {
+              _chosen = index;
+              _showResult(_candidates[index].result!);
+            }),
+          ),
+          const SizedBox(height: 14),
+        ],
         // Above the answer, where it is read before the answer is taken.
         if (result != null && result.warnings.isNotEmpty) ...<Widget>[
           TidyWarningNote(result.warnings),
@@ -1144,6 +1190,17 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                   : (level) {
                       _level = level;
                       _rerun();
+                    },
+              multi: _multi,
+              onMulti: _tidying || busy
+                  ? null
+                  : (multi) {
+                      setState(() => _multi = multi);
+                      unawaited(
+                        ref.read(aiMultiSettingProvider.notifier).choose(multi),
+                      );
+                      // Turned on to compare: the comparison, now.
+                      if (multi) _rerun();
                     },
             ),
             const SizedBox(height: 10),

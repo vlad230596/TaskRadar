@@ -68,9 +68,11 @@ class TidyJob {
     required String text,
     String? noteTitle,
     int? level,
+    bool multi = false,
     required VoidCallback onProgress,
     required void Function(TidyResult result) onDone,
     required void Function(TidyFailure failure) onFailed,
+    void Function(TidyCandidate candidate)? onCandidate,
   }) {
     final job = TidyJob._(TidyProgress(DateTime.now()));
     unawaited(
@@ -80,6 +82,8 @@ class TidyJob {
         text: text,
         noteTitle: noteTitle,
         level: level,
+        multi: multi,
+        onCandidate: onCandidate,
         onProgress: onProgress,
         onDone: onDone,
         onFailed: onFailed,
@@ -90,6 +94,10 @@ class TidyJob {
 
   /// What the step card draws.
   final TidyProgress progress;
+
+  /// Which model gave the answer [onDone] was called with, when the server
+  /// says (a roster, `backend/src/domain/modelRoster.ts`).
+  String? answeredBy;
 
   bool _cancelled = false;
   StreamSubscription<ParseProgress>? _subscription;
@@ -110,6 +118,8 @@ class TidyJob {
     required String text,
     required String? noteTitle,
     required int? level,
+    required bool multi,
+    required void Function(TidyCandidate candidate)? onCandidate,
     required VoidCallback onProgress,
     required void Function(TidyResult result) onDone,
     required void Function(TidyFailure failure) onFailed,
@@ -137,12 +147,18 @@ class TidyJob {
           kind: kind,
           noteTitle: noteTitle,
           level: level,
+          multi: multi,
         )
         .listen(
           (event) {
             if (_cancelled) return;
             if (event is ParseDone) {
+              answeredBy = event.modelLabel;
               onDone(event.result);
+              return;
+            }
+            if (event is ParseCandidate) {
+              onCandidate?.call(event.candidate);
               return;
             }
             progress.record(event, DateTime.now());
@@ -415,6 +431,8 @@ class TidyActions extends StatelessWidget {
     required this.onRerun,
     this.level,
     this.onLevel,
+    this.multi,
+    this.onMulti,
     super.key,
   });
 
@@ -431,15 +449,34 @@ class TidyActions extends StatelessWidget {
   /// Another stop picked. Null while a parse is running.
   final ValueChanged<int>? onLevel;
 
+  /// "Отправить в несколько" on or off; no toggle without it.
+  final bool? multi;
+
+  /// The toggle flipped. Null while a parse is running.
+  final ValueChanged<bool>? onMulti;
+
   @override
   Widget build(BuildContext context) {
     final level = this.level;
+    final multi = this.multi;
     final buttons = _buttons();
     if (level == null) return buttons;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        TidyLevelSwitch(level: level, onLevel: onLevel),
+        // One row, not two: on a phone with the keyboard down this panel
+        // already takes height from the answer it sits under.
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: TidyLevelSwitch(level: level, onLevel: onLevel),
+            ),
+            if (multi != null) ...<Widget>[
+              const SizedBox(width: 6),
+              _MultiToggle(multi: multi, onMulti: onMulti),
+            ],
+          ],
+        ),
         const SizedBox(height: 8),
         buttons,
       ],
@@ -479,6 +516,139 @@ class TidyActions extends StatelessWidget {
         button('Как надиктовано', Icons.undo, onAsIs),
         const SizedBox(width: 8),
         button('Разобрать заново', Icons.refresh, onRerun),
+      ],
+    );
+  }
+}
+
+/// "Отправить в две модели и сравнить": a square toggle at the end of the
+/// level row, remembered between parses (`AiMultiSetting`). Lit when on.
+class _MultiToggle extends StatelessWidget {
+  const _MultiToggle({required this.multi, required this.onMulti});
+
+  final bool multi;
+  final ValueChanged<bool>? onMulti;
+
+  @override
+  Widget build(BuildContext context) {
+    final onMulti = this.onMulti;
+    return Tooltip(
+      message: 'Отправить в две модели и сравнить',
+      child: SizedBox(
+        width: 44,
+        height: 34,
+        child: Material(
+          color: multi ? AppColors.voiceWell : Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: BorderSide(
+              color: multi ? AppColors.voiceLevelHigh : AppColors.voiceLine,
+            ),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: onMulti == null ? null : () => onMulti(!multi),
+            child: Center(
+              child: Text(
+                '×2',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: onMulti == null
+                      ? AppColors.voiceLine
+                      : multi
+                      ? AppColors.voiceBright
+                      : AppColors.voiceInk,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The answers of "отправить в несколько", one chip per model: the one shown
+/// is filled, a failed one says so, and while a slower model is still
+/// thinking a last chip says "ждём…". With one answer and no chips, which
+/// model gave it, when the server says.
+class TidyCandidateSwitch extends StatelessWidget {
+  const TidyCandidateSwitch({
+    required this.candidates,
+    required this.chosen,
+    required this.waiting,
+    required this.onChoose,
+    this.answeredBy,
+    super.key,
+  });
+
+  final List<TidyCandidate> candidates;
+
+  /// Index into [candidates] of the answer on screen.
+  final int chosen;
+
+  /// A model has not answered yet.
+  final bool waiting;
+  final ValueChanged<int> onChoose;
+
+  /// The model of a single answer, with no candidates.
+  final String? answeredBy;
+
+  @override
+  Widget build(BuildContext context) {
+    final caption = AppText.caption.copyWith(color: AppColors.voiceMuted);
+    final answeredBy = this.answeredBy;
+    if (candidates.isEmpty) {
+      if (answeredBy == null) return const SizedBox.shrink();
+      return Text('Ответила модель: $answeredBy', style: caption);
+    }
+    Widget chip(String label, {bool selected = false, VoidCallback? onTap}) {
+      return Material(
+        color: selected ? AppColors.voiceWell : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+          side: BorderSide(
+            color: selected ? AppColors.voiceLevelHigh : AppColors.voiceLine,
+          ),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: selected
+                    ? AppColors.voiceBright
+                    : onTap == null
+                    ? AppColors.voiceMuted
+                    : AppColors.voiceInk,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: <Widget>[
+        Text('Модель', style: caption),
+        for (final (index, candidate) in candidates.indexed)
+          candidate.ok
+              ? chip(
+                  candidate.label,
+                  selected: index == chosen,
+                  onTap: index == chosen ? null : () => onChoose(index),
+                )
+              : chip('${candidate.label} · не ответила'),
+        if (waiting) chip('ждём…'),
       ],
     );
   }
@@ -746,6 +916,17 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
   /// then whatever the switch over the answer says (`TidyLevelSwitch`).
   int? _level;
 
+  /// "Отправить в несколько", from the settings and the toggle.
+  bool? _multi;
+
+  /// Each model's answer in "отправить в несколько", in arrival order, and
+  /// which one is on screen.
+  List<TidyCandidate> _candidates = const <TidyCandidate>[];
+  int _chosen = 0;
+
+  /// The model of a single answer, when the server says.
+  String? _answeredBy;
+
   bool get _running => _progress != null && !_progress!.failed;
 
   @override
@@ -772,6 +953,9 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
     _job?.cancel();
     final level = _level ??=
         ref.read(aiLevelSettingProvider).value ?? aiLevelDefault;
+    final multi = _multi ??= ref.read(aiMultiSettingProvider).value ?? false;
+    _candidates = const <TidyCandidate>[];
+    _answeredBy = null;
     late final TidyJob job;
     job = TidyJob.start(
       ref,
@@ -779,16 +963,35 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
       text: text,
       noteTitle: widget.noteTitle,
       level: level,
+      multi: multi,
       onProgress: () {
         if (mounted && _job == job) setState(() {});
+      },
+      // The first answer is shown the moment it arrives; the slower model's
+      // joins the switch when it comes.
+      onCandidate: (candidate) {
+        if (!mounted || _job != job) return;
+        setState(() {
+          _candidates = <TidyCandidate>[..._candidates, candidate];
+          final result = candidate.result;
+          if (result != null && _candidates.where((c) => c.ok).length == 1) {
+            _progress = null;
+            _chosen = _candidates.length - 1;
+            _fill(result);
+            _showSource = false;
+          }
+        });
       },
       onDone: (result) {
         if (!mounted || _job != job) return;
         setState(() {
           _job = null;
           _progress = null;
-          _fill(result);
-          _showSource = false;
+          if (!_candidates.any((c) => c.ok)) {
+            _fill(result);
+            _answeredBy = job.answeredBy;
+            _showSource = false;
+          }
         });
       },
       onFailed: (failure) {
@@ -997,6 +1200,19 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
     final body = AppText.dictated.copyWith(fontSize: 16);
 
     return <Widget>[
+      if (_candidates.isNotEmpty || _answeredBy != null) ...<Widget>[
+        TidyCandidateSwitch(
+          candidates: _candidates,
+          chosen: _chosen,
+          waiting: _job != null,
+          answeredBy: _answeredBy,
+          onChoose: (index) => setState(() {
+            _chosen = index;
+            _fill(_candidates[index].result!);
+          }),
+        ),
+        const SizedBox(height: 14),
+      ],
       if (result != null && result.warnings.isNotEmpty) ...<Widget>[
         TidyWarningNote(result.warnings),
         const SizedBox(height: 16),
@@ -1131,6 +1347,17 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
                 : (level) {
                     setState(() => _level = level);
                     _run();
+                  },
+            multi: _multi,
+            onMulti: _running
+                ? null
+                : (multi) {
+                    setState(() => _multi = multi);
+                    unawaited(
+                      ref.read(aiMultiSettingProvider.notifier).choose(multi),
+                    );
+                    // Turned on to compare: the comparison, now.
+                    if (multi) _run();
                   },
           ),
           const SizedBox(height: 10),

@@ -86,6 +86,12 @@ abstract interface class SettingsStore {
   Future<int?> readAiLevel();
 
   Future<void> writeAiLevel(int level);
+
+  /// "Отправить в несколько": whether parses ask several models at once;
+  /// null when never chosen.
+  Future<bool?> readAiMulti();
+
+  Future<void> writeAiMulti(bool multi);
 }
 
 /// [SettingsStore] on top of `shared_preferences`.
@@ -119,6 +125,7 @@ class PreferencesSettingsStore implements SettingsStore {
   static const String appModeKey = 'shell.mode';
   static const String planLayoutKey = 'plan.layout';
   static const String aiLevelKey = 'ai.level';
+  static const String aiMultiKey = 'ai.multi';
 
   final Future<SharedPreferences> Function() _preferences;
 
@@ -231,5 +238,22 @@ class PreferencesSettingsStore implements SettingsStore {
   Future<void> writeAiLevel(int level) async {
     final preferences = await _preferences();
     await preferences.setInt(aiLevelKey, level);
+  }
+
+  @override
+  Future<bool?> readAiMulti() async {
+    try {
+      final preferences = await _preferences();
+      return preferences.getBool(aiMultiKey);
+    } catch (error) {
+      debugPrint('Could not read $aiMultiKey: $error');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writeAiMulti(bool multi) async {
+    final preferences = await _preferences();
+    await preferences.setBool(aiMultiKey, multi);
   }
 }

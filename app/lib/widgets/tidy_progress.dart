@@ -58,6 +58,7 @@ class TidyProgress {
         validatedAt ??= at;
       case ParseAlive():
       case ParseDone():
+      case ParseCandidate():
         break;
     }
   }

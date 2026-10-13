@@ -30,6 +30,9 @@ class FakeSettingsStore implements SettingsStore {
   /// What [readAiLevel] returns. Null is "never chosen": the default level.
   int? aiLevel;
 
+  /// What [readAiMulti] returns. Null is "never chosen": one model.
+  bool? aiMulti;
+
   /// When set, every write throws it.
   Object? writeFailure;
 
@@ -104,6 +107,16 @@ class FakeSettingsStore implements SettingsStore {
 
   @override
   Future<int?> readAiLevel() async => aiLevel;
+
+  @override
+  Future<bool?> readAiMulti() async => aiMulti;
+
+  @override
+  Future<void> writeAiMulti(bool multi) async {
+    final failure = writeFailure;
+    if (failure != null) throw failure;
+    aiMulti = multi;
+  }
 
   @override
   Future<void> writeAiLevel(int level) async {

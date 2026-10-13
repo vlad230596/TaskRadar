@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../voice/voice_model.dart';
 import '../widgets/mutation_feedback.dart';
+import 'ai_models_screen.dart';
 import 'dictation_archive_screen.dart';
 import 'notification_bench_screen.dart';
 
@@ -65,7 +66,7 @@ class SettingsScreen extends ConsumerWidget {
                       _SettingsGroup(
                         children: <Widget>[
                           _VoiceModelTile(),
-                          _DictationModelTile(),
+                          _AiModelsTile(),
                           _AiLevelTile(),
                         ],
                       ),
@@ -260,12 +261,6 @@ class _ReminderTimeTile extends ConsumerWidget {
   }
 }
 
-/// The model that turns a dictation into a task on "Разобрать" (F14).
-///
-/// Changeable here so that trying another model -- a free one stopped being
-/// free, a faster one appeared -- is not an SSH session. Only the model: the
-/// API key stays in the server's `.env`, which this app can neither read nor
-/// write, and that is deliberate (`backend/src/domain/dictationModel.ts`).
 /// How hard AI works a text over by default (`domain/ai_level.dart`). Each
 /// parse starts here; the switch over the answer changes it for one text.
 class _AiLevelTile extends ConsumerWidget {
@@ -315,152 +310,50 @@ class _AiLevelTile extends ConsumerWidget {
   }
 }
 
-class _DictationModelTile extends ConsumerWidget {
-  const _DictationModelTile();
+/// The server's list of models (`backend/src/domain/modelRoster.ts`): which
+/// answer, in what order, and how each has been doing. Changing it is the
+/// owner's; the keys stay in the server's `.env`.
+class _AiModelsTile extends ConsumerWidget {
+  const _AiModelsTile();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final setting = ref.watch(dictationModelSettingProvider);
+    final models = ref.watch(aiModelsSettingProvider);
     const icon = Icons.auto_awesome_outlined;
-    const title = 'Модель разбора диктовки';
-
-    return switch (setting) {
-      AsyncData(:final value) => _SettingRow(
-        icon: icon,
-        title: title,
-        description: value.override == null
-            ? '${value.model} · по умолчанию с сервера'
-            : '${value.model} · выбрана здесь, '
-                  'по умолчанию ${value.defaultModel}',
-        trailing: const _Chevron(),
-        onTap: () => _edit(context, ref, value),
-      ),
-      AsyncError(:final error) => _SettingRow(
-        icon: icon,
-        tone: _Tone.waiting,
-        title: title,
-        description: switch (error) {
-          NetworkException() => 'Нет связи с сервером.',
-          ApiException(statusCode: 503) =>
-            'Разбор не настроен на сервере: нет ключа модели в .env.',
-          _ => 'Не удалось узнать модель.',
-        },
-        trailing: error is ApiException && error.statusCode == 503
-            ? null
-            : IconButton(
-                tooltip: 'Ещё раз',
-                icon: const Icon(Icons.refresh),
-                onPressed: () => ref.invalidate(dictationModelSettingProvider),
-              ),
-      ),
-      _ => const _SettingRow(
-        icon: icon,
-        title: title,
-        description: 'Спрашиваем сервер…',
-      ),
+    final description = switch (models) {
+      AsyncData(:final value) when value.models.isEmpty =>
+        'Модель сервера: ${value.fallbackModel ?? 'не задана'}',
+      AsyncData(:final value) => _summary(value.models),
+      AsyncError(error: ApiException(statusCode: 503)) =>
+        'Разбор не настроен на сервере: нет ключа модели в .env.',
+      AsyncError() => 'Не удалось получить список моделей.',
+      _ => 'Спрашиваем сервер…',
     };
-  }
-
-  Future<void> _edit(
-    BuildContext context,
-    WidgetRef ref,
-    DictationModel current,
-  ) async {
-    final choice = await showDialog<_ModelChoice>(
-      context: context,
-      builder: (_) => _DictationModelDialog(current: current),
-    );
-    if (choice == null || !context.mounted) return;
-
-    await runMutation(
-      context,
-      () =>
-          ref.read(dictationModelSettingProvider.notifier).choose(choice.model),
-      success: 'Модель сохранена — применится со следующего разбора.',
-      failure: 'Не удалось сохранить модель.',
+    final troubled =
+        models.value?.models.any(
+          (m) => m.status == 'auto_disabled' || m.status == 'cooling_down',
+        ) ??
+        false;
+    return _SettingRow(
+      icon: icon,
+      tone: troubled ? _Tone.waiting : _Tone.plain,
+      title: AiModelsScreen.title,
+      description: description,
+      trailing: const _Chevron(),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => const AiModelsScreen())),
     );
   }
-}
 
-/// What the dialog closed with. A class rather than a bare `String?`, because
-/// "go back to the default" (null) and "the dialog was dismissed" must not be
-/// the same value.
-class _ModelChoice {
-  const _ModelChoice(this.model);
-
-  final String? model;
-}
-
-class _DictationModelDialog extends StatefulWidget {
-  const _DictationModelDialog({required this.current});
-
-  final DictationModel current;
-
-  @override
-  State<_DictationModelDialog> createState() => _DictationModelDialogState();
-}
-
-class _DictationModelDialogState extends State<_DictationModelDialog> {
-  late final TextEditingController _model = TextEditingController(
-    text: widget.current.model,
-  );
-
-  @override
-  void dispose() {
-    _model.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Модель разбора'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          TextField(
-            controller: _model,
-            autofocus: true,
-            autocorrect: false,
-            enableSuggestions: false,
-            decoration: const InputDecoration(
-              labelText: 'Идентификатор модели',
-              hintText: 'vendor/model-name',
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            'Как в каталоге провайдера, например на OpenRouter. '
-            'По умолчанию: ${widget.current.defaultModel}.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
-      ),
-      actions: <Widget>[
-        if (widget.current.override != null)
-          TextButton(
-            onPressed: () =>
-                Navigator.of(context).pop(const _ModelChoice(null)),
-            child: const Text('По умолчанию'),
-          ),
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Отмена'),
-        ),
-        ValueListenableBuilder<TextEditingValue>(
-          valueListenable: _model,
-          builder: (context, value, _) => FilledButton(
-            onPressed: value.text.trim().isEmpty
-                ? null
-                : () => Navigator.of(
-                    context,
-                  ).pop(_ModelChoice(value.text.trim())),
-            child: const Text('Сохранить'),
-          ),
-        ),
-      ],
-    );
+  static String _summary(List<AiModelEntry> models) {
+    final on = models.where((m) => m.enabled && m.status != 'auto_disabled');
+    final off = models.length - on.length;
+    final first = on.isEmpty
+        ? 'ни одна не включена'
+        : 'первая: ${on.first.title}';
+    return '${models.length} в списке, $first'
+        '${off > 0 ? ' · выключено: $off' : ''}';
   }
 }
 
@@ -513,13 +406,7 @@ class _PermissionsTile extends ConsumerWidget {
   }
 }
 
-/// The F1 bench, reachable but no longer in the way.
-///
-/// It stays because `NOTIFICATIONS-CHECKLIST.md` is still the only way to answer
-/// "did the alarm survive the night on this phone", and that question does not
-/// go away just because the product feature is finished. It moved off the board
-/// app bar because it is a diagnostic, and a diagnostic on the home screen
-/// competes with the things the home screen is for.
+/// The last few dictations on this device, played back next to their text.
 class _DictationArchiveTile extends StatelessWidget {
   const _DictationArchiveTile();
 
@@ -539,6 +426,13 @@ class _DictationArchiveTile extends StatelessWidget {
   }
 }
 
+/// The F1 bench, reachable but no longer in the way.
+///
+/// It stays because `NOTIFICATIONS-CHECKLIST.md` is still the only way to answer
+/// "did the alarm survive the night on this phone", and that question does not
+/// go away just because the product feature is finished. It moved off the board
+/// app bar because it is a diagnostic, and a diagnostic on the home screen
+/// competes with the things the home screen is for.
 class _BenchTile extends StatelessWidget {
   const _BenchTile();
 

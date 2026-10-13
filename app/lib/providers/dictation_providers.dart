@@ -7,22 +7,25 @@ import 'dependencies.dart';
 
 part 'dictation_providers.g.dart';
 
-/// The model the server parses dictation with (F14), for the settings screen.
+/// The server's roster of models (`backend/src/domain/modelRoster.ts`), for
+/// the settings.
 ///
-/// Not kept alive: it is read when the settings screen opens and nowhere else,
-/// and a value cached from an hour ago would be exactly the stale answer a
-/// settings screen must not give.
+/// Not kept alive: it is read when the screen opens, and health that is an
+/// hour old is exactly the stale answer a settings screen must not give.
 @Riverpod(retry: noAutomaticRetry)
-class DictationModelSetting extends _$DictationModelSetting {
+class AiModelsSetting extends _$AiModelsSetting {
   @override
-  Future<DictationModel> build() =>
-      ref.watch(dictationApiProvider).fetchModel();
+  Future<AiModels> build() => ref.watch(dictationApiProvider).fetchModels();
 
-  /// Saves [model], or goes back to the server's default for null. The screen
-  /// shows the server's answer, not the value typed: the server normalises it
-  /// (trims it, stores the default by name as "no choice").
-  Future<void> choose(String? model) async {
-    final saved = await ref.read(dictationApiProvider).setModel(model);
+  /// Saves the whole list, in this order; the screen shows the server's
+  /// answer, health included.
+  Future<void> save(List<AiModelEntry> models) async {
+    final saved = await ref.read(dictationApiProvider).saveModels(models);
+    if (ref.mounted) state = AsyncData(saved);
+  }
+
+  Future<void> reenable(String id) async {
+    final saved = await ref.read(dictationApiProvider).reenableModel(id);
     if (ref.mounted) state = AsyncData(saved);
   }
 }
@@ -43,5 +46,20 @@ class AiLevelSetting extends _$AiLevelSetting {
     final valid = validAiLevel(level);
     state = AsyncData(valid);
     await ref.read(settingsStoreProvider).writeAiLevel(valid);
+  }
+}
+
+/// "Отправить в несколько" (`backend/src/domain/modelRoster.ts`): parses ask
+/// the first two models of the server's list at once, and the answers can be
+/// switched between. Remembered between parses, as agreed; off at first.
+@Riverpod(keepAlive: true)
+class AiMultiSetting extends _$AiMultiSetting {
+  @override
+  Future<bool> build() async =>
+      await ref.watch(settingsStoreProvider).readAiMulti() ?? false;
+
+  Future<void> choose(bool multi) async {
+    state = AsyncData(multi);
+    await ref.read(settingsStoreProvider).writeAiMulti(multi);
   }
 }

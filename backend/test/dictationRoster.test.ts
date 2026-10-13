@@ -38,6 +38,7 @@ const prismaMock = vi.hoisted(() => ({
     }),
     updateMany: vi.fn(async () => ({ count: 1 })),
   },
+  appSetting: { findUnique: vi.fn(async () => null) },
   $transaction: vi.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prismaMock)),
 }));
 vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));

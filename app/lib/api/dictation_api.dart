@@ -293,9 +293,45 @@ final class ParseAlive extends ParseProgress {
 /// The answer. Always the last event of a stream that did not fail. Of the
 /// [TidyResult] subtype the stream's [ParseKind] names.
 final class ParseDone extends ParseProgress {
-  const ParseDone(this.result);
+  const ParseDone(this.result, {this.modelLabel});
 
   final TidyResult result;
+
+  /// Which model answered, as the server's roster names it; null from a
+  /// server older than the roster (`backend/src/domain/modelRoster.ts`).
+  final String? modelLabel;
+}
+
+/// One model's answer in "отправить в несколько": each arrives as soon as
+/// that model is done, before the stream's [ParseDone].
+final class ParseCandidate extends ParseProgress {
+  const ParseCandidate(this.candidate);
+
+  final TidyCandidate candidate;
+}
+
+/// One model's answer, or its failure, in "отправить в несколько".
+class TidyCandidate {
+  const TidyCandidate({
+    required this.model,
+    required this.label,
+    this.result,
+    this.cause,
+  });
+
+  /// The model's name at its provider.
+  final String model;
+
+  /// What the app calls it.
+  final String label;
+
+  /// The answer; null when the model failed.
+  final TidyResult? result;
+
+  /// Why it failed (`UpstreamCause` in `backend/src/lib/llmClient.ts`).
+  final String? cause;
+
+  bool get ok => result != null;
 }
 
 /// Nothing came from the server for [silence] in the middle of a parse. A
@@ -336,28 +372,113 @@ class ModelFailure {
   final String? model;
 }
 
-/// Which model parses dictation, as `GET/PUT /dictation/model` describe it.
-class DictationModel {
-  const DictationModel({
-    required this.model,
-    required this.defaultModel,
-    required this.override,
+/// One model of the server's roster (`backend/src/domain/modelRoster.ts`),
+/// as `GET /dictation/models` describes it.
+///
+/// [baseUrl], [apiKeyEnv] and [keyPresent] come only to the owner; for
+/// everyone else they are null.
+class AiModelEntry {
+  const AiModelEntry({
+    required this.id,
+    required this.name,
+    required this.label,
+    required this.enabled,
+    required this.status,
+    this.baseUrl,
+    this.apiKeyEnv,
+    this.keyPresent,
+    this.autoDisabledReason,
+    this.consecutiveFailures = 0,
+    this.lastSuccessAt,
+    this.lastFailureAt,
   });
 
-  factory DictationModel.fromJson(Map<String, dynamic> json) => DictationModel(
-    model: json['model'] as String,
-    defaultModel: json['defaultModel'] as String,
-    override: json['override'] as String?,
+  factory AiModelEntry.fromJson(Map<String, dynamic> json) => AiModelEntry(
+    id: json['id'] as String?,
+    name: json['name'] as String,
+    label: json['label'] as String?,
+    enabled: json['enabled'] as bool? ?? true,
+    status: json['status'] as String? ?? 'ok',
+    baseUrl: json['baseUrl'] as String?,
+    apiKeyEnv: json['apiKeyEnv'] as String?,
+    keyPresent: json['keyPresent'] as bool?,
+    autoDisabledReason: json['autoDisabledReason'] as String?,
+    consecutiveFailures: (json['consecutiveFailures'] as num?)?.toInt() ?? 0,
+    lastSuccessAt: DateTime.tryParse(json['lastSuccessAt'] as String? ?? ''),
+    lastFailureAt: DateTime.tryParse(json['lastFailureAt'] as String? ?? ''),
   );
 
-  /// The model in use right now.
-  final String model;
+  /// Null for an entry not saved yet.
+  final String? id;
 
-  /// `LLM_MODEL` from the server's `.env`.
-  final String defaultModel;
+  /// The model's name at its provider.
+  final String name;
+  final String? label;
+  final bool enabled;
 
-  /// The model chosen in the app, or null when [defaultModel] is in use.
-  final String? override;
+  /// `ok`, `cooling_down` (three failures, skipped for a while), `disabled`
+  /// (by the owner) or `auto_disabled` (by its own failures).
+  final String status;
+  final String? baseUrl;
+  final String? apiKeyEnv;
+
+  /// Whether the variable [apiKeyEnv] names is set on the server.
+  final bool? keyPresent;
+  final String? autoDisabledReason;
+  final int consecutiveFailures;
+  final DateTime? lastSuccessAt;
+  final DateTime? lastFailureAt;
+
+  String get title => label ?? name;
+
+  /// The body `PUT /dictation/models` takes for this entry.
+  Map<String, dynamic> toInput() => <String, dynamic>{
+    'id': ?id,
+    'name': name,
+    'label': label,
+    'baseUrl': baseUrl,
+    'apiKeyEnv': apiKeyEnv,
+    'enabled': enabled,
+  };
+
+  AiModelEntry edited({
+    required String name,
+    required String? label,
+    required String? baseUrl,
+    required String? apiKeyEnv,
+    bool? enabled,
+  }) => AiModelEntry(
+    id: id,
+    name: name,
+    label: label,
+    enabled: enabled ?? this.enabled,
+    status: status,
+    baseUrl: baseUrl,
+    apiKeyEnv: apiKeyEnv,
+    keyPresent: keyPresent,
+    autoDisabledReason: autoDisabledReason,
+    consecutiveFailures: consecutiveFailures,
+    lastSuccessAt: lastSuccessAt,
+    lastFailureAt: lastFailureAt,
+  );
+}
+
+/// The roster, and the model the server falls back to when it is empty.
+class AiModels {
+  const AiModels({required this.models, required this.fallbackModel});
+
+  factory AiModels.fromJson(Map<String, dynamic> json) => AiModels(
+    models: <AiModelEntry>[
+      for (final entry in json['models'] as List<dynamic>? ?? const <dynamic>[])
+        AiModelEntry.fromJson((entry as Map).cast<String, dynamic>()),
+    ],
+    fallbackModel: json['defaultModel'] as String?,
+  );
+
+  final List<AiModelEntry> models;
+
+  /// The `.env` model (or the old app setting) used while [models] is empty.
+  final String? fallbackModel;
 }
 
 /// `POST /dictation/parse` (F14), and the model it runs on.
@@ -423,6 +544,7 @@ class DictationApi {
     ParseKind kind = ParseKind.task,
     String? noteTitle,
     int? level,
+    bool multi = false,
     CancelToken? cancelToken,
     Duration silence = const Duration(seconds: 20),
   }) {
@@ -484,6 +606,43 @@ class DictationApi {
           emit(const ParseValidated());
         case 'heartbeat':
           emit(const ParseAlive());
+        case 'candidate':
+          final model = data['model'] as String? ?? '';
+          final label = data['modelLabel'] as String? ?? model;
+          final result = data['result'];
+          try {
+            emit(
+              ParseCandidate(
+                TidyCandidate(
+                  model: model,
+                  label: label,
+                  result: TidyResult.fromJson(
+                    kind,
+                    (result as Map).cast<String, dynamic>(),
+                  ),
+                ),
+              ),
+            );
+          } catch (_) {
+            // An answer of a shape this app cannot read is no answer, and
+            // the other model may still have one.
+            emit(
+              ParseCandidate(
+                TidyCandidate(model: model, label: label, cause: 'bad_reply'),
+              ),
+            );
+          }
+        case 'candidate_failed':
+          final model = data['model'] as String? ?? '';
+          emit(
+            ParseCandidate(
+              TidyCandidate(
+                model: model,
+                label: data['modelLabel'] as String? ?? model,
+                cause: data['cause'] as String? ?? 'bad_reply',
+              ),
+            ),
+          );
         case 'result':
           final TidyResult parsed;
           try {
@@ -492,7 +651,13 @@ class DictationApi {
             fail(ApiException(null, 'Unexpected result shape', data));
             return;
           }
-          emit(ParseDone(parsed));
+          emit(
+            ParseDone(
+              parsed,
+              modelLabel:
+                  data['modelLabel'] as String? ?? data['model'] as String?,
+            ),
+          );
           finish();
           unawaited(out.close());
         case 'error':
@@ -523,6 +688,9 @@ class DictationApi {
             // How freely to reword (`domain/ai_level.dart`); the server's
             // default when absent.
             'level': ?level,
+            // "Отправить в несколько": the first models of the roster at
+            // once, each answer a [ParseCandidate].
+            if (multi) 'multi': true,
           },
           headers: const <String, String>{
             'Accept': 'text/event-stream',
@@ -576,23 +744,35 @@ class DictationApi {
     return const <String, dynamic>{};
   }
 
-  /// `GET /dictation/model`. A 503 means no model is configured on the server
-  /// at all -- there is then nothing to choose between.
-  Future<DictationModel> fetchModel() async {
-    final json = await _client.get<Map<String, dynamic>>('/dictation/model');
-    return DictationModel.fromJson(json);
+  /// `GET /dictation/models`: the roster. A 503 means no model is configured
+  /// on the server at all.
+  Future<AiModels> fetchModels() async {
+    final json = await _client.get<Map<String, dynamic>>('/dictation/models');
+    return AiModels.fromJson(json);
   }
 
-  /// `PUT /dictation/model`. Null goes back to the server's `.env` model.
-  ///
-  /// Only the model: the API key stays on the server, in a file the app can
-  /// neither read nor write (`backend/src/domain/dictationModel.ts`).
-  Future<DictationModel> setModel(String? model) async {
+  /// `PUT /dictation/models`: the whole list, in this order. Owner only (403
+  /// otherwise). Keys stay on the server: an entry names the `LLM_*`
+  /// variable that holds its key, never the key.
+  Future<AiModels> saveModels(List<AiModelEntry> models) async {
     final json = await _client.request<Map<String, dynamic>>(
       'PUT',
-      '/dictation/model',
-      body: <String, dynamic>{'model': model},
+      '/dictation/models',
+      body: <String, dynamic>{
+        'models': <Map<String, dynamic>>[
+          for (final model in models) model.toInput(),
+        ],
+      },
     );
-    return DictationModel.fromJson(json);
+    return AiModels.fromJson(json);
+  }
+
+  /// `POST /dictation/models/:id/reenable`: a model its failures switched off,
+  /// back on with a clean slate.
+  Future<AiModels> reenableModel(String id) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/dictation/models/$id/reenable',
+    );
+    return AiModels.fromJson(json);
   }
 }

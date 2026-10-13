@@ -5,6 +5,7 @@ import { HttpError } from "../lib/errors";
 import { userIdOf } from "../lib/users";
 import { isCoolingDown, RosterEntry } from "../domain/modelRoster";
 import { readRoster, reenableModel, writeRoster } from "../domain/modelRosterStore";
+import { resolveDictationModel } from "../domain/dictationModel";
 import { idParamSchema } from "../schemas";
 
 /*
@@ -111,7 +112,8 @@ export function dictationModelRoutes(options: DictationModelsOptions | null) {
     const models = (await readRoster()).map((entry) => describe(entry, owner, now));
     return {
       models,
-      defaultModel: options?.defaultModel ?? null,
+      // What answers while the list is empty: the old app setting, else `.env`.
+      defaultModel: options === null ? null : await resolveDictationModel(options.defaultModel),
       ...(owner ? { defaultBaseUrl: options?.defaultBaseUrl ?? null } : {}),
     };
   }
