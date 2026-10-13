@@ -481,6 +481,162 @@ class AiModels {
   final String? fallbackModel;
 }
 
+/// `GET /dictation/stats` (`backend/src/domain/aiStats.ts`): how each model
+/// does, and how each level's answers were taken.
+class AiStats {
+  const AiStats({
+    required this.days,
+    required this.rows,
+    required this.models,
+    required this.levels,
+  });
+
+  factory AiStats.fromJson(Map<String, dynamic> json) => AiStats(
+    days: (json['days'] as num?)?.toInt() ?? 0,
+    rows: (json['rows'] as num?)?.toInt() ?? 0,
+    models: <AiModelStats>[
+      for (final m in json['models'] as List<dynamic>? ?? const <dynamic>[])
+        AiModelStats.fromJson((m as Map).cast<String, dynamic>()),
+    ],
+    levels: <AiLevelStats>[
+      for (final l in json['levels'] as List<dynamic>? ?? const <dynamic>[])
+        AiLevelStats.fromJson((l as Map).cast<String, dynamic>()),
+    ],
+  );
+
+  /// The period, in days; 0 for all time.
+  final int days;
+
+  /// Dataset rows read.
+  final int rows;
+  final List<AiModelStats> models;
+  final List<AiLevelStats> levels;
+}
+
+class AiModelStats {
+  const AiModelStats({
+    required this.model,
+    required this.total,
+    required this.ok,
+    required this.failed,
+    this.avgDurationMs,
+  });
+
+  factory AiModelStats.fromJson(Map<String, dynamic> json) => AiModelStats(
+    model: json['model'] as String,
+    total: (json['total'] as num).toInt(),
+    ok: (json['ok'] as num).toInt(),
+    failed: (json['failed'] as num).toInt(),
+    avgDurationMs: (json['avgDurationMs'] as num?)?.toInt(),
+  );
+
+  final String model;
+  final int total;
+  final int ok;
+  final int failed;
+  final int? avgDurationMs;
+}
+
+class AiLevelStats {
+  const AiLevelStats({
+    required this.kind,
+    required this.level,
+    required this.promptVersion,
+    required this.answered,
+    required this.savedAsIs,
+    required this.savedEdited,
+    required this.notSaved,
+  });
+
+  factory AiLevelStats.fromJson(Map<String, dynamic> json) => AiLevelStats(
+    kind: json['kind'] as String,
+    level: (json['level'] as num?)?.toInt(),
+    promptVersion: json['promptVersion'] as String,
+    answered: (json['answered'] as num).toInt(),
+    savedAsIs: (json['savedAsIs'] as num).toInt(),
+    savedEdited: (json['savedEdited'] as num).toInt(),
+    notSaved: (json['notSaved'] as num).toInt(),
+  );
+
+  final String kind;
+
+  /// Null for answers from before levels existed.
+  final int? level;
+  final String promptVersion;
+  final int answered;
+  final int savedAsIs;
+  final int savedEdited;
+  final int notSaved;
+}
+
+/// `GET /dictation/prompts`: the level blocks, and every kind's prompt at
+/// every level as the model reads it.
+class AiPrompts {
+  const AiPrompts({required this.levels, required this.kinds});
+
+  factory AiPrompts.fromJson(Map<String, dynamic> json) => AiPrompts(
+    levels: <AiLevelBlock>[
+      for (final l in json['levels'] as List<dynamic>? ?? const <dynamic>[])
+        AiLevelBlock.fromJson((l as Map).cast<String, dynamic>()),
+    ],
+    kinds: <AiKindPrompts>[
+      for (final k in json['kinds'] as List<dynamic>? ?? const <dynamic>[])
+        AiKindPrompts.fromJson((k as Map).cast<String, dynamic>()),
+    ],
+  );
+
+  final List<AiLevelBlock> levels;
+  final List<AiKindPrompts> kinds;
+}
+
+class AiLevelBlock {
+  const AiLevelBlock({
+    required this.level,
+    required this.rules,
+    required this.defaultRules,
+    required this.overridden,
+  });
+
+  factory AiLevelBlock.fromJson(Map<String, dynamic> json) => AiLevelBlock(
+    level: (json['level'] as num).toInt(),
+    rules: (json['rules'] as List<dynamic>).cast<String>(),
+    defaultRules: (json['defaultRules'] as List<dynamic>).cast<String>(),
+    overridden: json['overridden'] as bool? ?? false,
+  );
+
+  final int level;
+  final List<String> rules;
+  final List<String> defaultRules;
+
+  /// Rewritten by the owner, not the default.
+  final bool overridden;
+}
+
+class AiKindPrompts {
+  const AiKindPrompts({
+    required this.kind,
+    required this.version,
+    required this.prompts,
+  });
+
+  factory AiKindPrompts.fromJson(Map<String, dynamic> json) => AiKindPrompts(
+    kind: json['kind'] as String,
+    version: json['version'] as String,
+    prompts: <({int level, String system, String user})>[
+      for (final p in json['prompts'] as List<dynamic>? ?? const <dynamic>[])
+        (
+          level: ((p as Map)['level'] as num).toInt(),
+          system: p['system'] as String,
+          user: p['user'] as String,
+        ),
+    ],
+  );
+
+  final String kind;
+  final String version;
+  final List<({int level, String system, String user})> prompts;
+}
+
 /// `POST /dictation/parse` (F14), and the model it runs on.
 ///
 /// ## The server writes nothing
@@ -774,5 +930,31 @@ class DictationApi {
       '/dictation/models/$id/reenable',
     );
     return AiModels.fromJson(json);
+  }
+
+  /// `GET /dictation/stats`, for the last [days] days (0: all time). Owner
+  /// only (403 otherwise).
+  Future<AiStats> fetchStats({int days = 30}) async {
+    final json = await _client.get<Map<String, dynamic>>(
+      '/dictation/stats?days=$days',
+    );
+    return AiStats.fromJson(json);
+  }
+
+  /// `GET /dictation/prompts`. Owner only.
+  Future<AiPrompts> fetchPrompts() async {
+    final json = await _client.get<Map<String, dynamic>>('/dictation/prompts');
+    return AiPrompts.fromJson(json);
+  }
+
+  /// `PUT /dictation/prompts/levels/:level`: [level]'s block rewritten, or
+  /// back to the default for null.
+  Future<AiPrompts> saveLevelRules(int level, List<String>? rules) async {
+    final json = await _client.request<Map<String, dynamic>>(
+      'PUT',
+      '/dictation/prompts/levels/$level',
+      body: <String, dynamic>{'rules': rules},
+    );
+    return AiPrompts.fromJson(json);
   }
 }

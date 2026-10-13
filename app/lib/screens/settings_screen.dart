@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../voice/voice_model.dart';
 import '../widgets/mutation_feedback.dart';
+import 'ai_insights_screens.dart';
 import 'ai_models_screen.dart';
 import 'dictation_archive_screen.dart';
 import 'notification_bench_screen.dart';
@@ -63,11 +64,28 @@ class SettingsScreen extends ConsumerWidget {
                         ],
                       ),
                       _SectionLabel('Голос'),
+                      _SettingsGroup(children: <Widget>[_VoiceModelTile()]),
+                      _SectionLabel('AI'),
                       _SettingsGroup(
                         children: <Widget>[
-                          _VoiceModelTile(),
-                          _AiModelsTile(),
                           _AiLevelTile(),
+                          _AiModelsTile(),
+                          _AiInsightTile(
+                            icon: Icons.insights_outlined,
+                            title: AiStatsScreen.title,
+                            description:
+                                'Как отвечают модели и как принимаются ответы '
+                                'на каждом уровне. Только для владельца.',
+                            screen: AiStatsScreen(),
+                          ),
+                          _AiInsightTile(
+                            icon: Icons.notes_outlined,
+                            title: AiPromptsScreen.title,
+                            description:
+                                'Что именно просим у модели, и что значит '
+                                'каждый уровень — с правкой. Только для владельца.',
+                            screen: AiPromptsScreen(),
+                          ),
                         ],
                       ),
                       _SectionLabel('Диагностика'),
@@ -354,6 +372,34 @@ class _AiModelsTile extends ConsumerWidget {
         : 'первая: ${on.first.title}';
     return '${models.length} в списке, $first'
         '${off > 0 ? ' · выключено: $off' : ''}';
+  }
+}
+
+/// A row that opens one of the owner's AI screens (statistics, prompts).
+class _AiInsightTile extends StatelessWidget {
+  const _AiInsightTile({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.screen,
+  });
+
+  final IconData icon;
+  final String title;
+  final String description;
+  final Widget screen;
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingRow(
+      icon: icon,
+      title: title,
+      description: description,
+      trailing: const _Chevron(),
+      onTap: () => Navigator.of(
+        context,
+      ).push(MaterialPageRoute<void>(builder: (_) => screen)),
+    );
   }
 }
 
