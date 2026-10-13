@@ -5,7 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_exception.dart';
 import '../api/dictation_api.dart';
+import '../domain/ai_level.dart';
 import '../providers/dependencies.dart';
+import '../providers/dictation_providers.dart';
 import '../providers/reminder_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -65,6 +67,7 @@ class TidyJob {
     required ParseKind kind,
     required String text,
     String? noteTitle,
+    int? level,
     required VoidCallback onProgress,
     required void Function(TidyResult result) onDone,
     required void Function(TidyFailure failure) onFailed,
@@ -76,6 +79,7 @@ class TidyJob {
         kind: kind,
         text: text,
         noteTitle: noteTitle,
+        level: level,
         onProgress: onProgress,
         onDone: onDone,
         onFailed: onFailed,
@@ -105,6 +109,7 @@ class TidyJob {
     required ParseKind kind,
     required String text,
     required String? noteTitle,
+    required int? level,
     required VoidCallback onProgress,
     required void Function(TidyResult result) onDone,
     required void Function(TidyFailure failure) onFailed,
@@ -131,6 +136,7 @@ class TidyJob {
           timeZone: zone,
           kind: kind,
           noteTitle: noteTitle,
+          level: level,
         )
         .listen(
           (event) {
@@ -400,9 +406,17 @@ class _TidyTextFieldState extends State<TidyTextField>
   }
 }
 
-/// "Как надиктовано" and "Разобрать заново", side by side under the answer.
+/// "Как надиктовано" and "Разобрать заново", side by side under the answer --
+/// and above them, with [level], the switch for how hard the model may work
+/// the text over: picking another stop runs the model again at it.
 class TidyActions extends StatelessWidget {
-  const TidyActions({required this.onAsIs, required this.onRerun, super.key});
+  const TidyActions({
+    required this.onAsIs,
+    required this.onRerun,
+    this.level,
+    this.onLevel,
+    super.key,
+  });
 
   /// The source, as it is -- the answer thrown away.
   final VoidCallback onAsIs;
@@ -410,8 +424,29 @@ class TidyActions extends StatelessWidget {
   /// The model again, from the source. Null while a parse is running.
   final VoidCallback? onRerun;
 
+  /// The level the answer was asked at (`domain/ai_level.dart`); no switch
+  /// without it.
+  final int? level;
+
+  /// Another stop picked. Null while a parse is running.
+  final ValueChanged<int>? onLevel;
+
   @override
   Widget build(BuildContext context) {
+    final level = this.level;
+    final buttons = _buttons();
+    if (level == null) return buttons;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        TidyLevelSwitch(level: level, onLevel: onLevel),
+        const SizedBox(height: 8),
+        buttons,
+      ],
+    );
+  }
+
+  Widget _buttons() {
     Widget button(String label, IconData icon, VoidCallback? onPressed) {
       return Expanded(
         child: SizedBox(
@@ -444,6 +479,71 @@ class TidyActions extends StatelessWidget {
         button('Как надиктовано', Icons.undo, onAsIs),
         const SizedBox(width: 8),
         button('Разобрать заново', Icons.refresh, onRerun),
+      ],
+    );
+  }
+}
+
+/// "Лёгкая · Обычная · Сильная": how hard the model may work the text over,
+/// one tap from the answer. The stop in use is filled; the others rerun the
+/// model at their level.
+class TidyLevelSwitch extends StatelessWidget {
+  const TidyLevelSwitch({required this.level, this.onLevel, super.key});
+
+  final int level;
+  final ValueChanged<int>? onLevel;
+
+  @override
+  Widget build(BuildContext context) {
+    final onLevel = this.onLevel;
+    return Row(
+      children: <Widget>[
+        Text(
+          'Сила',
+          style: AppText.caption.copyWith(color: AppColors.voiceMuted),
+        ),
+        const SizedBox(width: 10),
+        for (final stop in aiLevels) ...<Widget>[
+          Expanded(
+            child: SizedBox(
+              height: 34,
+              child: Material(
+                color: stop == level ? AppColors.voiceWell : Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(
+                    color: stop == level
+                        ? AppColors.voiceLevelHigh
+                        : AppColors.voiceLine,
+                  ),
+                ),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: stop == level || onLevel == null
+                      ? null
+                      : () => onLevel(stop),
+                  child: Center(
+                    child: Text(
+                      aiLevelName(stop),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: stop == level
+                            ? AppColors.voiceBright
+                            : onLevel == null
+                            ? AppColors.voiceLine
+                            : AppColors.voiceInk,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (stop != aiLevels.last) const SizedBox(width: 6),
+        ],
       ],
     );
   }
@@ -642,6 +742,10 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
   TidyResult? _result;
   bool _showSource = false;
 
+  /// The level this text is processed at: the settings' level at first,
+  /// then whatever the switch over the answer says (`TidyLevelSwitch`).
+  int? _level;
+
   bool get _running => _progress != null && !_progress!.failed;
 
   @override
@@ -666,12 +770,15 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
     if (text.isEmpty) return;
     FocusScope.of(context).unfocus();
     _job?.cancel();
+    final level = _level ??=
+        ref.read(aiLevelSettingProvider).value ?? aiLevelDefault;
     late final TidyJob job;
     job = TidyJob.start(
       ref,
       kind: widget.kind,
       text: text,
       noteTitle: widget.noteTitle,
+      level: level,
       onProgress: () {
         if (mounted && _job == job) setState(() {});
       },
@@ -1015,7 +1122,17 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          TidyActions(onAsIs: _asIs, onRerun: _running ? null : _run),
+          TidyActions(
+            onAsIs: _asIs,
+            onRerun: _running ? null : _run,
+            level: _level,
+            onLevel: _running
+                ? null
+                : (level) {
+                    setState(() => _level = level);
+                    _run();
+                  },
+          ),
           const SizedBox(height: 10),
           SizedBox(
             height: 52,

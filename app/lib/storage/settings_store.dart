@@ -80,6 +80,12 @@ abstract interface class SettingsStore {
 
   /// Remembers the planning layout. May throw.
   Future<void> writePlanLayout(String layout);
+
+  /// The AI processing level new parses start at (`domain/ai_level.dart`);
+  /// null when none was chosen.
+  Future<int?> readAiLevel();
+
+  Future<void> writeAiLevel(int level);
 }
 
 /// [SettingsStore] on top of `shared_preferences`.
@@ -112,6 +118,7 @@ class PreferencesSettingsStore implements SettingsStore {
   /// wire names rather than enum indices -- see the interface.
   static const String appModeKey = 'shell.mode';
   static const String planLayoutKey = 'plan.layout';
+  static const String aiLevelKey = 'ai.level';
 
   final Future<SharedPreferences> Function() _preferences;
 
@@ -208,4 +215,21 @@ class PreferencesSettingsStore implements SettingsStore {
   @override
   Future<void> writePlanLayout(String layout) =>
       _writeString(planLayoutKey, layout);
+
+  @override
+  Future<int?> readAiLevel() async {
+    try {
+      final preferences = await _preferences();
+      return preferences.getInt(aiLevelKey);
+    } catch (error) {
+      debugPrint('Could not read $aiLevelKey: $error');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writeAiLevel(int level) async {
+    final preferences = await _preferences();
+    await preferences.setInt(aiLevelKey, level);
+  }
 }

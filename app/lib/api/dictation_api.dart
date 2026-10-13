@@ -416,12 +416,13 @@ class DictationApi {
   ///
   /// [kind] picks the prompt and the shape of [ParseDone.result];
   /// [noteTitle] is sent for [ParseKind.note] only, so the model knows the
-  /// note already has a title.
+  /// note already has a title; [level] is how freely the model may reword.
   Stream<ParseProgress> parseStream({
     required String text,
     required String timeZone,
     ParseKind kind = ParseKind.task,
     String? noteTitle,
+    int? level,
     CancelToken? cancelToken,
     Duration silence = const Duration(seconds: 20),
   }) {
@@ -519,6 +520,9 @@ class DictationApi {
             'kind': kind.wire,
             if (kind == ParseKind.note && noteTitle != null)
               'noteTitle': noteTitle,
+            // How freely to reword (`domain/ai_level.dart`); the server's
+            // default when absent.
+            'level': ?level,
           },
           headers: const <String, String>{
             'Accept': 'text/event-stream',

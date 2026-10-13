@@ -202,6 +202,7 @@ void main() {
           'text': 'Купить кабель',
           'timeZone': 'Europe/Moscow',
           'kind': 'task',
+          'level': 2,
         },
       ]);
       expect(find.text('Разобрано — можно править'), findsOneWidget);

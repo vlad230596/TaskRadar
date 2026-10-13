@@ -27,6 +27,9 @@ class FakeSettingsStore implements SettingsStore {
   /// list.
   String? planLayout;
 
+  /// What [readAiLevel] returns. Null is "never chosen": the default level.
+  int? aiLevel;
+
   /// When set, every write throws it.
   Object? writeFailure;
 
@@ -97,5 +100,15 @@ class FakeSettingsStore implements SettingsStore {
     if (failure != null) throw failure;
     layoutWrites.add(layout);
     planLayout = layout;
+  }
+
+  @override
+  Future<int?> readAiLevel() async => aiLevel;
+
+  @override
+  Future<void> writeAiLevel(int level) async {
+    final failure = writeFailure;
+    if (failure != null) throw failure;
+    aiLevel = level;
   }
 }

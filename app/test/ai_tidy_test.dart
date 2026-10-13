@@ -138,6 +138,8 @@ void main() {
         'timeZone': 'Europe/Moscow',
         'kind': 'note',
         'noteTitle': 'Дача',
+        // The default level, from settings nobody has touched.
+        'level': 2,
       });
       expect(find.text('Результат AI'), findsOneWidget);
       expect(find.text('- гвозди\n- краска'), findsOneWidget);
@@ -157,6 +159,23 @@ void main() {
       await tester.tap(find.text('Результат AI'));
       await settle(tester);
       expect(find.text('Гвозди и краска.'), findsOneWidget);
+    });
+
+    testWidgets('the level switch runs the model again at the picked level', (
+      tester,
+    ) async {
+      answers
+        ..add(<String, dynamic>{'content': 'Гвозди и краска.'})
+        ..add(<String, dynamic>{'content': 'Гвозди, краска.'});
+      await open(tester);
+      expect(parses.single['level'], 2);
+
+      await tester.tap(find.text('Сильная'));
+      await settle(tester);
+
+      expect(parses.map((body) => body['level']), <int>[2, 3]);
+      expect(parses[1]['text'], 'ну значит гвозди и краска');
+      expect(find.text('Гвозди, краска.'), findsOneWidget);
     });
 
     testWidgets('"Разобрать заново" runs from the source, never the answer', (

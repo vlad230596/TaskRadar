@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_exception.dart';
 import '../api/dictation_api.dart';
+import '../domain/ai_level.dart';
 import '../domain/reminder_schedule.dart';
 import '../providers/dictation_providers.dart';
 import '../providers/reminder_providers.dart';
@@ -63,6 +64,7 @@ class SettingsScreen extends ConsumerWidget {
                         children: <Widget>[
                           _VoiceModelTile(),
                           _DictationModelTile(),
+                          _AiLevelTile(),
                         ],
                       ),
                       _SectionLabel('Диагностика'),
@@ -256,6 +258,55 @@ class _ReminderTimeTile extends ConsumerWidget {
 /// free, a faster one appeared -- is not an SSH session. Only the model: the
 /// API key stays in the server's `.env`, which this app can neither read nor
 /// write, and that is deliberate (`backend/src/domain/dictationModel.ts`).
+/// How hard AI works a text over by default (`domain/ai_level.dart`). Each
+/// parse starts here; the switch over the answer changes it for one text.
+class _AiLevelTile extends ConsumerWidget {
+  const _AiLevelTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final level = ref.watch(aiLevelSettingProvider).value ?? aiLevelDefault;
+    return _SettingRow(
+      icon: Icons.tune,
+      title: 'Сила обработки AI · ${aiLevelName(level)}',
+      description: aiLevelHint(level),
+      trailing: const _Chevron(),
+      onTap: () => _pick(context, ref, level),
+    );
+  }
+
+  Future<void> _pick(BuildContext context, WidgetRef ref, int current) async {
+    final picked = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: RadioGroup<int>(
+          groupValue: current,
+          onChanged: (value) => Navigator.of(sheetContext).pop(value),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (final level in aiLevels)
+                RadioListTile<int>(
+                  value: level,
+                  title: Text(aiLevelName(level)),
+                  subtitle: Text(aiLevelHint(level)),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || picked == current || !context.mounted) return;
+    await runMutation(
+      context,
+      () => ref.read(aiLevelSettingProvider.notifier).choose(picked),
+      failure: 'Не удалось запомнить силу обработки.',
+    );
+  }
+}
+
 class _DictationModelTile extends ConsumerWidget {
   const _DictationModelTile();
 

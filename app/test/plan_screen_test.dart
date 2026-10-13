@@ -339,6 +339,12 @@ void main() {
       await settle(tester);
 
       expect(find.byType(SettingsScreen), findsOneWidget);
+      // The last row of a list that has grown past the screen.
+      await tester.scrollUntilVisible(
+        find.text(NotificationBenchScreen.title),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text(NotificationBenchScreen.title), findsOneWidget);
     });
   });

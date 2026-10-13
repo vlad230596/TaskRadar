@@ -560,7 +560,7 @@ final class ProjectTasksProvider
   }
 }
 
-String _$projectTasksHash() => r'f3b4bf38dd929ba9b222d2d592f89071ae92c7db';
+String _$projectTasksHash() => r'1573b0a4711ecbeeabc359e8cc9954c26a2af850';
 
 /// One project's tasks, and every write that touches them.
 
@@ -845,7 +845,7 @@ final class ProjectNotesProvider
   }
 }
 
-String _$projectNotesHash() => r'6176502eb03d166b7747a454f555983331c1d692';
+String _$projectNotesHash() => r'3091a231036f4f229b3c8bd800db7c865e154be4';
 
 final class ProjectNotesFamily extends $Family
     with

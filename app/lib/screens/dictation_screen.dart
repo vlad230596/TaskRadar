@@ -5,9 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dictation_api.dart';
+import '../domain/ai_level.dart';
 import '../models/board_project.dart';
 import '../providers/board_providers.dart';
 import '../providers/capture_queue_providers.dart';
+import '../providers/dictation_providers.dart';
 import '../providers/project_providers.dart';
 import '../providers/voice_providers.dart';
 import '../theme/app_theme.dart';
@@ -156,6 +158,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// True while the server's model is working on the words (F14). Shown as
   /// its own stage, and keeps "Готово" from saving twice.
   bool _tidying = false;
+
+  /// The level the words are processed at: the settings' level at first,
+  /// then whatever the switch over the answer says (`TidyLevelSwitch`).
+  int? _level;
 
   /// The model's answer, once "Разобрать" has been pressed and answered.
   /// Non-null means "Результат AI | Исходник" is on screen, and the answer is
@@ -389,11 +395,14 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     FocusScope.of(context).unfocus();
     _job?.cancel();
 
+    final level = _level ??=
+        ref.read(aiLevelSettingProvider).value ?? aiLevelDefault;
     late final TidyJob job;
     job = TidyJob.start(
       ref,
       kind: _kind,
       text: _source(text),
+      level: level,
       onProgress: () {
         if (mounted && _job == job) setState(() {});
       },
@@ -1129,6 +1138,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             TidyActions(
               onAsIs: _untidy,
               onRerun: _tidying || busy ? null : _rerun,
+              level: _level,
+              onLevel: _tidying || busy
+                  ? null
+                  : (level) {
+                      _level = level;
+                      _rerun();
+                    },
             ),
             const SizedBox(height: 10),
           ],
