@@ -18,6 +18,8 @@ import {
 } from "../domain/parsePipeline";
 import { planMulti, planSingle, RosterEntry } from "../domain/modelRoster";
 import { MultiOutcome, runMulti, runSingle } from "../domain/modelRouter";
+import { levelRulesVersion } from "../domain/aiLevels";
+import { ensurePromptOverridesLoaded } from "../domain/promptOverrides";
 import { SandboxInput, TidyParsers } from "../domain/tidy";
 import {
   parseDictationSchema,
@@ -113,7 +115,9 @@ async function keepSample(
         timeZone: input.timeZone,
         requestedAt: input.now,
         model: trace.model,
-        promptVersion: trace.promptVersion,
+        // With the owner's edits of the level blocks, if any: rows of
+        // different wordings must not be counted as one experiment.
+        promptVersion: trace.promptVersion + levelRulesVersion(),
         level: input.level ?? null,
         status: trace.result === null ? "failed" : "ok",
         rawReply: trace.rawReply,
@@ -242,6 +246,8 @@ export function dictationRoutes(
       const userId = userIdOf(request);
       const pipeline = pipelineFor(userId, feature, body.kind, request.log);
       if (pipeline === null) throw new DictationUnavailableError();
+      // The owner's edits of the level blocks, read on the first parse.
+      await ensurePromptOverridesLoaded();
 
       /*
        * Who is asked (`../domain/modelRoster.ts`): with a roster, a plan of

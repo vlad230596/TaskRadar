@@ -73,5 +73,43 @@ export function normaliseLevel(level: number | undefined): number {
  * outright -- every kind but `task`, which reads reminders from a calendar.
  */
 export function cleanupRules(level: number | undefined, opts: { dates: boolean }): string[] {
-  return [...baseRules(opts), "", ...(LEVEL_RULES[normaliseLevel(level)] ?? [])];
+  return [...baseRules(opts), "", ...levelRules(normaliseLevel(level))];
+}
+
+// ---- The owner's edits (`./promptOverrides.ts`) ----
+
+/*
+ * The owner may rewrite a level's block from the app -- what "Обычная" means
+ * is a matter of taste, and taste is tried, not argued. The edits live in the
+ * database and are mirrored here, so the prompt builders stay synchronous.
+ */
+let overrides: Readonly<Record<number, readonly string[]>> = {};
+
+/** Replaces the mirrored edits; `./promptOverrides.ts` calls it. */
+export function setLevelOverrides(next: Readonly<Record<number, readonly string[]>>): void {
+  overrides = next;
+}
+
+/** [level]'s block as the prompts use it: the owner's edit, or the default. */
+export function levelRules(level: number): readonly string[] {
+  return overrides[level] ?? LEVEL_RULES[level] ?? [];
+}
+
+/** Whether the owner has rewritten [level]'s block. */
+export function isLevelOverridden(level: number): boolean {
+  return overrides[level] !== undefined;
+}
+
+/**
+ * Appended to every row's prompt version while any block is edited:
+ * `+lv` and a short hash of the edits, so rows from different wordings are
+ * never counted as one experiment -- the statistics split on it.
+ */
+export function levelRulesVersion(): string {
+  const levels = Object.keys(overrides).sort();
+  if (levels.length === 0) return "";
+  const text = levels.map((level) => `${level}:${overrides[Number(level)]!.join("/")}`).join("|");
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) hash = (Math.imul(hash, 31) + text.charCodeAt(i)) | 0;
+  return `+lv${(hash >>> 0).toString(36)}`;
 }

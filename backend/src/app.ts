@@ -22,6 +22,7 @@ import { CompleteJson, createOpenAiCompatibleClient } from "./lib/llmClient";
 import { recordAttempt, rosterForParsing } from "./domain/modelRosterStore";
 import type { RosterEntry } from "./domain/modelRoster";
 import { dictationModelRoutes } from "./routes/dictationModels";
+import { dictationInsightRoutes } from "./routes/dictationInsights";
 import { createDictationParser } from "./domain/dictation";
 import { createTidyParsers } from "./domain/tidy";
 import { resolveDictationModel } from "./domain/dictationModel";
@@ -149,6 +150,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         : { defaultModel: dictation.defaultModel, defaultBaseUrl: dictation.defaultBaseUrl ?? "" },
     ),
   );
+  await app.register(dictationInsightRoutes());
 
   return app;
 }
