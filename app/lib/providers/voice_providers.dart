@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+import '../voice/dictation_archive.dart';
 import '../voice/speech_recognizer.dart';
 import '../voice/voice_model.dart';
 import '../voice/voice_model_store.dart';
@@ -38,6 +39,11 @@ VoiceRecorder voiceRecorder(Ref ref) {
   ref.onDispose(recorder.dispose);
   return recorder;
 }
+
+/// The last few recordings, kept on this device for debugging -- see
+/// [DictationArchive]. Never sent anywhere.
+@Riverpod(keepAlive: true)
+DictationArchive dictationArchive(Ref ref) => DictationArchive();
 
 /// The recogniser. Same lifetime as [voiceRecorder] and for a bigger reason:
 /// loaded, it holds hundreds of megabytes of weights, and that has to go back
@@ -724,6 +730,7 @@ class VoiceDictation extends _$VoiceDictation {
     }
 
     state = DictationRecognising(length: length);
+    var kept = false;
     try {
       final model = ref.read(voiceModelInstallationProvider);
       if (model is VoiceModelReady) await _ensureLoaded(model.installed);
@@ -764,6 +771,10 @@ class VoiceDictation extends _$VoiceDictation {
               );
             },
           );
+      // A debug copy, with what it was heard as, before anything deletes the
+      // file -- silence included, which is exactly the case worth hearing.
+      await ref.read(dictationArchiveProvider).keep(path, text: text);
+      kept = true;
       if (!ref.mounted) return;
 
       if (text.isEmpty) {
@@ -786,6 +797,8 @@ class VoiceDictation extends _$VoiceDictation {
       await recorder.discard(path);
     } catch (error) {
       debugPrint('Recognition failed: $error');
+      // The recording that could not be recognised: the one most worth keeping.
+      if (!kept) await ref.read(dictationArchiveProvider).keep(path);
       if (!ref.mounted) return;
       _fail(const DictationFailed('Не удалось распознать запись.'));
     }

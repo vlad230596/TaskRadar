@@ -152,6 +152,12 @@ dependencies:
   # the OS on a phone.
   archive: ^4.3.0
 
+  # Playing back the last few dictations on the debug screen (14.10.2026,
+  # `lib/voice/dictation_archive.dart`): hearing what was said next to what
+  # was recognised is the only way to tell a misheard word from a misspoken
+  # one. Local files only -- the audio never goes to the server.
+  audioplayers: ^6.7.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

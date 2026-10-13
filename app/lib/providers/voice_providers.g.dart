@@ -143,6 +143,60 @@ final class VoiceRecorderProvider
 
 String _$voiceRecorderHash() => r'3c5529ee31dd9f3441761ab5f657301833676d74';
 
+/// The last few recordings, kept on this device for debugging -- see
+/// [DictationArchive]. Never sent anywhere.
+
+@ProviderFor(dictationArchive)
+final dictationArchiveProvider = DictationArchiveProvider._();
+
+/// The last few recordings, kept on this device for debugging -- see
+/// [DictationArchive]. Never sent anywhere.
+
+final class DictationArchiveProvider
+    extends
+        $FunctionalProvider<
+          DictationArchive,
+          DictationArchive,
+          DictationArchive
+        >
+    with $Provider<DictationArchive> {
+  /// The last few recordings, kept on this device for debugging -- see
+  /// [DictationArchive]. Never sent anywhere.
+  DictationArchiveProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'dictationArchiveProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$dictationArchiveHash();
+
+  @$internal
+  @override
+  $ProviderElement<DictationArchive> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  DictationArchive create(Ref ref) {
+    return dictationArchive(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(DictationArchive value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<DictationArchive>(value),
+    );
+  }
+}
+
+String _$dictationArchiveHash() => r'488f113b56a39fc10d8ccafdd5b9ad2e09f4c3a7';
+
 /// The recogniser. Same lifetime as [voiceRecorder] and for a bigger reason:
 /// loaded, it holds hundreds of megabytes of weights, and that has to go back
 /// when the user leaves the screen.
@@ -538,7 +592,7 @@ final class VoiceDictationProvider
   }
 }
 
-String _$voiceDictationHash() => r'fd89fb27f7f18e006943cf3e24ebfa9f8b9310a5';
+String _$voiceDictationHash() => r'9756df06e7299a85f71d274164ea0f30b49d505a';
 
 /// The dictation: start, speak, stop, get text.
 ///

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../voice/voice_model.dart';
 import '../widgets/mutation_feedback.dart';
+import 'dictation_archive_screen.dart';
 import 'notification_bench_screen.dart';
 
 /// Settings (F4). One real setting, and the two diagnostics that belong next to
@@ -68,7 +70,13 @@ class SettingsScreen extends ConsumerWidget {
                         ],
                       ),
                       _SectionLabel('Диагностика'),
-                      _SettingsGroup(children: <Widget>[_BenchTile()]),
+                      _SettingsGroup(
+                        children: <Widget>[
+                          _BenchTile(),
+                          // Files on the device: there are none in a browser.
+                          if (!kIsWeb) _DictationArchiveTile(),
+                        ],
+                      ),
                     ],
                   ),
                 ),
@@ -512,6 +520,25 @@ class _PermissionsTile extends ConsumerWidget {
 /// go away just because the product feature is finished. It moved off the board
 /// app bar because it is a diagnostic, and a diagnostic on the home screen
 /// competes with the things the home screen is for.
+class _DictationArchiveTile extends StatelessWidget {
+  const _DictationArchiveTile();
+
+  @override
+  Widget build(BuildContext context) {
+    return _SettingRow(
+      icon: Icons.graphic_eq,
+      title: DictationArchiveScreen.title,
+      description:
+          'Последние 10 записей и как они распознались — чтобы отличить '
+          'ошибку распознавания от оговорки. Только на этом устройстве.',
+      trailing: const _Chevron(),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => const DictationArchiveScreen()),
+      ),
+    );
+  }
+}
+
 class _BenchTile extends StatelessWidget {
   const _BenchTile();
 
