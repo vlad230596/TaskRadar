@@ -18,7 +18,10 @@ import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfi
 import { createAuthGuard } from "./lib/authGuard";
 import { UserStore, prismaUserStore } from "./lib/users";
 import { loadLlmConfig, streamTimeoutFor } from "./lib/llmConfig";
-import { createOpenAiCompatibleClient } from "./lib/llmClient";
+import { CompleteJson, createOpenAiCompatibleClient } from "./lib/llmClient";
+import { recordAttempt, rosterForParsing } from "./domain/modelRosterStore";
+import type { RosterEntry } from "./domain/modelRoster";
+import { dictationModelRoutes } from "./routes/dictationModels";
 import { createDictationParser } from "./domain/dictation";
 import { createTidyParsers } from "./domain/tidy";
 import { resolveDictationModel } from "./domain/dictationModel";
@@ -54,11 +57,35 @@ function defaultDictation(): DictationFeature | null {
   if (config === null) return null;
   const complete = createOpenAiCompatibleClient(config);
   const resolveModel = () => resolveDictationModel(config.model);
+  /*
+   * One client per provider and key (`../domain/modelRoster.ts`): an entry
+   * with no URL or key of its own uses `.env`'s. Keys are read from the
+   * environment by the name the entry gives, never stored anywhere else.
+   */
+  const clients = new Map<string, CompleteJson>();
+  const clientFor = (entry: RosterEntry): CompleteJson => {
+    const baseUrl = entry.baseUrl ?? config.baseUrl;
+    const key = `${baseUrl}\n${entry.apiKeyEnv ?? ""}`;
+    let client = clients.get(key);
+    if (client === undefined) {
+      const apiKey =
+        entry.apiKeyEnv === null ? config.apiKey : (process.env[entry.apiKeyEnv] ?? "");
+      client = createOpenAiCompatibleClient({ ...config, baseUrl, apiKey });
+      clients.set(key, client);
+    }
+    return client;
+  };
   return {
     defaultModel: config.model,
+    defaultBaseUrl: config.baseUrl,
     parser: createDictationParser(complete, resolveModel),
     tidiers: createTidyParsers(complete, resolveModel),
     streamTimeoutMs: (textLength) => streamTimeoutFor(config, textLength),
+    roster: {
+      read: () => rosterForParsing(config.model),
+      record: (entry, ok) => recordAttempt(entry, ok),
+      clientFor,
+    },
   };
 }
 
@@ -115,6 +142,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       heartbeatMs: options.dictationHeartbeatMs,
       dailyLimit: options.aiDailyLimit,
     }));
+  await app.register(
+    dictationModelRoutes(
+      dictation === null
+        ? null
+        : { defaultModel: dictation.defaultModel, defaultBaseUrl: dictation.defaultBaseUrl ?? "" },
+    ),
+  );
 
   return app;
 }

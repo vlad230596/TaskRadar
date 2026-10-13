@@ -47,6 +47,12 @@ export interface ParseHooks {
   timeoutMs?: number | undefined;
   /** Aborted when nobody is waiting for the answer any more. */
   signal?: AbortSignal | undefined;
+  /**
+   * The model to ask and the client that reaches its provider, when the
+   * caller picked one from the roster (`./modelRouter.ts`). Absent: the
+   * parser's own `resolveModel` and client, as before the roster existed.
+   */
+  target?: { model: string; complete: CompleteJson } | undefined;
 }
 
 /**
@@ -102,7 +108,8 @@ export function createKindParser<I, T>(
   clock: () => number = Date.now,
 ): KindParser<I, T> {
   return async (input, hooks = {}) => {
-    const model = await resolveModel();
+    const model = hooks.target?.model ?? (await resolveModel());
+    const call = hooks.target?.complete ?? complete;
     hooks.onStage?.({ stage: "model_started", model });
     const started = clock();
     let rawReply: string | null = null;
@@ -120,7 +127,7 @@ export function createKindParser<I, T>(
       durationMs: clock() - started,
     });
     try {
-      rawReply = await complete(spec.build(input), model, {
+      rawReply = await call(spec.build(input), model, {
         timeoutMs: hooks.timeoutMs,
         signal: hooks.signal,
       });
@@ -172,6 +179,8 @@ export function keptPipeline<I extends DictationInput, T extends object>(
       onFailure(trace.error, parseId);
       throw new UpstreamModelError(trace.error ?? "unknown", trace.category, trace.model);
     }
-    return { ...trace.result, parseId };
+    // `model`: which model answered, for the client to say so -- with a
+    // roster of them it is no longer the one model of the settings.
+    return { ...trace.result, parseId, model: trace.model };
   };
 }

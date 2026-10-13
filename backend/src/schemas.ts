@@ -374,6 +374,12 @@ export const parseDictationSchema = z.object({
  */
 export const parseDictationStreamSchema = parseDictationSchema.extend({
   text: z.string().trim().min(1, "text is required").max(12_000, "text is too long"),
+  /**
+   * "Отправить в несколько" (`domain/modelRoster.ts`): ask the first models of
+   * the roster at once and stream each answer as a `candidate`. Streamed
+   * replies only -- one JSON body cannot arrive twice.
+   */
+  multi: z.boolean().default(false),
 });
 
 /**

@@ -494,3 +494,37 @@ model DictationParse {
   @@index([inboxItemId])
   @@map("dictation_parses")
 }
+
+/// The owner's list of models to parse with, in order, and how each has been
+/// doing (14.10.2026). See src/domain/modelRoster.ts for the rules. Empty:
+/// the one model of `.env` / the `dictation.model` setting, as before.
+model LlmModel {
+  id       String @id @default(cuid())
+  /// Order in the list: 0 is the most preferred.
+  position Int
+  /// The model's name at its provider, as the API wants it.
+  name     String
+  /// What the app shows; the name when null.
+  label    String?
+  /// OpenAI-compatible base URL of the provider; `LLM_BASE_URL` when null.
+  baseUrl  String?
+  /// NAME of the env variable with the provider's key (never the key itself,
+  /// which stays in `.env`); `LLM_API_KEY` when null. Must start with `LLM_`.
+  apiKeyEnv String?
+  /// Switched off by the owner.
+  enabled  Boolean @default(true)
+
+  /// Switched off by its own failures, until the owner switches it back on.
+  autoDisabledAt      DateTime?
+  autoDisabledReason  String?
+  consecutiveFailures Int       @default(0)
+  failStreakStartedAt DateTime?
+  lastSuccessAt       DateTime?
+  lastFailureAt       DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([position])
+  @@map("llm_models")
+}

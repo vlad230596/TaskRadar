@@ -36,11 +36,17 @@ export function utcDay(now: Date): string {
  * Counted per request, not per token: a request is what the client can see and
  * what the operator can reason about, and one dictation is one model call.
  */
-export async function consumeAiQuota(userId: string, limit: number, now: Date): Promise<void> {
+export async function consumeAiQuota(
+  userId: string,
+  limit: number,
+  now: Date,
+  /** Requests this costs: one per model asked by "send to several". */
+  cost = 1,
+): Promise<void> {
   const row = await prisma.aiUsage.upsert({
     where: { userId_day: { userId, day: utcDay(now) } },
-    create: { userId, day: utcDay(now), count: 1 },
-    update: { count: { increment: 1 } },
+    create: { userId, day: utcDay(now), count: cost },
+    update: { count: { increment: cost } },
     select: { count: true },
   });
   if (row.count > limit) throw new AiLimitError(limit);

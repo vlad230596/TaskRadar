@@ -5,11 +5,19 @@ import { userIdOf } from "../lib/users";
 import { OWNER_SUBJECT } from "../lib/authConfig";
 import { consumeAiQuota, loadAiDailyLimit } from "../lib/aiLimit";
 import { HttpError } from "../lib/errors";
-import { UpstreamModelError } from "../lib/llmClient";
+import { CompleteJson, UpstreamModelError } from "../lib/llmClient";
 import { openEventStream, wantsEventStream } from "../lib/eventStream";
 import { DictationInput, DictationParser } from "../domain/dictation";
 import { readDictationModelOverride, writeDictationModelOverride } from "../domain/dictationModel";
-import { keptPipeline, ParseKind, ParsePipeline, ParseTrace } from "../domain/parsePipeline";
+import {
+  keptPipeline,
+  ParseHooks,
+  ParseKind,
+  ParsePipeline,
+  ParseTrace,
+} from "../domain/parsePipeline";
+import { planMulti, planSingle, RosterEntry } from "../domain/modelRoster";
+import { MultiOutcome, runMulti, runSingle } from "../domain/modelRouter";
 import { SandboxInput, TidyParsers } from "../domain/tidy";
 import {
   parseDictationSchema,
@@ -27,12 +35,24 @@ export interface DictationFeature {
   tidiers?: TidyParsers;
   /** `LLM_MODEL` from `.env`: what is used when the app has not chosen one. */
   defaultModel: string;
+  /** `LLM_BASE_URL`: where a roster entry with no URL of its own goes. */
+  defaultBaseUrl?: string;
   /**
    * The model call's budget in a streamed parse of [textLength] characters
    * (`streamTimeoutFor` in `../lib/llmConfig.ts`). Absent: the parser's own
    * default, as in the one-shot reply.
    */
   streamTimeoutMs?: (textLength: number) => number;
+  /**
+   * The owner's list of models (`../domain/modelRoster.ts`): who is asked,
+   * what each attempt taught us, and how to reach each one's provider.
+   * Absent: the parsers' own single model, as before the roster existed.
+   */
+  roster?: {
+    read: () => Promise<RosterEntry[]>;
+    record: (entry: RosterEntry, ok: boolean) => Promise<void>;
+    clientFor: (entry: RosterEntry) => CompleteJson;
+  };
 }
 
 export interface DictationRouteOptions {
@@ -223,25 +243,82 @@ export function dictationRoutes(
       const pipeline = pipelineFor(userId, feature, body.kind, request.log);
       if (pipeline === null) throw new DictationUnavailableError();
 
+      /*
+       * Who is asked (`../domain/modelRoster.ts`): with a roster, a plan of
+       * models; "send to several" asks the first few at once and is only for
+       * a streamed reply. Without a roster, the parser's one model.
+       */
+      const roster = feature.roster;
+      const multi = stream && "multi" in body && body.multi === true;
+      const entries = roster === undefined ? null : await roster.read();
+      const multiPlan = multi && entries !== null ? planMulti(entries, input.now) : null;
+
       // The owner's key pays for every user, so each gets a day's allowance.
       // Spent here, before the stream opens, so a refusal is an ordinary 429
       // the client can show, and a request that was never going to run (bad
-      // body, feature off) costs nothing.
-      await consumeAiQuota(userId, dailyLimit, input.now);
+      // body, feature off) costs nothing. "Send to several" costs one per
+      // model asked; a race the server starts on its own costs one.
+      await consumeAiQuota(userId, dailyLimit, input.now, Math.max(1, multiPlan?.length ?? 1));
+
+      /** The parse, through the roster when there is one. */
+      const run = (
+        hooks?: ParseHooks,
+        onOutcome?: (outcome: MultiOutcome<Record<string, unknown>>) => void,
+      ): Promise<Record<string, unknown>> => {
+        if (roster === undefined || entries === null) return pipeline(input, hooks);
+        const deps = {
+          attempt: async (entry: RosterEntry) => ({
+            ...(await pipeline(input, {
+              ...hooks,
+              target: { model: entry.name, complete: roster.clientFor(entry) },
+            })),
+            // What the app calls the model; its name at the provider otherwise.
+            modelLabel: entry.label ?? entry.name,
+          }),
+          record: async (entry: RosterEntry, ok: boolean) => {
+            try {
+              await roster.record(entry, ok);
+            } catch (error) {
+              request.log.error({ err: error }, "could not record the model's outcome");
+            }
+          },
+        };
+        return multiPlan !== null
+          ? runMulti(multiPlan, deps, onOutcome ?? (() => {}))
+          : runSingle(planSingle(entries, input.now), deps);
+      };
 
       if (!stream) {
-        reply.send(await pipeline(input));
+        reply.send(await run());
         return;
       }
 
       const events = openEventStream(reply, { heartbeatMs });
       events.send("accepted", { kind: body.kind });
       try {
-        const result = await pipeline(input, {
-          onStage: ({ stage, ...data }) => events.send(stage, data),
-          timeoutMs: feature.streamTimeoutMs?.(input.text.length),
-          signal: events.signal,
-        });
+        const result = await run(
+          {
+            onStage: ({ stage, ...data }) => events.send(stage, data),
+            timeoutMs: feature.streamTimeoutMs?.(input.text.length),
+            signal: events.signal,
+          },
+          // Each model's answer as it comes: the fast one is read while the
+          // slow one is still thinking.
+          (outcome) => {
+            const model = outcome.entry.name;
+            const modelLabel = outcome.entry.label ?? model;
+            if (outcome.ok) {
+              events.send("candidate", { model, modelLabel, result: outcome.result });
+            } else {
+              const error = outcome.error;
+              events.send("candidate_failed", {
+                model,
+                modelLabel,
+                cause: error instanceof UpstreamModelError ? error.category : "internal",
+              });
+            }
+          },
+        );
         events.send("result", result);
       } catch (error) {
         if (error instanceof UpstreamModelError) {

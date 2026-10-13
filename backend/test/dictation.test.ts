@@ -632,6 +632,7 @@ describe("POST /dictation/parse", () => {
       remindDate: null,
       remindTime: null,
       parseId: "dp-1",
+      model: "env-model",
     });
     expect(parser.mock.lastCall![0]).toEqual(
       expect.objectContaining({ text: "ну позвонить маме", timeZone: "Europe/Moscow" }),
@@ -848,6 +849,7 @@ describe("POST /dictation/parse", () => {
             remindDate: null,
             remindTime: null,
             parseId: "dp-1",
+            model: "env-model",
           },
         ],
       ]);

@@ -457,7 +457,7 @@ describe("POST /dictation/parse, the tidying kinds", () => {
     const res = await post(app, { text: "ну позвонить маме", timeZone: "UTC", kind: "task_tidy" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ title: "Позвонить маме", description: null, parseId: "dp-1" });
+    expect(res.json()).toEqual({ title: "Позвонить маме", description: null, parseId: "dp-1", model: "env-model" });
     expect(parser).not.toHaveBeenCalled();
     expect(samples[0]).toMatchObject({
       kind: "task_tidy",
@@ -479,7 +479,7 @@ describe("POST /dictation/parse, the tidying kinds", () => {
       noteTitle: " Дача ",
     });
 
-    expect(res.json()).toEqual({ title: null, content: "- гвозди", parseId: "dp-1" });
+    expect(res.json()).toEqual({ title: null, content: "- гвозди", parseId: "dp-1", model: "env-model" });
     expect(tidiers.note.mock.lastCall![0]).toMatchObject({ text: "гвозди", noteTitle: "Дача" });
     expect(samples[0]).toMatchObject({ kind: "note" });
   });
