@@ -1,3 +1,4 @@
+import { wrapUserText } from "../src/domain/promptGuard";
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { OWNER_SUBJECT, type AuthConfig } from "../src/lib/authConfig";
@@ -37,14 +38,12 @@ const prismaMock = vi.hoisted(() => ({
   aiUsage: {
     // The atomic upsert-and-increment `consumeAiQuota` relies on: answers the
     // count *after* this request, so the limit check sees what the real row would.
-    upsert: vi.fn(
-      async (args: { where: { userId_day: { userId: string; day: string } } }) => {
-        const { userId, day } = args.where.userId_day;
-        const count = (aiUsage.get(`${userId}|${day}`) ?? 0) + 1;
-        aiUsage.set(`${userId}|${day}`, count);
-        return { count };
-      },
-    ),
+    upsert: vi.fn(async (args: { where: { userId_day: { userId: string; day: string } } }) => {
+      const { userId, day } = args.where.userId_day;
+      const count = (aiUsage.get(`${userId}|${day}`) ?? 0) + 1;
+      aiUsage.set(`${userId}|${day}`, count);
+      return { count };
+    }),
   },
   dictationParse: {
     create: vi.fn(async (args: { data: Record<string, unknown> }) => {
@@ -106,7 +105,7 @@ describe("buildDictationMessages", () => {
   });
 
   it("passes the dictation through untouched as the user turn", () => {
-    expect(user).toEqual({ role: "user", content: "позвонить маме" });
+    expect(user).toEqual({ role: "user", content: wrapUserText("позвонить маме") });
   });
 
   it("starts the calendar at the caller's today, with its weekday", () => {
@@ -424,14 +423,44 @@ describe("createOpenAiCompatibleClient", () => {
     [
       "an unknown model on DeepSeek",
       400,
-      { error: { message: "Model Not Exist", type: "invalid_request_error", code: "invalid_request_error" } },
+      {
+        error: {
+          message: "Model Not Exist",
+          type: "invalid_request_error",
+          code: "invalid_request_error",
+        },
+      },
       "model_not_found",
       "status 400 (code invalid_request_error: type invalid_request_error: Model Not Exist)",
     ],
-    ["a refused key", 401, { error: { message: "No auth credentials found", code: 401 } }, "unauthorized", null],
-    ["an empty account", 402, { error: { message: "Insufficient credits", code: 402 } }, "no_credits", null],
-    ["a rate limit", 429, { error: { message: "Rate limit exceeded", code: 429 } }, "rate_limited", null],
-    ["a provider outage", 503, "Service Unavailable", "provider_down", "status 503 (Service Unavailable)"],
+    [
+      "a refused key",
+      401,
+      { error: { message: "No auth credentials found", code: 401 } },
+      "unauthorized",
+      null,
+    ],
+    [
+      "an empty account",
+      402,
+      { error: { message: "Insufficient credits", code: 402 } },
+      "no_credits",
+      null,
+    ],
+    [
+      "a rate limit",
+      429,
+      { error: { message: "Rate limit exceeded", code: 429 } },
+      "rate_limited",
+      null,
+    ],
+    [
+      "a provider outage",
+      503,
+      "Service Unavailable",
+      "provider_down",
+      "status 503 (Service Unavailable)",
+    ],
     ["any other refusal", 400, { error: { message: "Bad request" } }, "rejected", null],
   ])(
     "classifies %s and logs the provider's code",
@@ -452,10 +481,13 @@ describe("createOpenAiCompatibleClient", () => {
     const complete = createOpenAiCompatibleClient(
       config,
       vi.fn(
-        async () => new Response(JSON.stringify({ error: { message: "x".repeat(1000) } }), { status: 500 }),
+        async () =>
+          new Response(JSON.stringify({ error: { message: "x".repeat(1000) } }), { status: 500 }),
       ) as unknown as typeof fetch,
     );
-    const error = (await complete([], "m").catch((caught: unknown) => caught)) as UpstreamModelError;
+    const error = (await complete([], "m").catch(
+      (caught: unknown) => caught,
+    )) as UpstreamModelError;
     expect(error.reason.length).toBeLessThan(260);
   });
 
@@ -703,7 +735,8 @@ describe("POST /dictation/parse", () => {
       parser.mockResolvedValue(traceOf({}));
       try {
         const answers = [];
-        for (let i = 0; i < 3; i++) answers.push(await post(limitedApp, { text: "x", timeZone: "UTC" }));
+        for (let i = 0; i < 3; i++)
+          answers.push(await post(limitedApp, { text: "x", timeZone: "UTC" }));
 
         expect(answers.map((res) => res.statusCode)).toEqual([200, 200, 429]);
         expect((answers[2]!.json() as { message: string }).message).toMatch(/limit.*\(2\)/i);
@@ -848,7 +881,12 @@ describe("POST /dictation/parse", () => {
     it("ends with an error event when the model fails, and keeps the sample", async () => {
       parser.mockImplementationOnce(
         staged(
-          traceOf({ rawReply: null, result: null, error: "status 404", category: "model_not_found" }),
+          traceOf({
+            rawReply: null,
+            result: null,
+            error: "status 404",
+            category: "model_not_found",
+          }),
         ),
       );
 

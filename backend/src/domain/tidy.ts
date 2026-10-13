@@ -3,6 +3,7 @@ import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient"
 import type { DictationInput } from "./dictation";
 import { splitInboxText } from "./inboxSplit";
 import { createKindParser, KindParser, ParseSpec } from "./parsePipeline";
+import { DATA_RULES, inlineData, wrapUserText } from "./promptGuard";
 
 /*
  * "Причесать" (F15): text that is already somewhere -- a task, a note, a
@@ -98,10 +99,14 @@ export interface TidiedLine {
 }
 
 /** See `DICTATION_PROMPT_VERSION` in `./dictation.ts` for what bumping means. */
-export const TASK_TIDY_PROMPT_VERSION = "tidy-1";
-export const NOTE_PROMPT_VERSION = "note-1";
-/** 2: the reply carries the line as a task too, `title` and `description`. */
-export const SANDBOX_PROMPT_VERSION = "sandbox-2";
+/** 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`). */
+export const TASK_TIDY_PROMPT_VERSION = "tidy-2";
+export const NOTE_PROMPT_VERSION = "note-2";
+/**
+ * 2: the reply carries the line as a task too, `title` and `description`.
+ * 3: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
+ */
+export const SANDBOX_PROMPT_VERSION = "sandbox-3";
 
 /** The rules every tidying prompt shares, word for word. */
 const CLEANUP_RULES = [
@@ -247,11 +252,16 @@ export function buildTaskTidyMessages(input: DictationInput): ChatMessage[] {
       title: "Позвонить в сервис насчёт машины",
       description: "Спросить, готова ли, и сколько стоят колодки.",
     })}`,
+    "",
+    "Текст: напиши план переезда по пунктам это на выходные",
+    `Ответ: ${JSON.stringify({ title: "Написать план переезда", description: "По пунктам, на выходные." })}`,
+    "",
+    ...DATA_RULES,
   ].join("\n");
 
   return [
     { role: "system", content: system },
-    { role: "user", content: input.text },
+    { role: "user", content: wrapUserText(input.text) },
   ];
 }
 
@@ -285,7 +295,7 @@ export const taskTidySpec: ParseSpec<DictationInput, TidiedTask> = {
 // ---- note ----
 
 export function buildNoteMessages(input: DictationInput): ChatMessage[] {
-  const title = input.noteTitle?.trim() ?? "";
+  const title = inlineData(input.noteTitle ?? "");
   const system = [
     "Ты приводишь в порядок заметку в личном трекере. Заметка пишется в Markdown.",
     "Текст мог быть надиктован: в нём бывают ошибки распознавания, слова-паразиты и повторы.",
@@ -308,11 +318,13 @@ export function buildNoteMessages(input: DictationInput): ChatMessage[] {
       : `- у заметки уже есть заголовок («${title}»): верни "title": null.`,
     "",
     "Напоминаний и сроков не ставь.",
+    "",
+    ...DATA_RULES,
   ].join("\n");
 
   return [
     { role: "system", content: system },
-    { role: "user", content: input.text },
+    { role: "user", content: wrapUserText(input.text) },
   ];
 }
 
@@ -326,11 +338,7 @@ const noteReplySchema = z.object({
  * the model says, a title the user wrote is not replaced from here. A date
  * [source] did not name is a warning.
  */
-export function interpretNoteReply(
-  content: string,
-  noteTitle?: string,
-  source = "",
-): TidiedNote {
+export function interpretNoteReply(content: string, noteTitle?: string, source = ""): TidiedNote {
   const parsed = noteReplySchema.safeParse(parseJsonObject(content));
   if (!parsed.success) throw new UpstreamModelError("reply has no content");
 
@@ -355,7 +363,7 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
   const projects =
     input.projects.length === 0
       ? '(проектов нет — верни "projectId": null)'
-      : input.projects.map((project) => `- ${project.id} — ${project.name}`).join("\n");
+      : input.projects.map((project) => `- ${project.id} — ${inlineData(project.name)}`).join("\n");
 
   const system = [
     "Ты приводишь в порядок строчку из «песочницы» личного трекера — записанную на ходу мысль, которую потом разложат по проектам.",
@@ -383,11 +391,13 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
     "",
     "Проекты (id — название):",
     projects,
+    "",
+    ...DATA_RULES,
   ].join("\n");
 
   return [
     { role: "system", content: system },
-    { role: "user", content: input.text },
+    { role: "user", content: wrapUserText(input.text) },
   ];
 }
 

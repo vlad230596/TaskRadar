@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient";
 import { createKindParser, KindParser, ParseTrace } from "./parsePipeline";
+import { DATA_RULES, wrapUserText } from "./promptGuard";
 
 /*
  * Dictation -> task (F14): the words as spoken, turned into a task as it would
@@ -73,7 +74,8 @@ export type DictationParser = KindParser<DictationInput, ParsedDictation>;
  * format -- so that rows from different prompts are never compared as if they
  * were the same experiment.
  */
-export const DICTATION_PROMPT_VERSION = "1";
+export const DICTATION_PROMPT_VERSION = "2";
+// 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
 
 /** How far ahead the calendar in the prompt reaches. */
 const CALENDAR_DAYS = 14;
@@ -206,6 +208,15 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
         remindTime: null,
       },
     },
+    {
+      input: "Напиши план переезда по пунктам, это на выходные.",
+      output: {
+        title: "Написать план переезда",
+        description: "По пунктам, на выходные.",
+        remindDate: null,
+        remindTime: null,
+      },
+    },
   ];
 
   const system = [
@@ -248,11 +259,13 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
     ...examples.map(
       (example) => `Текст: ${example.input}\nОтвет: ${JSON.stringify(example.output)}`,
     ),
+    "",
+    ...DATA_RULES,
   ].join("\n");
 
   return [
     { role: "system", content: system },
-    { role: "user", content: input.text },
+    { role: "user", content: wrapUserText(input.text) },
   ];
 }
 

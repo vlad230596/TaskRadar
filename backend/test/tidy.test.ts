@@ -1,3 +1,4 @@
+import { wrapUserText } from "../src/domain/promptGuard";
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import type { AuthConfig } from "../src/lib/authConfig";
@@ -50,15 +51,14 @@ const prismaMock = vi.hoisted(() => ({
   project: {
     // Evaluates both halves of the filter: not archived, and owned by the
     // caller. A route that dropped either would show up in the prompt.
-    findMany: vi.fn(
-      async (args: { where: { archivedAt: null; scope: { userId: string } } }) =>
-        projects
-          .filter(
-            (project) =>
-              project.userId === args.where.scope.userId &&
-              (args.where.archivedAt !== null || project.archivedAt === null),
-          )
-          .map(({ id, name }) => ({ id, name })),
+    findMany: vi.fn(async (args: { where: { archivedAt: null; scope: { userId: string } } }) =>
+      projects
+        .filter(
+          (project) =>
+            project.userId === args.where.scope.userId &&
+            (args.where.archivedAt !== null || project.archivedAt === null),
+        )
+        .map(({ id, name }) => ({ id, name })),
     ),
   },
   appSetting: {
@@ -82,7 +82,7 @@ describe("task_tidy", () => {
     const [system, user] = buildTaskTidyMessages(input("ну позвонить маме"));
 
     it("passes the task's text through untouched as the user turn", () => {
-      expect(user).toEqual({ role: "user", content: "ну позвонить маме" });
+      expect(user).toEqual({ role: "user", content: wrapUserText("ну позвонить маме") });
     });
 
     it("asks for the two fields and forbids new facts and dates", () => {
@@ -192,7 +192,7 @@ describe("task_tidy", () => {
 describe("note", () => {
   it("asks for paragraphs and lists, and a title only when there is none", () => {
     const [untitled, user] = buildNoteMessages(input("ну значит так пункт первый"));
-    expect(user).toEqual({ role: "user", content: "ну значит так пункт первый" });
+    expect(user).toEqual({ role: "user", content: wrapUserText("ну значит так пункт первый") });
     expect(untitled.content).toContain("абзацы");
     expect(untitled.content).toContain("«- »");
     expect(untitled.content).toContain("у заметки нет заголовка");
@@ -250,7 +250,7 @@ describe("sandbox", () => {
 
   it("shows the model the projects, by id and name", () => {
     const [system, user] = buildSandboxMessages({ ...input("колодки"), projects: choices });
-    expect(user).toEqual({ role: "user", content: "колодки" });
+    expect(user).toEqual({ role: "user", content: wrapUserText("колодки") });
     expect(system.content).toContain("- prj_home — Дом");
     expect(system.content).toContain("- prj_car — Машина");
     expect(system.content).toContain("НЕ добавляй фактов");
@@ -265,7 +265,7 @@ describe("sandbox", () => {
     const [system] = buildSandboxMessages({ ...input("колодки"), projects: choices });
     expect(system.content).toContain('"title"');
     expect(system.content).toContain('"description"');
-    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-2");
+    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-3");
   });
 
   it("keeps a project that is on the list, with its name from the list", () => {
@@ -355,7 +355,10 @@ describe("createTidyParsers", () => {
 
   it("traces an invented date as a success with a warning, never as a failure", async () => {
     const answer = reply({ title: "Позвонить маме завтра", content: "Завтра", text: "Завтра" });
-    const parsers = createTidyParsers(async () => answer, async () => "m");
+    const parsers = createTidyParsers(
+      async () => answer,
+      async () => "m",
+    );
     const warned = { warnings: [{ kind: "invented_date", token: "завтра" }] };
 
     expect(await parsers.task_tidy(input("позвонить маме"))).toMatchObject({
@@ -513,7 +516,10 @@ describe("POST /dictation/parse, the tidying kinds", () => {
       { id: "prj_old", name: "Старое", userId: USER_A.id, archivedAt: new Date() },
       { id: "prj_b", name: "Чужой проект", userId: USER_B.id, archivedAt: null },
     );
-    const answer = traceOf({ text: "Колодки", projectId: null, projectName: null }, SANDBOX_PROMPT_VERSION);
+    const answer = traceOf(
+      { text: "Колодки", projectId: null, projectName: null },
+      SANDBOX_PROMPT_VERSION,
+    );
     tidiers.sandbox.mockResolvedValueOnce(answer).mockResolvedValueOnce(answer);
 
     await post(app, { text: "колодки", timeZone: "UTC", kind: "sandbox" });
@@ -528,7 +534,10 @@ describe("POST /dictation/parse, the tidying kinds", () => {
   });
 
   it("keeps each sample under the user who asked", async () => {
-    const answer = traceOf({ title: "Позвонить маме", description: null }, TASK_TIDY_PROMPT_VERSION);
+    const answer = traceOf(
+      { title: "Позвонить маме", description: null },
+      TASK_TIDY_PROMPT_VERSION,
+    );
     tidiers.task_tidy.mockResolvedValueOnce(answer).mockResolvedValueOnce(answer);
 
     await post(app, { text: "x", timeZone: "UTC", kind: "task_tidy" });
