@@ -15,7 +15,7 @@ import { inMemoryUsers, tokenFor, USER_A, USER_B } from "./support/users";
 const prismaMock = vi.hoisted(() => ({
   project: { findFirst: vi.fn() },
   note: { findFirst: vi.fn(), findMany: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn() },
-  dictationParse: { updateMany: vi.fn() },
+  dictationParse: { updateMany: vi.fn(), findFirst: vi.fn(async (): Promise<unknown> => null) },
   $transaction: vi.fn(),
 }));
 

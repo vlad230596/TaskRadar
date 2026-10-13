@@ -184,6 +184,13 @@ export const createTaskSchema = z.object({
  */
 const dictationParseIdSchema = z.string().min(1).max(100).optional();
 
+/**
+ * "Вернуть исходник" (14.10.2026): forget that AI touched this -- the
+ * `aiSource`, `aiKind`, `aiResult` columns are cleared with the save. The
+ * client sends the source text back in the ordinary fields alongside.
+ */
+const aiClearSchema = z.literal(true).optional();
+
 export const updateTaskSchema = z
   .object({
     title: z.string().trim().min(1, "title is required").optional(),
@@ -192,13 +199,16 @@ export const updateTaskSchema = z
     status: taskStatusSchema.optional(),
     remindAt: z.coerce.date().nullable().optional(),
     remindTime: remindTimeSchema,
-    /** A `task_tidy` answer being saved into this task (F15). */
+    /**
+     * An answer being saved into this task (F15): `task_tidy` for the title
+     * and description together, `note` for the description alone.
+     */
     dictationParseId: dictationParseIdSchema,
+    aiClear: aiClearSchema,
   })
-  .refine(
-    (body) => Object.keys(body).some((key) => key !== "dictationParseId"),
-    { message: "At least one field must be provided" },
-  );
+  .refine((body) => Object.keys(body).some((key) => key !== "dictationParseId"), {
+    message: "At least one field must be provided",
+  });
 
 export const updateTaskPositionSchema = z
   .object({
@@ -292,6 +302,7 @@ export const updateInboxItemSchema = z.object({
   text: z.string().trim().min(1, "text is required"),
   /** A `sandbox` answer this line was rewritten to (F15). */
   dictationParseId: dictationParseIdSchema,
+  aiClear: aiClearSchema,
 });
 
 /**
@@ -393,8 +404,8 @@ export const updateNoteSchema = z
     content: z.string().optional(),
     /** A `note` answer being saved into this note (F15). */
     dictationParseId: dictationParseIdSchema,
+    aiClear: aiClearSchema,
   })
-  .refine(
-    (body) => Object.keys(body).some((key) => key !== "dictationParseId"),
-    { message: "At least one field must be provided" },
-  );
+  .refine((body) => Object.keys(body).some((key) => key !== "dictationParseId"), {
+    message: "At least one field must be provided",
+  });

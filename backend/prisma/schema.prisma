@@ -192,6 +192,15 @@ model Task {
   /// src/routes/focus.ts.
   focusedAt DateTime?
 
+  /// What AI processing started from (see src/domain/aiMark.ts): the words
+  /// before the FIRST "Обработать", the kind of that first parse, and a
+  /// snapshot of the fields as the last AI answer saved them -- the app
+  /// compares it with the row to say "изменён после AI". All null when AI
+  /// never touched it, or after "вернуть исходник".
+  aiSource String?
+  aiKind   String?
+  aiResult Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -330,6 +339,15 @@ model InboxItem {
   /// not collide with each other.
   captureKey String?
 
+  /// What AI processing started from (see src/domain/aiMark.ts): the words
+  /// before the FIRST "Обработать", the kind of that first parse, and a
+  /// snapshot of the fields as the last AI answer saved them -- the app
+  /// compares it with the row to say "изменён после AI". All null when AI
+  /// never touched it, or after "вернуть исходник".
+  aiSource String?
+  aiKind   String?
+  aiResult Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -347,6 +365,15 @@ model Note {
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title     String
   content   String   @default("")
+  /// What AI processing started from (see src/domain/aiMark.ts): the words
+  /// before the FIRST "Обработать", the kind of that first parse, and a
+  /// snapshot of the fields as the last AI answer saved them -- the app
+  /// compares it with the row to say "изменён после AI". All null when AI
+  /// never touched it, or after "вернуть исходник".
+  aiSource String?
+  aiKind   String?
+  aiResult Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

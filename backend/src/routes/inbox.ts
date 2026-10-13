@@ -5,6 +5,7 @@ import { NotFoundError } from "../lib/errors";
 import { computeAppendPosition } from "../domain/position";
 import { splitInboxText } from "../domain/inboxSplit";
 import { linkDictationParse } from "../domain/dictationLink";
+import { aiClearData, aiMarkFields } from "../domain/aiMark";
 import {
   createInboxItemSchema,
   updateInboxItemSchema,
@@ -55,9 +56,7 @@ import { getProjectOrThrow } from "./projects";
  */
 function isUniqueConstraintViolation(error: unknown): boolean {
   return (
-    typeof error === "object" &&
-    error !== null &&
-    (error as { code?: unknown }).code === "P2002"
+    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002"
   );
 }
 
@@ -139,7 +138,10 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     const { captureKey } = body;
 
     if (captureKey === undefined) {
-      const item = await prisma.inboxItem.create({ data: { userId, text: body.text } });
+      const ai = await aiMarkFields(prisma, userId, body.dictationParseId, ["sandbox"], null, {
+        text: body.text,
+      });
+      const item = await prisma.inboxItem.create({ data: { ...ai, userId, text: body.text } });
       await labelSample(userId, body.dictationParseId, item);
       reply.status(201).send(item);
       return;
@@ -154,8 +156,11 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     }
 
     try {
+      const ai = await aiMarkFields(prisma, userId, body.dictationParseId, ["sandbox"], null, {
+        text: body.text,
+      });
       const item = await prisma.inboxItem.create({
-        data: { userId, text: body.text, captureKey },
+        data: { ...ai, userId, text: body.text, captureKey },
       });
       // Only for a line that is new here: a replay answers with the row as
       // it stands, and the row -- if it was dictated -- was labelled then.
@@ -169,8 +174,8 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       if (!isUniqueConstraintViolation(error)) throw error;
 
       const raced = await prisma.inboxItem.findUnique({
-      where: { userId_captureKey: { userId, captureKey } },
-    });
+        where: { userId_captureKey: { userId, captureKey } },
+      });
       if (!raced) throw error;
       reply.status(200).send(raced);
     }
@@ -188,11 +193,17 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
     const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const body = updateInboxItemSchema.parse(request.body);
-    await getInboxItemOrThrow(userId, id);
+    const before = await getInboxItemOrThrow(userId, id);
 
+    // AI on this line: ../domain/aiMark.ts.
+    const ai = body.aiClear
+      ? aiClearData()
+      : await aiMarkFields(prisma, userId, body.dictationParseId, ["sandbox"], before.aiSource, {
+          text: body.text,
+        });
     const item = await prisma.inboxItem.update({
       where: { id },
-      data: { text: body.text },
+      data: { ...ai, text: body.text },
     });
     await labelSample(userId, body.dictationParseId, item);
     reply.send(item);
@@ -282,8 +293,28 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
      * the array form has no way to say that.
      */
     const task = await prisma.$transaction(async (tx) => {
+      /*
+       * What AI did to the line goes with it (../domain/aiMark.ts): the task
+       * keeps the line's first source. Filed with an answer of its own, the
+       * task is marked by that answer; filed plain, a processed line still
+       * becomes a processed task, as the split left it.
+       */
+      const snapshot = { title: parts.title, description: parts.description };
+      const marked = await aiMarkFields(
+        tx,
+        userId,
+        body.dictationParseId,
+        ["sandbox", "task_tidy"],
+        item.aiSource,
+        snapshot,
+      );
+      const ai =
+        item.aiSource === null
+          ? marked
+          : { aiSource: item.aiSource, aiKind: item.aiKind, aiResult: snapshot };
       const created = await tx.task.create({
         data: {
+          ...ai,
           projectId: body.projectId,
           title: parts.title,
           description: parts.description,

@@ -42,7 +42,7 @@ const prismaMock = vi.hoisted(() => ({
   },
   taskEvent: { findMany: vi.fn(), create: vi.fn() },
   inboxItem: { create: vi.fn() },
-  dictationParse: { updateMany: vi.fn() },
+  dictationParse: { updateMany: vi.fn(), findFirst: vi.fn(async (): Promise<unknown> => null) },
   $transaction: vi.fn(),
 }));
 

@@ -3,7 +3,13 @@ import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
 import { NotFoundError } from "../lib/errors";
 import { linkDictationParse } from "../domain/dictationLink";
-import { createNoteSchema, updateNoteSchema, idParamSchema, projectIdParamSchema } from "../schemas";
+import { aiClearData, aiMarkFields } from "../domain/aiMark";
+import {
+  createNoteSchema,
+  updateNoteSchema,
+  idParamSchema,
+  projectIdParamSchema,
+} from "../schemas";
 import { getProjectOrThrow } from "./projects";
 
 async function getNoteOrThrow(userId: string, id: string) {
@@ -29,8 +35,12 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
 
     const parseId = body.dictationParseId;
     const note = await prisma.$transaction(async (tx) => {
+      const ai = await aiMarkFields(tx, userId, parseId, ["note"], null, {
+        title: body.title,
+        content: body.content,
+      });
       const created = await tx.note.create({
-        data: { projectId, title: body.title, content: body.content },
+        data: { ...ai, projectId, title: body.title, content: body.content },
       });
       if (parseId !== undefined) {
         await linkDictationParse(tx, userId, parseId, ["note"], {
@@ -59,7 +69,7 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(request.params);
     const userId = userIdOf(request);
     const body = updateNoteSchema.parse(request.body);
-    await getNoteOrThrow(userId, id);
+    const before = await getNoteOrThrow(userId, id);
 
     const data: { title?: string; content?: string } = {};
     if (body.title !== undefined) data.title = body.title;
@@ -67,7 +77,14 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
 
     const parseId = body.dictationParseId;
     const note = await prisma.$transaction(async (tx) => {
-      const updated = await tx.note.update({ where: { id }, data });
+      // AI on this note: ../domain/aiMark.ts.
+      const ai = body.aiClear
+        ? aiClearData()
+        : await aiMarkFields(tx, userId, parseId, ["note"], before.aiSource, {
+            title: data.title ?? before.title,
+            content: data.content ?? before.content,
+          });
+      const updated = await tx.note.update({ where: { id }, data: { ...data, ...ai } });
       if (parseId !== undefined) {
         await linkDictationParse(tx, userId, parseId, ["note"], {
           noteId: updated.id,

@@ -18,6 +18,7 @@ import {
   projectIdParamSchema,
 } from "../schemas";
 import { linkDictationParse } from "../domain/dictationLink";
+import { aiClearData, aiMarkFields } from "../domain/aiMark";
 import { getProjectOrThrow } from "./projects";
 
 export async function getTaskOrThrow(userId: string, id: string) {
@@ -39,7 +40,10 @@ export async function getTaskOrThrow(userId: string, id: string) {
  * the same answer for a category of another project as for one of another
  * user, so the reply says nothing about what exists elsewhere.
  */
-async function assertCategoryInProject(categoryId: string | null | undefined, projectId: string): Promise<void> {
+async function assertCategoryInProject(
+  categoryId: string | null | undefined,
+  projectId: string,
+): Promise<void> {
   if (categoryId === null || categoryId === undefined) return;
   const category = await prisma.taskCategory.findFirst({ where: { id: categoryId, projectId } });
   if (!category) {
@@ -77,8 +81,18 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
      * cannot be replayed on its own.
      */
     const task = await prisma.$transaction(async (tx) => {
+      // A dictated or tidied task remembers the words it came from: ../domain/aiMark.ts.
+      const ai = await aiMarkFields(
+        tx,
+        userId,
+        body.dictationParseId,
+        ["task", "sandbox", "task_tidy"],
+        null,
+        { title: body.title, description: body.description ?? null },
+      );
       const created = await tx.task.create({
         data: {
+          ...ai,
           projectId,
           title: body.title,
           description: body.description ?? null,
@@ -104,12 +118,18 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
        * taken, and a draft task tidied before its first save.
        */
       if (body.dictationParseId !== undefined) {
-        await linkDictationParse(tx, userId, body.dictationParseId, ["task", "sandbox", "task_tidy"], {
-          taskId: created.id,
-          finalTitle: created.title,
-          finalDescription: created.description,
-          finalRemindAt: created.remindAt,
-        });
+        await linkDictationParse(
+          tx,
+          userId,
+          body.dictationParseId,
+          ["task", "sandbox", "task_tidy"],
+          {
+            taskId: created.id,
+            finalTitle: created.title,
+            finalDescription: created.description,
+            finalRemindAt: created.remindAt,
+          },
+        );
       }
 
       return created;
@@ -187,7 +207,24 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
      * guarantee without having to notice it.
      */
     const task = await prisma.$transaction(async (tx) => {
-      const updated = await tx.task.update({ where: { id }, data });
+      /*
+       * AI on this task (../domain/aiMark.ts): an answer saved marks it, with
+       * the fields as this save leaves them; "вернуть исходник" unmarks it.
+       */
+      const ai = body.aiClear
+        ? aiClearData()
+        : await aiMarkFields(
+            tx,
+            userId,
+            body.dictationParseId,
+            ["task_tidy", "note"],
+            before.aiSource,
+            {
+              title: data.title ?? before.title,
+              description: data.description !== undefined ? data.description : before.description,
+            },
+          );
+      const updated = await tx.task.update({ where: { id }, data: { ...data, ...ai } });
 
       for (const event of movement.events) {
         await tx.taskEvent.create({ data: { taskId: id, ...event } });
@@ -204,6 +241,11 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
           taskId: updated.id,
           finalTitle: updated.title,
           finalDescription: updated.description,
+        });
+        // The description alone, tidied as a body of text: labelled as one.
+        await linkDictationParse(tx, userId, body.dictationParseId, ["note"], {
+          taskId: updated.id,
+          finalContent: updated.description,
         });
       }
 
@@ -253,7 +295,9 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       const rebalanced = computeRebalancedPositions(allTasks.map((t) => t.id));
 
       await prisma.$transaction(
-        rebalanced.map((r) => prisma.task.update({ where: { id: r.id }, data: { position: r.position } })),
+        rebalanced.map((r) =>
+          prisma.task.update({ where: { id: r.id }, data: { position: r.position } }),
+        ),
       );
 
       beforePosition = beforeId

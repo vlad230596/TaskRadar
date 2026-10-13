@@ -25,7 +25,7 @@ const prismaMock = vi.hoisted(() => ({
   project: { findFirst: vi.fn() },
   task: { aggregate: vi.fn(), create: vi.fn() },
   taskEvent: { create: vi.fn() },
-  dictationParse: { updateMany: vi.fn() },
+  dictationParse: { updateMany: vi.fn(), findFirst: vi.fn(async (): Promise<unknown> => null) },
   $transaction: vi.fn(),
 }));
 
