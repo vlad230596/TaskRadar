@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dictation_api.dart';
+import '../domain/ai_mark.dart';
 import '../models/note.dart';
 import '../providers/project_providers.dart';
+import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictate_into.dart';
 import '../widgets/mutation_feedback.dart';
@@ -70,6 +72,10 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   /// when the draft holds no answer.
   String? _tidyParseId;
 
+  /// "Вернуть исходник" was picked: the draft holds the source again, and the
+  /// save tells the server to forget AI touched the note (`domain/ai_mark.dart`).
+  bool _aiClear = false;
+
   @override
   void initState() {
     super.initState();
@@ -90,7 +96,9 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _onChanged() => setState(() {});
 
   bool get _dirty =>
-      _title.text.trim() != _savedTitle || _content.text != _savedContent;
+      _title.text.trim() != _savedTitle ||
+      _content.text != _savedContent ||
+      _aiClear;
 
   /// A title cannot be emptied: `updateNoteSchema` rejects `""` with a 400, and
   /// a note with no title is unfindable in the list anyway.
@@ -111,7 +119,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             widget.note,
             title: title,
             content: content,
-            dictationParseId: _tidyParseId,
+            dictationParseId: _aiClear ? null : _tidyParseId,
+            aiClear: _aiClear,
           ),
       failure: 'Не удалось сохранить заметку.',
     );
@@ -123,6 +132,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _savedTitle = title;
         _savedContent = content;
         _tidyParseId = null;
+        _aiClear = false;
       }
     });
     return ok;
@@ -153,6 +163,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _content.text = content;
         if (title != null && _title.text.trim().isEmpty) _title.text = title;
         _tidyParseId = parseId;
+        _aiClear = false;
       // "Как надиктовано" after correcting the source by hand keeps the
       // correction.
       case TidyKeptSource(:final source) when source != _content.text.trim():
@@ -161,6 +172,25 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       default:
         break;
     }
+  }
+
+  /// "Вернуть исходник" from the AI mark: into the draft, saved by
+  /// "Сохранить" like any edit.
+  void _revertToSource(String source) {
+    setState(() {
+      _content.text = source;
+      _tidyParseId = null;
+      _aiClear = true;
+    });
+  }
+
+  /// The note as the list has it now -- the mark follows saves made here.
+  Note get _current {
+    final rows = ref.watch(projectNotesProvider(widget.projectId)).value;
+    for (final row in rows ?? const <Note>[]) {
+      if (row.id == widget.note.id) return row;
+    }
+    return widget.note;
   }
 
   /// Intercepts the back gesture / button.
@@ -238,6 +268,17 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   DictateInto(controller: _title, label: 'в заголовок'),
                 ],
               ),
+              if (!_aiClear && noteAiMark(_current).shown) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: AiSourceMark(
+                    mark: noteAiMark(_current),
+                    onRevert: () =>
+                        _revertToSource(noteAiMark(_current).source ?? ''),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               Expanded(
                 child: _preview

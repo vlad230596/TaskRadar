@@ -15,7 +15,11 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$InboxItem {
 
- String get id; String get text; String get createdAt; String get updatedAt;
+ String get id; String get text;/// AI processing (backend `src/domain/aiMark.ts`): the words before the
+/// first "Обработать", the kind of that first parse, and the fields as
+/// the last AI answer saved them. All null when AI never touched it.
+/// Read through `domain/ai_mark.dart`.
+ String? get aiSource; String? get aiKind; Map<String, dynamic>? get aiResult; String get createdAt; String get updatedAt;
 /// Create a copy of InboxItem
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +32,16 @@ $InboxItemCopyWith<InboxItem> get copyWith => _$InboxItemCopyWithImpl<InboxItem>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is InboxItem&&(identical(other.id, id) || other.id == id)&&(identical(other.text, text) || other.text == text)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is InboxItem&&(identical(other.id, id) || other.id == id)&&(identical(other.text, text) || other.text == text)&&(identical(other.aiSource, aiSource) || other.aiSource == aiSource)&&(identical(other.aiKind, aiKind) || other.aiKind == aiKind)&&const DeepCollectionEquality().equals(other.aiResult, aiResult)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,text,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,text,aiSource,aiKind,const DeepCollectionEquality().hash(aiResult),createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'InboxItem(id: $id, text: $text, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'InboxItem(id: $id, text: $text, aiSource: $aiSource, aiKind: $aiKind, aiResult: $aiResult, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -48,7 +52,7 @@ abstract mixin class $InboxItemCopyWith<$Res>  {
   factory $InboxItemCopyWith(InboxItem value, $Res Function(InboxItem) _then) = _$InboxItemCopyWithImpl;
 @useResult
 $Res call({
- String id, String text, String createdAt, String updatedAt
+ String id, String text, String? aiSource, String? aiKind, Map<String, dynamic>? aiResult, String createdAt, String updatedAt
 });
 
 
@@ -65,11 +69,14 @@ class _$InboxItemCopyWithImpl<$Res>
 
 /// Create a copy of InboxItem
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? text = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? text = null,Object? aiSource = freezed,Object? aiKind = freezed,Object? aiResult = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
-as String,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String,aiSource: freezed == aiSource ? _self.aiSource : aiSource // ignore: cast_nullable_to_non_nullable
+as String?,aiKind: freezed == aiKind ? _self.aiKind : aiKind // ignore: cast_nullable_to_non_nullable
+as String?,aiResult: freezed == aiResult ? _self.aiResult : aiResult // ignore: cast_nullable_to_non_nullable
+as Map<String, dynamic>?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,
   ));
@@ -156,10 +163,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String text,  String createdAt,  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String text,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  String createdAt,  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _InboxItem() when $default != null:
-return $default(_that.id,_that.text,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.text,_that.aiSource,_that.aiKind,_that.aiResult,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -177,10 +184,10 @@ return $default(_that.id,_that.text,_that.createdAt,_that.updatedAt);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String text,  String createdAt,  String updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String text,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  String createdAt,  String updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _InboxItem():
-return $default(_that.id,_that.text,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.text,_that.aiSource,_that.aiKind,_that.aiResult,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -197,10 +204,10 @@ return $default(_that.id,_that.text,_that.createdAt,_that.updatedAt);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String text,  String createdAt,  String updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String text,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  String createdAt,  String updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _InboxItem() when $default != null:
-return $default(_that.id,_that.text,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.text,_that.aiSource,_that.aiKind,_that.aiResult,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -212,11 +219,26 @@ return $default(_that.id,_that.text,_that.createdAt,_that.updatedAt);case _:
 @JsonSerializable()
 
 class _InboxItem implements InboxItem {
-  const _InboxItem({required this.id, required this.text, required this.createdAt, required this.updatedAt});
+  const _InboxItem({required this.id, required this.text, this.aiSource, this.aiKind, final  Map<String, dynamic>? aiResult, required this.createdAt, required this.updatedAt}): _aiResult = aiResult;
   factory _InboxItem.fromJson(Map<String, dynamic> json) => _$InboxItemFromJson(json);
 
 @override final  String id;
 @override final  String text;
+/// AI processing (backend `src/domain/aiMark.ts`): the words before the
+/// first "Обработать", the kind of that first parse, and the fields as
+/// the last AI answer saved them. All null when AI never touched it.
+/// Read through `domain/ai_mark.dart`.
+@override final  String? aiSource;
+@override final  String? aiKind;
+ final  Map<String, dynamic>? _aiResult;
+@override Map<String, dynamic>? get aiResult {
+  final value = _aiResult;
+  if (value == null) return null;
+  if (_aiResult is EqualUnmodifiableMapView) return _aiResult;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableMapView(value);
+}
+
 @override final  String createdAt;
 @override final  String updatedAt;
 
@@ -233,16 +255,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _InboxItem&&(identical(other.id, id) || other.id == id)&&(identical(other.text, text) || other.text == text)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _InboxItem&&(identical(other.id, id) || other.id == id)&&(identical(other.text, text) || other.text == text)&&(identical(other.aiSource, aiSource) || other.aiSource == aiSource)&&(identical(other.aiKind, aiKind) || other.aiKind == aiKind)&&const DeepCollectionEquality().equals(other._aiResult, _aiResult)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,text,createdAt,updatedAt);
+int get hashCode => Object.hash(runtimeType,id,text,aiSource,aiKind,const DeepCollectionEquality().hash(_aiResult),createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'InboxItem(id: $id, text: $text, createdAt: $createdAt, updatedAt: $updatedAt)';
+  return 'InboxItem(id: $id, text: $text, aiSource: $aiSource, aiKind: $aiKind, aiResult: $aiResult, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -253,7 +275,7 @@ abstract mixin class _$InboxItemCopyWith<$Res> implements $InboxItemCopyWith<$Re
   factory _$InboxItemCopyWith(_InboxItem value, $Res Function(_InboxItem) _then) = __$InboxItemCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String text, String createdAt, String updatedAt
+ String id, String text, String? aiSource, String? aiKind, Map<String, dynamic>? aiResult, String createdAt, String updatedAt
 });
 
 
@@ -270,11 +292,14 @@ class __$InboxItemCopyWithImpl<$Res>
 
 /// Create a copy of InboxItem
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? text = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? text = null,Object? aiSource = freezed,Object? aiKind = freezed,Object? aiResult = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_InboxItem(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,text: null == text ? _self.text : text // ignore: cast_nullable_to_non_nullable
-as String,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String,aiSource: freezed == aiSource ? _self.aiSource : aiSource // ignore: cast_nullable_to_non_nullable
+as String?,aiKind: freezed == aiKind ? _self.aiKind : aiKind // ignore: cast_nullable_to_non_nullable
+as String?,aiResult: freezed == aiResult ? _self._aiResult : aiResult // ignore: cast_nullable_to_non_nullable
+as Map<String, dynamic>?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,
   ));

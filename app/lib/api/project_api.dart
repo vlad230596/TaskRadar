@@ -245,10 +245,13 @@ class ProjectApi {
     PatchField<String> remindAt = const PatchField<String>.keep(),
     PatchField<String> remindTime = const PatchField<String>.keep(),
     String? dictationParseId,
+    bool aiClear = false,
   }) async {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
     if (status != null) body['status'] = status.name;
+    // "Вернуть исходник": the row forgets AI touched it (`domain/ai_mark.dart`).
+    if (aiClear) body['aiClear'] = true;
     description.writeTo(body, 'description');
     categoryId.writeTo(body, 'categoryId');
     remindAt.writeTo(body, 'remindAt');
@@ -393,10 +396,12 @@ class ProjectApi {
     String? title,
     String? content,
     String? dictationParseId,
+    bool aiClear = false,
   }) async {
     final body = <String, dynamic>{};
     if (title != null) body['title'] = title;
     if (content != null) body['content'] = content;
+    if (aiClear) body['aiClear'] = true;
 
     if (body.isEmpty) {
       throw ArgumentError.value(

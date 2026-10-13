@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/dictation_api.dart';
+import '../domain/ai_mark.dart';
 import '../domain/reminders.dart';
 import '../domain/task_age.dart';
 import '../models/history_task_event.dart';
@@ -17,6 +18,7 @@ import 'dictation_screen.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/category_sheets.dart';
+import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
 import '../widgets/focus_toggle.dart';
@@ -121,6 +123,10 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   /// hold no answer.
   String? _tidyParseId;
 
+  /// "Вернуть исходник" was picked: the fields hold the source again, and the
+  /// save tells the server to forget AI touched the task (`domain/ai_mark.dart`).
+  bool _aiClear = false;
+
   /// The category a draft will be created in. An existing task's category is
   /// the task's own and is written the moment it is picked.
   String? _draftCategoryId;
@@ -193,13 +199,15 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     // one PATCH in the common case and zero when nothing was touched. A
     // tidied text is one PATCH of both, with the record of the answer.
     final parseId = _tidyParseId;
+    final aiClear = _aiClear;
     final ok = await runMutation(context, () async {
-      if (parseId != null) {
+      if (parseId != null || aiClear) {
         await _tasks.editText(
           task,
           title: title,
           description: note.isEmpty ? null : note,
-          dictationParseId: parseId,
+          dictationParseId: aiClear ? null : parseId,
+          aiClear: aiClear,
         );
         return;
       }
@@ -208,6 +216,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     }, failure: 'Не удалось сохранить задачу.');
     if (!ok || !mounted) return;
     _tidyParseId = null;
+    _aiClear = false;
     Navigator.of(context).pop();
   }
 
@@ -451,6 +460,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
         result: TidiedTask(:final title, :final description, :final parseId),
       ):
         _tidyParseId = parseId;
+        _aiClear = false;
         return (title: title, description: description);
       // "Как надиктовано" after correcting the source by hand: the corrected
       // text is what the user asked for, split back the way it was joined.
@@ -471,6 +481,20 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     text.title,
     ?text.description,
   ].where((part) => part.isNotEmpty).join('\n');
+
+  /// "Вернуть исходник" from the AI mark: the source goes into the fields,
+  /// split back the way it was made (`taskSourceFields`), and is written by
+  /// "Сохранить" like any edit.
+  void _revertToSource(Task task) {
+    final fields = taskSourceFields(task);
+    setState(() {
+      _title.text = fields.title;
+      _note.text = fields.description ?? '';
+      if (_note.text.isNotEmpty) _noteOpen = true;
+      _tidyParseId = null;
+      _aiClear = true;
+    });
+  }
 
   /// Dictation into the task.
   ///
@@ -509,8 +533,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   }
 
   /// "Причесать" on the note alone: [ParseKind.note], with the task's title
-  /// as the note's title so the model leaves it be. The answer is not labelled
-  /// with its parse: a task's save links only `task_tidy` parses.
+  /// as the note's title so the model leaves it be.
   Future<void> _tidyNote() async {
     final source = _note.text.trim();
     if (source.isEmpty) return;
@@ -523,8 +546,14 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     );
     if (!mounted) return;
     switch (outcome) {
-      case TidyAccepted(result: TidiedNote(:final content)):
-        setState(() => _note.text = content);
+      // Labelled and marked by the save: a task's PATCH takes `note` answers
+      // for its description.
+      case TidyAccepted(result: TidiedNote(:final content, :final parseId)):
+        setState(() {
+          _note.text = content;
+          _tidyParseId = parseId;
+          _aiClear = false;
+        });
       case TidyKeptSource(:final source) when source != _note.text.trim():
         setState(() => _note.text = source);
       default:
@@ -597,7 +626,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _textField(dictateTooltip: 'Дописать голосом'),
+                    _textField(dictateTooltip: 'Дописать голосом', task: task),
                     const SizedBox(height: Insets.gap),
                     // The set's rows carry the project's name; until the
                     // header has loaded the optimistic row goes without it,
@@ -756,7 +785,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   }
 
   /// The title, and under it the two things done *to* the title.
-  Widget _textField({required String dictateTooltip}) {
+  Widget _textField({required String dictateTooltip, Task? task}) {
     return Container(
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -790,6 +819,14 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
+              // Hidden once "вернуть исходник" is picked: the fields no longer
+              // hold what AI wrote, whatever the saved row still says.
+              if (task != null && !_aiClear)
+                AiSourceMark(
+                  mark: taskAiMark(task),
+                  onRevert: () => _revertToSource(task),
+                ),
+              const Spacer(),
               _FieldChip(
                 icon: Icons.auto_awesome,
                 label: 'Причесать',

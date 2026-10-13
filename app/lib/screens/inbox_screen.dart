@@ -18,6 +18,8 @@ import '../providers/scope_providers.dart';
 import '../storage/capture_queue_store.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../domain/ai_mark.dart';
+import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/glance.dart';
 import '../widgets/mode_navigation.dart';
@@ -294,6 +296,19 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
     );
   }
 
+  /// "Вернуть исходник" from the AI mark. Written at once: a line has no
+  /// "Сохранить" to wait for (see [_commitEdit]).
+  Future<void> _revertToSource(String source) async {
+    _text.text = source;
+    await runMutation(
+      context,
+      () => ref
+          .read(inboxProvider.notifier)
+          .edit(widget.item, source, aiClear: true),
+      failure: 'Не удалось вернуть исходник.',
+    );
+  }
+
   /// [offerTidy] false: the line was tidied a moment ago, on its way here,
   /// and asking again would be asking twice -- [shaped] and [parseId] are then
   /// that answer's task and record, if it had them.
@@ -558,6 +573,15 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
                   style: AppText.caption,
                 ),
               ),
+              if (inboxAiMark(widget.item).shown) ...<Widget>[
+                AiSourceMark(
+                  mark: inboxAiMark(widget.item),
+                  onRevert: () => unawaited(
+                    _revertToSource(inboxAiMark(widget.item).source ?? ''),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               _SquareAction(
                 icon: Icons.auto_awesome_outlined,
                 tooltip: 'Причесать',
@@ -834,9 +858,23 @@ class _ClosedLine extends StatelessWidget {
                     _ClampedLine(text: item.text, style: AppText.sandboxLine),
                     if (age != null) ...<Widget>[
                       const SizedBox(height: 6),
-                      Text(
-                        '${formatDays(age)} в песочнице',
-                        style: AppText.caption,
+                      Row(
+                        children: <Widget>[
+                          // Just a hint here; the mark with its sheet is on
+                          // the open line.
+                          if (inboxAiMark(item).shown) ...const <Widget>[
+                            Icon(
+                              Icons.auto_awesome,
+                              size: 12,
+                              color: AppColors.indigoLink,
+                            ),
+                            SizedBox(width: 4),
+                          ],
+                          Text(
+                            '${formatDays(age)} в песочнице',
+                            style: AppText.caption,
+                          ),
+                        ],
                       ),
                     ],
                   ],

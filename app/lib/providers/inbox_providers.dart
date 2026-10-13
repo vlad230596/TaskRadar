@@ -86,16 +86,22 @@ class Inbox extends _$Inbox {
     InboxItem item,
     String text, {
     String? dictationParseId,
+    bool aiClear = false,
   }) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError.value(text, 'text', 'an inbox item needs text');
     }
-    if (trimmed == item.text) return;
+    if (trimmed == item.text && !aiClear) return;
 
     final saved = await ref
         .read(inboxApiProvider)
-        .editItem(item.id, text: trimmed, dictationParseId: dictationParseId);
+        .editItem(
+          item.id,
+          text: trimmed,
+          dictationParseId: dictationParseId,
+          aiClear: aiClear,
+        );
     _publish(
       (state.value ?? const <InboxItem>[])
           .map((row) => row.id == saved.id ? saved : row)

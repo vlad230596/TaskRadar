@@ -67,12 +67,15 @@ class InboxApi {
     String itemId, {
     required String text,
     String? dictationParseId,
+    bool aiClear = false,
   }) async {
     final json = await _client.patch<Map<String, dynamic>>(
       '/inbox/$itemId',
       body: <String, dynamic>{
         'text': text,
         'dictationParseId': ?dictationParseId,
+        // "Вернуть исходник" (`domain/ai_mark.dart`).
+        if (aiClear) 'aiClear': true,
       },
     );
     return InboxItem.fromJson(json);

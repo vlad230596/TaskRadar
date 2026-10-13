@@ -63,6 +63,14 @@ abstract class Task with _$Task {
     /// servers and the board snapshot cached before categories do not carry
     /// it, and "not told" draws the same as "none".
     String? categoryId,
+
+    /// AI processing (backend `src/domain/aiMark.ts`): the words before the
+    /// first "Обработать", the kind of that first parse, and the fields as
+    /// the last AI answer saved them. All null when AI never touched it.
+    /// Read through `domain/ai_mark.dart`.
+    String? aiSource,
+    String? aiKind,
+    Map<String, dynamic>? aiResult,
     required String createdAt,
     required String updatedAt,
 

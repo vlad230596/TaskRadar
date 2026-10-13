@@ -278,10 +278,12 @@ void main() {
 
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
-      // Only the note changed; and a note parse is no task_tidy, so the save
-      // does not label it.
+      // One PATCH of the text with the answer's record: the server labels
+      // the parse and marks the task as processed (`domain/ai_mark.dart`).
       expect(server.patches.single.body, <String, dynamic>{
+        'title': 'Купить кабель',
         'description': 'Длина два метра.',
+        'dictationParseId': 'dp-21',
       });
     });
 

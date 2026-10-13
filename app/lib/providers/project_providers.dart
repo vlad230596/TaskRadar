@@ -345,11 +345,15 @@ class ProjectTasks extends _$ProjectTasks {
   /// leaves behind, and a label taken between the two halves would be half
   /// the answer. Sent even when nothing changed -- "the answer was right as
   /// it came" is the most useful label there is.
+  ///
+  /// With [aiClear] instead -- "вернуть исходник" -- the text is the source
+  /// put back and the task forgets that AI touched it (`domain/ai_mark.dart`).
   Future<void> editText(
     Task task, {
     required String title,
     required String? description,
-    required String dictationParseId,
+    String? dictationParseId,
+    bool aiClear = false,
   }) {
     final nextTitle = title.trim().isEmpty ? task.title : title.trim();
     final trimmed = description?.trim();
@@ -357,13 +361,21 @@ class ProjectTasks extends _$ProjectTasks {
 
     return _editText(
       task,
-      (rows, index) =>
-          rows[index].copyWith(title: nextTitle, description: next),
+      (rows, index) => aiClear
+          ? rows[index].copyWith(
+              title: nextTitle,
+              description: next,
+              aiSource: null,
+              aiKind: null,
+              aiResult: null,
+            )
+          : rows[index].copyWith(title: nextTitle, description: next),
       () => _api.updateTask(
         task.id,
         title: nextTitle,
         description: PatchField<String>.toOrClear(next),
         dictationParseId: dictationParseId,
+        aiClear: aiClear,
       ),
     );
   }
@@ -761,12 +773,13 @@ class ProjectNotes extends _$ProjectNotes {
     String? title,
     String? content,
     String? dictationParseId,
+    bool aiClear = false,
   }) async {
     final nextTitle = title?.trim();
     final changedTitle =
         nextTitle != null && nextTitle.isNotEmpty && nextTitle != note.title;
     final changedContent = content != null && content != note.content;
-    if (!changedTitle && !changedContent) return;
+    if (!changedTitle && !changedContent && !aiClear) return;
 
     final previous = state.value;
     if (previous == null) return;
@@ -789,8 +802,12 @@ class ProjectNotes extends _$ProjectNotes {
       final saved = await _api.updateNote(
         note.id,
         title: changedTitle ? nextTitle : null,
-        content: changedContent ? content : null,
+        // Unchanged text with [aiClear] still needs a field to send.
+        content: changedContent || (aiClear && !changedTitle)
+            ? content ?? note.content
+            : null,
         dictationParseId: dictationParseId,
+        aiClear: aiClear,
       );
       if (!ref.mounted) return;
 

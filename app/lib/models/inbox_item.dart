@@ -26,6 +26,14 @@ abstract class InboxItem with _$InboxItem {
   const factory InboxItem({
     required String id,
     required String text,
+
+    /// AI processing (backend `src/domain/aiMark.ts`): the words before the
+    /// first "Обработать", the kind of that first parse, and the fields as
+    /// the last AI answer saved them. All null when AI never touched it.
+    /// Read through `domain/ai_mark.dart`.
+    String? aiSource,
+    String? aiKind,
+    Map<String, dynamic>? aiResult,
     required String createdAt,
     required String updatedAt,
   }) = _InboxItem;
