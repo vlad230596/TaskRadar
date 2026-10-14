@@ -59,6 +59,7 @@ class _AiStatsScreenState extends ConsumerState<AiStatsScreen> {
         padding: const EdgeInsets.all(Insets.gutter),
         children: <Widget>[
           SegmentedButton<int>(
+            showSelectedIcon: false,
             segments: const <ButtonSegment<int>>[
               ButtonSegment<int>(value: 7, label: Text('7 дней')),
               ButtonSegment<int>(value: 30, label: Text('30 дней')),
@@ -154,7 +155,7 @@ class _ModelStatsCard extends StatelessWidget {
           Text(
             '${model.total} запросов · ответила ${_percent(model.ok, model.total)}'
             '${model.failed > 0 ? ' · сбоев ${model.failed}' : ''}'
-            '${avg == null ? '' : ' · в среднем ${(avg / 1000).toStringAsFixed(1)} с'}',
+            '${avg == null ? '' : ' · в среднем ${(avg / 1000).toStringAsFixed(1)} с'}',
             style: AppText.caption,
           ),
         ],
@@ -380,6 +381,7 @@ class _AiPromptsScreenState extends ConsumerState<AiPromptsScreen> {
               ),
               const SizedBox(height: 8),
               SegmentedButton<int>(
+                showSelectedIcon: false,
                 segments: <ButtonSegment<int>>[
                   for (final level in aiLevels)
                     ButtonSegment<int>(
@@ -397,11 +399,7 @@ class _AiPromptsScreenState extends ConsumerState<AiPromptsScreen> {
               _Card(
                 child: SelectableText(
                   '${prompt.system}\n\n— сообщение пользователя —\n${prompt.user}',
-                  style: const TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    height: 1.4,
-                  ),
+                  style: const TextStyle(fontSize: 12, height: 1.4),
                 ),
               ),
             ],
