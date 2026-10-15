@@ -6,6 +6,7 @@ import '../providers/session_provider.dart';
 import '../providers/shell_providers.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/mode_navigation.dart';
+import '../widgets/reminder_bridge_scope.dart';
 import 'history_screen.dart';
 import 'plan_screen.dart';
 import 'scopes_screen.dart';
@@ -41,8 +42,14 @@ import 'work_screen.dart';
 class ShellScreen extends ConsumerWidget {
   const ShellScreen({super.key});
 
+  /// The alarm queue follows the board from here, not from the planning mode:
+  /// a widget's subscriptions are paused while a route covers it (see
+  /// [ReminderBridgeScope]).
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) =>
+      ReminderBridgeScope(child: _buildModes(context, ref));
+
+  Widget _buildModes(BuildContext context, WidgetRef ref) {
     final mode = ref.watch(shellModeProvider);
     final wide = isWideLayout(context);
 

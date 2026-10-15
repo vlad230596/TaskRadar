@@ -406,8 +406,10 @@ BoardView boardView(Ref ref) {
 ///   `watch` would rebuild this provider on every sync report and re-register
 ///   both subscriptions.
 ///
-/// The board screen watches this once; that is the only thing that has to
-/// remember anything.
+/// `ReminderBridgeScope` in the shell subscribes to this once; that is the
+/// only thing that has to remember anything. It used to be a `ref.watch` in
+/// the planning screen, which Riverpod pauses whenever a route covers the
+/// shell -- see the scope for why that lost alarms.
 @Riverpod(keepAlive: true)
 void boardReminderBridge(Ref ref) {
   List<BoardProject>? published;

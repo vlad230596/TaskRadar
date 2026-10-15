@@ -49,17 +49,6 @@ class PlanScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    /*
-     * Watched for its lifetime, not its value (it has none).
-     *
-     * `boardReminderBridge` is what turns a refreshed board into an updated
-     * alarm queue. It is `keepAlive`, but a Riverpod provider nobody subscribes
-     * to is never *created*, so something has to be the first subscriber. This
-     * screen is the right one: it is the mode the app opens in, and the bridge
-     * is keepAlive so it outlives a switch to another mode.
-     */
-    ref.watch(boardReminderBridgeProvider);
-
     final view = ref.watch(boardViewProvider);
     final scope = ref.watch(activeScopeProvider);
     final layout = ref.watch(planLayoutPreferenceProvider);
