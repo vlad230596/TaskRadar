@@ -498,7 +498,11 @@ class TidyActions extends StatelessWidget {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
+              // The app's face, named: a button's own text style replaces
+              // the theme's, and without a family it fell back to the
+              // platform font.
               textStyle: const TextStyle(
+                fontFamily: AppFonts.text,
                 fontWeight: FontWeight.w600,
                 fontSize: 13.5,
               ),
@@ -1400,6 +1404,7 @@ final ThemeData voiceTheme = buildAppTheme().copyWith(
     color: AppColors.railActive,
     surfaceTintColor: Colors.transparent,
     textStyle: const TextStyle(
+      fontFamily: AppFonts.text,
       fontWeight: FontWeight.w500,
       fontSize: 15,
       color: AppColors.voiceInk,
