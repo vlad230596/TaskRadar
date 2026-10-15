@@ -53,6 +53,12 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 add_subdirectory("runner")
 
 
+# audioplayers_windows still includes <experimental/coroutine>, which MSVC
+# 14.5x (Visual Studio 18, on the CI runners) refuses outright unless told to
+# keep accepting it. Set for the plugins built below; remove once the plugin
+# moves to C++20 <coroutine>.
+add_compile_definitions(_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS)
+
 # Generated plugin build rules, which manage building the plugins and adding
 # them to the application.
 include(flutter/generated_plugins.cmake)

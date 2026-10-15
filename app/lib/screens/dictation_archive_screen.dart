@@ -25,25 +25,30 @@ class DictationArchiveScreen extends ConsumerStatefulWidget {
 
 class _DictationArchiveScreenState
     extends ConsumerState<DictationArchiveScreen> {
-  final AudioPlayer _player = AudioPlayer();
   late Future<List<ArchivedDictation>> _items = _load();
 
   /// The recording playing now, by path.
   String? _playing;
   StreamSubscription<void>? _completion;
 
-  @override
-  void initState() {
-    super.initState();
-    _completion = _player.onPlayerComplete.listen((_) {
+  /// Made on the first "Прослушать", not with the screen: opening the list
+  /// costs no audio session, and a platform with no player still lists.
+  AudioPlayer? _audio;
+
+  AudioPlayer get _player {
+    final existing = _audio;
+    if (existing != null) return existing;
+    final player = AudioPlayer();
+    _completion = player.onPlayerComplete.listen((_) {
       if (mounted) setState(() => _playing = null);
     });
+    return _audio = player;
   }
 
   @override
   void dispose() {
     unawaited(_completion?.cancel());
-    unawaited(_player.dispose());
+    unawaited(_audio?.dispose());
     super.dispose();
   }
 
@@ -77,7 +82,7 @@ class _DictationArchiveScreenState
       confirmLabel: 'Удалить',
     );
     if (!sure || !mounted) return;
-    await _player.stop();
+    await _audio?.stop();
     await ref.read(dictationArchiveProvider).clear();
     if (!mounted) return;
     setState(() {

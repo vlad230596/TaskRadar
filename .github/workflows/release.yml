@@ -15,10 +15,24 @@ name: Release TaskRadar
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: New SemVer version to approve, tag, and deploy from main
+      # The version is computed here, from the tags on origin -- never typed.
+      # Agents and people alike kept picking a number from a stale local
+      # clone and colliding with a tag CI had already pushed; "how big is the
+      # change" is the only thing worth asking a human (see CLAUDE.md).
+      bump:
+        description: How big the change is -- the next version is computed from the latest tag on origin
         required: true
+        type: choice
+        options:
+          - minor
+          - patch
+          - major
+        default: minor
+      version:
+        description: Exact version instead of bump (rarely needed; must be newer than the latest tag)
+        required: false
         type: string
+        default: ""
 
 concurrency:
   group: taskradar-production-release
@@ -43,12 +57,35 @@ jobs:
       - name: Validate release input
         id: release
         env:
-          VERSION: ${{ inputs.version }}
+          BUMP: ${{ inputs.bump }}
+          REQUESTED: ${{ inputs.version }}
         run: |
           if [[ "$GITHUB_REF" != 'refs/heads/main' ]]; then
             echo 'Release workflow must be started from main.' >&2
             exit 64
           fi
+          # The latest release is the highest SemVer-core tag on origin -- the
+          # remote, not this checkout, so a tag pushed a minute ago counts.
+          latest="$(git ls-remote --tags --refs origin \
+            | sed -E 's#.*refs/tags/##' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -n 1)"
+          latest="${latest:-0.0.0}"
+          IFS=. read -r major minor patch <<< "$latest"
+          case "$BUMP" in
+            major) next="$((major + 1)).0.0" ;;
+            minor) next="${major}.$((minor + 1)).0" ;;
+            patch) next="${major}.${minor}.$((patch + 1))" ;;
+            *) echo "Unknown bump: $BUMP" >&2; exit 64 ;;
+          esac
+          VERSION="${REQUESTED:-$next}"
+          newest="$(printf '%s\n%s\n' "$latest" "$REQUESTED" | sort -V | tail -n 1)"
+          if [[ -n "$REQUESTED" && ( "$newest" != "$REQUESTED" || "$REQUESTED" == "$latest" ) ]]; then
+            echo "Requested $REQUESTED is not newer than the latest tag $latest." >&2
+            exit 65
+          fi
+          echo "Latest tag on origin: $latest -> releasing $VERSION ($([[ -n "$REQUESTED" ]] && echo exact || echo "$BUMP"))"
+          echo "### Releasing $VERSION (latest was $latest)" >> "$GITHUB_STEP_SUMMARY"
           if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo 'Release tag must be a SemVer core such as 1.0.0.' >&2
             exit 64
