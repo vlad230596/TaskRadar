@@ -19,3 +19,6 @@ CREDENTIALS.local.md
 key.properties
 *.jks
 *.keystore
+
+# Android QA bench output: APKs, logs, per-run reports (tests/android/README.md)
+tests/android/results/

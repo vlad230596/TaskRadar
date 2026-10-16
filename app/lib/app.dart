@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'navigation/app_routes.dart';
 import 'notifications/reminder_lifecycle.dart';
 import 'providers/session_provider.dart';
+import 'qa/qa_signals.dart';
 import 'screens/login_screen.dart';
 import 'screens/shell_screen.dart';
 import 'screens/splash_screen.dart';
@@ -119,7 +120,11 @@ class TaskRadarApp extends ConsumerWidget {
             AsyncData(:final value) =>
               value == SessionStatus.signedIn
                   ? const CaptureFlushScope(
-                      child: NotificationLinkScope(child: ShellScreen()),
+                      child: NotificationLinkScope(
+                        child: qaBuild
+                            ? QaBoardDrawnSignal(child: ShellScreen())
+                            : ShellScreen(),
+                      ),
                     )
                   : const LoginScreen(),
 

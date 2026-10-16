@@ -1,3 +1,4 @@
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -56,6 +57,28 @@ val releaseSigningMissing: List<String> =
 
 val releaseSigningAvailable = releaseSigningMissing.isEmpty()
 
+/*
+ * The emulator QA package (`tests/android/`), selected by the very define that
+ * switches on the QA hooks in Dart -- `--dart-define=TASKRADAR_QA=true` -- so
+ * the package and the Dart side cannot disagree. A separate environment
+ * variable could: a Gradle daemon that missed it builds a QA APK under the
+ * regular id, and installing that replaces the real app with its real data.
+ *
+ * The QA package is a different application: its own id, its own data, a label
+ * that says so, and cleartext HTTP to the synthetic API on 10.0.2.2. It is a
+ * *release* build, because the bench times the cold start and a profile build
+ * carries the VM service and timeline (measured: +0.5 s on the emulator), and
+ * it is signed with the debug key. That is the one exception to the signing
+ * rule below, and it is safe for the reason the rule exists: an APK under
+ * `com.taskradar.app.qa` can never update, or be mistaken for, the real app.
+ */
+val qaBuild: Boolean =
+    (project.findProperty("dart-defines") as String?)
+        .orEmpty()
+        .split(",")
+        .filter { it.isNotBlank() }
+        .any { String(Base64.getDecoder().decode(it), Charsets.UTF_8) == "TASKRADAR_QA=true" }
+
 android {
     namespace = "com.taskradar.app"
     compileSdk = flutter.compileSdkVersion
@@ -86,6 +109,9 @@ android {
         // `namespace` above were moved to match). Do not let a re-run of
         // `flutter create` revert this.
         applicationId = "com.taskradar.app"
+        if (qaBuild) applicationIdSuffix = ".qa"
+        manifestPlaceholders["appLabel"] = if (qaBuild) "TaskRadar QA" else "TaskRadar"
+        manifestPlaceholders["cleartextTraffic"] = qaBuild.toString()
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -131,7 +157,7 @@ android {
              * artifact that is wrong in a way nobody notices for months. Debug
              * builds are untouched and still need no configuration at all.
              */
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = signingConfigs.getByName(if (qaBuild) "debug" else "release")
 
             /*
              * Notifications and code/resource shrinking (F1).
@@ -189,7 +215,7 @@ gradle.taskGraph.whenReady {
             task.path.startsWith(modulePathPrefix) && releaseTaskNames.matches(task.name)
         }
 
-    if (buildingRelease && !releaseSigningAvailable) {
+    if (buildingRelease && !releaseSigningAvailable && !qaBuild) {
         throw GradleException(
             """
             |

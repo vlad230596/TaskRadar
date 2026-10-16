@@ -86,8 +86,15 @@
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
+    <!--
+      The label and cleartext flag are placeholders only so that the emulator
+      QA package (`build.gradle.kts`, `qaBuild`) can say "TaskRadar QA" and talk
+      plain HTTP to its synthetic API on 10.0.2.2. For every other build they
+      resolve to "TaskRadar" and "false", which is the platform default anyway.
+    -->
     <application
-        android:label="TaskRadar"
+        android:label="${appLabel}"
+        android:usesCleartextTraffic="${cleartextTraffic}"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

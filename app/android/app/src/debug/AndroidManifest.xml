@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <!-- INTERNET is declared in the main manifest (it is needed by every build
          type, not just development) — see the comment there. -->
 
@@ -15,6 +16,11 @@
       Deliberately NOT in the main manifest: the release APK built in F5 points at a
       real HTTPS host, and leaving cleartext enabled there would silently allow a
       downgraded connection to carry the 30-day bearer token in the open.
+
+      `tools:replace` because the main manifest now declares the attribute too,
+      as a placeholder for the emulator QA package; this one wins for debug.
     -->
-    <application android:usesCleartextTraffic="true" />
+    <application
+        android:usesCleartextTraffic="true"
+        tools:replace="android:usesCleartextTraffic" />
 </manifest>
