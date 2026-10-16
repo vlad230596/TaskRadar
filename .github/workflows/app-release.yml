@@ -97,7 +97,12 @@ jobs:
           gradle_file=app/android/app/build.gradle.kts
           assignment='signingConfig[[:space:]]*=[[:space:]]*signingConfigs\.getByName'
 
-          if grep -qE "^[^*/]*${assignment}\(\"debug\"\)" "$gradle_file"; then
+          # One debug assignment is allowed, and only behind `if (qaBuild)`: the
+          # emulator QA package (tests/android/) has its own application id, so
+          # its debug key cannot sign an update of the real app. This workflow
+          # never passes TASKRADAR_QA, so qaBuild is false here anyway.
+          if grep -E "^[^*/]*${assignment}\(\"debug\"\)" "$gradle_file" |
+            grep -qvE '^[[:space:]]*if \(qaBuild\) '; then
             echo "$gradle_file signs the release build with the debug keystore." >&2
             echo 'It must use the "release" signingConfig, which reads:' >&2
             echo '  TASKRADAR_ANDROID_KEYSTORE_PATH' >&2

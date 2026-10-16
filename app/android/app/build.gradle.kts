@@ -157,7 +157,14 @@ android {
              * artifact that is wrong in a way nobody notices for months. Debug
              * builds are untouched and still need no configuration at all.
              */
-            signingConfig = signingConfigs.getByName(if (qaBuild) "debug" else "release")
+            signingConfig = signingConfigs.getByName("release")
+
+            // The emulator QA package only (see `qaBuild` above): its own
+            // application id, so the debug key can never sign an update of
+            // the real app. Kept as a separate line on purpose --
+            // `app-release.yml` checks the assignment above textually and
+            // allows a debug assignment only behind `if (qaBuild)`.
+            if (qaBuild) signingConfig = signingConfigs.getByName("debug")
 
             /*
              * Notifications and code/resource shrinking (F1).
