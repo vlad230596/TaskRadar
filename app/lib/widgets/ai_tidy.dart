@@ -12,6 +12,7 @@ import '../providers/reminder_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'tidy_progress.dart';
+import 'unsaved_changes_guard.dart';
 
 /// "Разобрать" / "Причесать" (F14, F15): the server's model tidying text,
 /// wherever text is written -- the dictation screen, a task, a note, a
@@ -1092,31 +1093,42 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
     final result = _result;
     final showSource = result == null || _showSource;
 
-    return Theme(
-      data: voiceTheme,
-      child: Scaffold(
-        backgroundColor: AppColors.voiceBackground,
-        body: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              _header(),
-              if (result != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                  child: TidySegment(
-                    showSource: _showSource,
-                    onChanged: (value) => setState(() => _showSource = value),
+    return UnsavedChangesGuard(
+      listenable: _source,
+      // Only what the user typed is at stake: the answer itself is one tap
+      // of "Разобрать заново" away, and the caller still has its own text.
+      isDirty: () => _source.text.trim() != widget.source.trim(),
+      message: 'Правка исходного текста будет потеряна.',
+      onSave: () async {
+        _asIs();
+        return false;
+      },
+      child: Theme(
+        data: voiceTheme,
+        child: Scaffold(
+          backgroundColor: AppColors.voiceBackground,
+          body: SafeArea(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                _header(),
+                if (result != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    child: TidySegment(
+                      showSource: _showSource,
+                      onChanged: (value) => setState(() => _showSource = value),
+                    ),
+                  ),
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    children: showSource ? _sourceView() : _resultView(result),
                   ),
                 ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                  children: showSource ? _sourceView() : _resultView(result),
-                ),
-              ),
-              _buttons(),
-            ],
+                _buttons(),
+              ],
+            ),
           ),
         ),
       ),
@@ -1131,7 +1143,7 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
         children: <Widget>[
           IconButton(
             tooltip: 'Закрыть',
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).maybePop(),
             icon: const Icon(Icons.close, size: 22),
             color: AppColors.voiceMuted,
           ),

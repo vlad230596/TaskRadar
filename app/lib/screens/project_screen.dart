@@ -22,6 +22,8 @@ import '../widgets/mutation_feedback.dart';
 import '../widgets/note_list.dart';
 import '../widgets/project_name_dialog.dart';
 import '../widgets/task_list.dart';
+import '../storage/read_cache_store.dart';
+import '../widgets/local_copy_note.dart';
 
 /// A project from the inside: its tasks and its notes (F3).
 ///
@@ -185,9 +187,13 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
     );
 
     final notePane = switch (notes) {
-      AsyncData(:final value) => NoteListView(
-        projectId: projectId,
-        notes: value,
+      AsyncData(:final value) => Column(
+        children: <Widget>[
+          LocalCopyNote(cacheKey: ReadCacheKeys.notes(projectId)),
+          Expanded(
+            child: NoteListView(projectId: projectId, notes: value),
+          ),
+        ],
       ),
       AsyncError(:final error) => _Message(
         icon: Icons.cloud_off,

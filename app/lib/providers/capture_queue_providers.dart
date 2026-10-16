@@ -117,11 +117,11 @@ class CaptureQueue extends _$CaptureQueue {
 
   /// Sends what is queued, oldest first. Never throws.
   ///
-  /// Called on capture, on app start, on resume, and on pull-to-refresh -- i.e.
-  /// at every moment when the network might have just come back. There is no
-  /// timer and no retry schedule: this app has no background worker yet, and a
-  /// poll that runs while the user is looking at something else would spend
-  /// battery to be marginally earlier than the next resume.
+  /// Called on capture, on app start, on resume, on pull-to-refresh, and every
+  /// 30 s while the app is in front with something unsent (`CaptureFlushScope`)
+  /// -- i.e. whenever the network might have just come back. There is still no
+  /// background worker: a poll that runs while the app is not even on screen
+  /// would spend battery to be marginally earlier than the next resume.
   Future<void> flush() {
     final running = _flushing;
     final next = running == null ? _flush() : running.then((_) => _flush());

@@ -27,6 +27,7 @@ import '../widgets/mutation_feedback.dart';
 import '../widgets/overflow_fade_text.dart';
 import '../widgets/project_name_dialog.dart';
 import 'dictation_screen.dart';
+import '../widgets/unsaved_changes_guard.dart';
 
 /// The sandbox (F8, redrawn in F12): write it down now, sort it later.
 ///
@@ -117,7 +118,7 @@ class _InboxScreenState extends ConsumerState<InboxScreen> {
         children: <Widget>[
           IconButton(
             tooltip: 'Назад',
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).maybePop(),
             icon: const Icon(Icons.chevron_left, size: 26),
             color: AppColors.ink,
           ),
@@ -553,78 +554,90 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
       projects.map((entry) => entry.project.name),
     );
 
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        border: Border.all(color: AppColors.indigoLink, width: 1.5),
-        borderRadius: BorderRadius.circular(Radii.panel),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          _GrowingField(controller: _text),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  age == null ? '' : 'записано ${formatDays(age)} назад',
-                  style: AppText.caption,
-                ),
-              ),
-              if (inboxAiMark(widget.item).shown) ...<Widget>[
-                AiSourceMark(
-                  mark: inboxAiMark(widget.item),
-                  onRevert: () => unawaited(
-                    _revertToSource(inboxAiMark(widget.item).source ?? ''),
+    return UnsavedChangesGuard(
+      listenable: _text,
+      // A line has no "Сохранить" of its own -- an edit is written on the way
+      // into a project -- so Back out of the sandbox with a changed line
+      // offers the save here instead of dropping it.
+      isDirty: () {
+        final text = _text.text.trim();
+        return text.isNotEmpty && text != widget.item.text;
+      },
+      message: 'Правка строчки не сохранится.',
+      onSave: _commitEdit,
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          border: Border.all(color: AppColors.indigoLink, width: 1.5),
+          borderRadius: BorderRadius.circular(Radii.panel),
+        ),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _GrowingField(controller: _text),
+            const SizedBox(height: 10),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    age == null ? '' : 'записано ${formatDays(age)} назад',
+                    style: AppText.caption,
                   ),
                 ),
-                const SizedBox(width: 8),
-              ],
-              _SquareAction(
-                icon: Icons.auto_awesome_outlined,
-                tooltip: 'Причесать',
-                onTap: () => unawaited(_tidyLine()),
-              ),
-              const SizedBox(width: 8),
-              _SquareAction(
-                icon: Icons.mic_none,
-                tooltip: 'Договорить голосом',
-                onTap: () => unawaited(_dictate()),
-              ),
-              const SizedBox(width: 8),
-              _SquareAction(
-                icon: Icons.delete_outline,
-                tooltip: 'Выбросить строку',
-                colour: AppColors.alarm,
-                onTap: () => unawaited(_discard()),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Divider(color: AppColors.lineFaint),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: <Widget>[
-              for (final entry in projects)
-                _ProjectButton(
-                  name: entry.project.name,
-                  badgeColor: badgeColours[entry.project.name],
-                  onTap: () =>
-                      unawaited(_file(entry.project.id, entry.project.name)),
+                if (inboxAiMark(widget.item).shown) ...<Widget>[
+                  AiSourceMark(
+                    mark: inboxAiMark(widget.item),
+                    onRevert: () => unawaited(
+                      _revertToSource(inboxAiMark(widget.item).source ?? ''),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _SquareAction(
+                  icon: Icons.auto_awesome_outlined,
+                  tooltip: 'Причесать',
+                  onTap: () => unawaited(_tidyLine()),
                 ),
-              _SquareAction(
-                icon: Icons.add,
-                tooltip: 'В новый проект',
-                dashed: true,
-                onTap: () => unawaited(_fileIntoNew()),
-              ),
-            ],
-          ),
-        ],
+                const SizedBox(width: 8),
+                _SquareAction(
+                  icon: Icons.mic_none,
+                  tooltip: 'Договорить голосом',
+                  onTap: () => unawaited(_dictate()),
+                ),
+                const SizedBox(width: 8),
+                _SquareAction(
+                  icon: Icons.delete_outline,
+                  tooltip: 'Выбросить строку',
+                  colour: AppColors.alarm,
+                  onTap: () => unawaited(_discard()),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(color: AppColors.lineFaint),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final entry in projects)
+                  _ProjectButton(
+                    name: entry.project.name,
+                    badgeColor: badgeColours[entry.project.name],
+                    onTap: () =>
+                        unawaited(_file(entry.project.id, entry.project.name)),
+                  ),
+                _SquareAction(
+                  icon: Icons.add,
+                  tooltip: 'В новый проект',
+                  dashed: true,
+                  onTap: () => unawaited(_fileIntoNew()),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

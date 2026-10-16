@@ -18,6 +18,7 @@ import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/tidy_progress.dart';
+import '../widgets/unsaved_changes_guard.dart';
 
 /// Where a dictation's words are going. Shown at the top of the screen, and
 /// changeable *before* "Готово" -- which is the point of showing it.
@@ -658,76 +659,98 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     // Read here, above the Scaffold, which strips the inset from its body.
     final keyboard = MediaQuery.viewInsetsOf(context).bottom > 0;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      // The status bar belongs to whatever is under it, and under it is the
-      // only dark screen in the app. Every other screen is `#F3F3F7`, so the
-      // system default of dark icons is right for eight screens out of nine and
-      // wrong for this one: on a device the clock and the battery came out dark
-      // navy on `#14183C` and could not be read.
-      //
-      // `light` names the *icons*, not the background, which is the opposite of
-      // how it reads. `systemNavigationBar*` is set too because the dictation
-      // screen is the one place a gesture bar sits on the dark surface.
-      value: const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: Brightness.light,
-        statusBarBrightness: Brightness.dark,
-        systemNavigationBarColor: AppColors.voiceBackground,
-        systemNavigationBarIconBrightness: Brightness.light,
-      ),
-      child: Theme(
-        // The one dark surface in the app, and it is dark by construction rather
-        // than by a system setting -- see `theme/app_theme.dart`. Wrapping rather
-        // than styling each widget keeps the text selection handles, the cursor
-        // and the text field's own decoration on the same palette.
-        data: voiceTheme,
-        child: Scaffold(
-          backgroundColor: AppColors.voiceBackground,
-          body: SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                _header(),
-                // With the keyboard up the stage goes: it only says what the
-                // screen already shows ("Можно править", "Разобрано — можно
-                // править"), and on a 360x780 phone the answer was left 64 px
-                // -- under three lines -- between it, the segment and the two
-                // rows of buttons. The keyboard is only ever up when the user
-                // is typing into the words, never while recording.
-                if (!keyboard) _stage(state),
-                // The space is held rather than collapsed when the recording
-                // stops: the text below must not jump up the screen while the
-                // user is reading it. The answer is a different view, with
-                // nothing to jump. With the keyboard up it is collapsed
-                // after all -- the user is typing into the text by then, and on
-                // a phone those 90 px were most of what the keyboard left of
-                // it (the words shrank to two lines and scrolled out of sight).
-                // And while "Разобрать" runs: the stages card takes the bottom
-                // of the words' area, and the held space above them only
-                // pushed their end under the card.
-                if (recording ||
-                    (!keyboard && _result == null && _progress == null))
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                    child: recording
-                        ? const VoiceLevelMeter()
-                        : const SizedBox(height: 72),
-                  ),
-                if (_result != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-                    child: TidySegment(
-                      showSource: _showSource,
-                      onChanged: (value) => setState(() => _showSource = value),
+    return UnsavedChangesGuard(
+      listenable: _text,
+      // A recording, or words nobody has saved yet. Not while the pieces are
+      // still being recognised: closing then hands them to the sandbox
+      // (`dispose`), so nothing is lost.
+      isDirty: () =>
+          !_leaving &&
+          (recording ||
+              (state is DictationIdle &&
+                  (_text.text.trim().isNotEmpty || _result != null))),
+      message: recording
+          ? 'Запись остановится, сказанное не сохранится.'
+          : 'Надиктованный текст не сохранится.',
+      onSave: recording
+          ? null
+          : () async {
+              // `_save` leaves the screen itself.
+              await _save();
+              return false;
+            },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        // The status bar belongs to whatever is under it, and under it is the
+        // only dark screen in the app. Every other screen is `#F3F3F7`, so the
+        // system default of dark icons is right for eight screens out of nine and
+        // wrong for this one: on a device the clock and the battery came out dark
+        // navy on `#14183C` and could not be read.
+        //
+        // `light` names the *icons*, not the background, which is the opposite of
+        // how it reads. `systemNavigationBar*` is set too because the dictation
+        // screen is the one place a gesture bar sits on the dark surface.
+        value: const SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+          systemNavigationBarColor: AppColors.voiceBackground,
+          systemNavigationBarIconBrightness: Brightness.light,
+        ),
+        child: Theme(
+          // The one dark surface in the app, and it is dark by construction rather
+          // than by a system setting -- see `theme/app_theme.dart`. Wrapping rather
+          // than styling each widget keeps the text selection handles, the cursor
+          // and the text field's own decoration on the same palette.
+          data: voiceTheme,
+          child: Scaffold(
+            backgroundColor: AppColors.voiceBackground,
+            body: SafeArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _header(),
+                  // With the keyboard up the stage goes: it only says what the
+                  // screen already shows ("Можно править", "Разобрано — можно
+                  // править"), and on a 360x780 phone the answer was left 64 px
+                  // -- under three lines -- between it, the segment and the two
+                  // rows of buttons. The keyboard is only ever up when the user
+                  // is typing into the words, never while recording.
+                  if (!keyboard) _stage(state),
+                  // The space is held rather than collapsed when the recording
+                  // stops: the text below must not jump up the screen while the
+                  // user is reading it. The answer is a different view, with
+                  // nothing to jump. With the keyboard up it is collapsed
+                  // after all -- the user is typing into the text by then, and on
+                  // a phone those 90 px were most of what the keyboard left of
+                  // it (the words shrank to two lines and scrolled out of sight).
+                  // And while "Разобрать" runs: the stages card takes the bottom
+                  // of the words' area, and the held space above them only
+                  // pushed their end under the card.
+                  if (recording ||
+                      (!keyboard && _result == null && _progress == null))
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
+                      child: recording
+                          ? const VoiceLevelMeter()
+                          : const SizedBox(height: 72),
                     ),
+                  if (_result != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                      child: TidySegment(
+                        showSource: _showSource,
+                        onChanged: (value) =>
+                            setState(() => _showSource = value),
+                      ),
+                    ),
+                  Expanded(
+                    child: _result != null && !_showSource
+                        ? _resultView()
+                        : _textArea(state, compact: keyboard),
                   ),
-                Expanded(
-                  child: _result != null && !_showSource
-                      ? _resultView()
-                      : _textArea(state, compact: keyboard),
-                ),
-                _buttons(state, compact: keyboard),
-              ],
+                  _buttons(state, compact: keyboard),
+                ],
+              ),
             ),
           ),
         ),
@@ -870,13 +893,23 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     );
   }
 
+  /// What happens to the words with no network, by where they are going.
+  /// Only the sandbox has an offline queue; a project needs the server, and
+  /// promising otherwise was the one false sentence on this screen.
+  String? get _offlineNote => switch (_destination) {
+    SandboxDestination() => 'сохранится и без сети',
+    ProjectDestination() =>
+      'в проект — только при связи; без неё — в песочницу',
+    FieldDestination() => null,
+  };
+
   Widget _textArea(DictationState state, {required bool compact}) {
     final note = switch (state) {
       DictationRecording(modelLoading: true) =>
         'модель ещё грузится — на запись это не влияет',
       DictationRecording(nearCeiling: true) =>
         'потом запись остановится сама — всё сказанное распознается',
-      DictationRecording() => 'сохранится и без сети',
+      DictationRecording() => _offlineNote,
       DictationFailed(:final message) => message,
       // The reference page prints this one under the *recognised* text, not
       // under the meter -- which is the moment it actually answers a question:
@@ -885,7 +918,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
       // sentence. Shown while recording as well, since the same doubt is what
       // stops someone dictating at all.
       DictationIdle() when _result != null => tidySourceHint,
-      DictationIdle() => _tidyProblem ?? 'сохранится и без сети',
+      DictationIdle() => _tidyProblem ?? _offlineNote,
       _ => null,
     };
     // Everywhere the words can go (F15). Once there is an answer, running it

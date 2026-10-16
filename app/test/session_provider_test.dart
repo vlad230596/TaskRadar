@@ -1,17 +1,22 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/api/api_exception.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/read_cache_providers.dart';
 import 'package:taskradar/providers/session_provider.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
 import 'package:taskradar/storage/capture_queue_store.dart';
+import 'package:taskradar/storage/read_cache_store.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_capture_queue_store.dart';
 import 'support/fake_settings_store.dart';
 import 'support/fake_token_storage.dart';
+import 'support/memory_read_cache_store.dart';
 import 'support/fixtures.dart';
 
 /// Tests for the startup decision -- "is there a token, is it still good, which
@@ -26,6 +31,7 @@ void main() {
   late FakeBoardSnapshotStore snapshots;
   late FakeCaptureQueueStore queue;
   late FakeSettingsStore settings;
+  late MemoryReadCacheStore readCache;
 
   setUp(() {
     backend = FakeBackend();
@@ -33,6 +39,7 @@ void main() {
     snapshots = FakeBoardSnapshotStore();
     queue = FakeCaptureQueueStore();
     settings = FakeSettingsStore();
+    readCache = MemoryReadCacheStore();
   });
 
   ProviderContainer makeContainer() {
@@ -43,6 +50,7 @@ void main() {
         boardSnapshotStoreProvider.overrideWithValue(snapshots),
         captureQueueStoreProvider.overrideWithValue(queue),
         settingsStoreProvider.overrideWithValue(settings),
+        readCacheStoreProvider.overrideWithValue(readCache),
       ],
     );
     addTearDown(container.dispose);
@@ -81,6 +89,7 @@ void main() {
 
       final container = makeContainer();
       final status = await container.read(sessionProvider.future);
+      await pumpEventQueue();
 
       expect(status, SessionStatus.signedIn);
       expect(backend.requests, hasLength(1));
@@ -100,7 +109,11 @@ void main() {
         final container = makeContainer();
         final status = await container.read(sessionProvider.future);
 
-        expect(status, SessionStatus.signedOut);
+        // In immediately -- the probe runs behind the cached board -- and out
+        // as soon as the server says the token is dead.
+        expect(status, SessionStatus.signedIn);
+        await pumpEventQueue();
+        expect(container.read(sessionProvider).value, SessionStatus.signedOut);
         expect(storage.token, isNull);
         expect(storage.clearCount, greaterThan(0));
       },
@@ -121,6 +134,24 @@ void main() {
       expect(storage.clearCount, 0);
     });
 
+    test('a server that never answers does not hold the app on the splash', () async {
+      // The hanging case from the offline bench: the connection is accepted
+      // and nothing comes back. The cached board must not wait for a timeout.
+      storage.token = 'stored.jwt';
+      backend.alwaysRespond(<String, dynamic>{'ok': true});
+      backend.delay = (_) => Completer<void>().future;
+
+      final container = makeContainer();
+      final status = await container
+          .read(sessionProvider.future)
+          .timeout(const Duration(seconds: 1));
+      await pumpEventQueue();
+
+      expect(status, SessionStatus.signedIn);
+      expect(backend.requests.single.path, '/auth/me');
+      expect(storage.token, 'stored.jwt');
+    });
+
     test('the session is resolved exactly once, not per watcher', () async {
       storage.token = 'stored.jwt';
       backend.alwaysRespond(<String, dynamic>{'ok': true});
@@ -128,6 +159,7 @@ void main() {
       final container = makeContainer();
       await container.read(sessionProvider.future);
       await container.read(sessionProvider.future);
+      await pumpEventQueue();
 
       expect(backend.requests, hasLength(1));
       expect(storage.readCount, 1);
@@ -233,6 +265,7 @@ void main() {
         ),
       ];
       settings.selectedScopeId = 'scope_of_someone';
+      readCache.seed(ReadCacheKeys.focus, <dynamic>[]);
     }
 
     Future<ProviderContainer> signInWith(String? sub) async {
@@ -258,6 +291,7 @@ void main() {
         expect(snapshots.snapshot, isNotNull);
         expect(queue.queue, hasLength(1));
         expect(settings.selectedScopeId, 'scope_of_someone');
+        expect(readCache.entries, isNotEmpty);
         expect(snapshots.clearCount, 0);
         expect(queue.clearCount, 0);
         expect(settings.scopeClearCount, 0);
@@ -275,6 +309,7 @@ void main() {
         expect(snapshots.snapshot, isNull);
         expect(queue.queue, isEmpty);
         expect(settings.selectedScopeId, isNull);
+        expect(readCache.entries, isEmpty);
         expect(storage.lastUserId, 'usr_2');
       },
     );

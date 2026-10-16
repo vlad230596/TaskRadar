@@ -9,8 +9,10 @@ import 'archive_providers.dart';
 import 'board_providers.dart';
 import 'capture_queue_providers.dart';
 import 'dependencies.dart';
+import 'focus_providers.dart';
 import 'history_providers.dart';
 import 'inbox_providers.dart';
+import 'read_cache_providers.dart';
 import 'scope_providers.dart';
 
 part 'session_provider.g.dart';
@@ -74,29 +76,35 @@ class Session extends _$Session {
       if (subject != null) await storage.writeLastUserId(subject);
     }
 
+    /*
+     * A stored token opens the app now; `/auth/me` is checked behind it.
+     *
+     * Until the offline QA bench (`tests/android/`) this awaited the probe, and
+     * that was right for a dead network -- a refused connection fails in
+     * microseconds -- but wrong for a *slow* one: a server that accepts the
+     * connection and does not answer (VPS under load, captive portal, a lift
+     * between floors) held the splash for the whole 10-15 s timeout while the
+     * board snapshot sat on disk. Nothing on the signed-in side needs the
+     * probe's answer to draw: the cache is the same user's (`signIn` wipes it
+     * otherwise), and every request carries the token anyway.
+     *
+     * Offline at launch is still NOT a reason to sign out: a network failure
+     * disproves nothing about a 30-day token. A 401 does -- and the probe
+     * hands it to the same reaction as a 401 from any other request.
+     */
+    unawaited(_probeStoredToken());
+    return SessionStatus.signedIn;
+  }
+
+  Future<void> _probeStoredToken() async {
     try {
       await ref.read(authApiProvider).me();
-      return SessionStatus.signedIn;
     } on UnauthorizedException {
-      await _forgetToken();
-      return SessionStatus.signedOut;
-    } on NetworkException catch (error) {
-      /*
-       * Offline at launch is NOT a reason to sign out.
-       *
-       * The token is valid for 30 days and nothing here disproved it -- the
-       * server simply could not be reached (phone on mobile data while the dev
-       * backend is on the LAN, VPS restarting, tunnel down). Clearing it would
-       * punish the user for the network's problem and, worse, would make the
-       * app unusable in exactly the situation F2's offline board snapshot is
-       * being built for.
-       *
-       * So we stay optimistically signed in. If the token really is dead, the
-       * first successful round trip will come back 401 and the handler
-       * registered above will sign out properly then.
-       */
-      debugPrint('Session probe could not reach the server: ${error.message}');
-      return SessionStatus.signedIn;
+      // `me()` opts out of the interceptor's handler (a 401 there is an
+      // answer, not an accident), so the probe reacts itself.
+      _handleUnauthorized();
+    } on ApiException catch (error) {
+      debugPrint('Session probe failed, staying signed in: ${error.message}');
     }
   }
 
@@ -162,6 +170,8 @@ class Session extends _$Session {
     ref.invalidate(captureQueueProvider);
     ref.invalidate(historyFeedProvider);
     ref.invalidate(archivedBoardProvider);
+    ref.invalidate(focusSetProvider);
+    ref.invalidate(cachedReadsProvider);
 
     state = const AsyncData(SessionStatus.signedIn);
   }
@@ -212,6 +222,7 @@ class Session extends _$Session {
     await ref.read(boardSnapshotStoreProvider).clear();
     await ref.read(captureQueueStoreProvider).clear();
     await ref.read(settingsStoreProvider).clearSelectedScopeId();
+    await ref.read(readCacheStoreProvider).clear();
   }
 
   /// Drops the token from both places it lives: the in-memory copy the HTTP

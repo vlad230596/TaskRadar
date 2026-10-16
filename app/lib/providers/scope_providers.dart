@@ -1,9 +1,13 @@
+import 'dart:convert';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../models/board_project.dart';
 import '../models/scope.dart';
+import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
+import 'read_cache_providers.dart';
 
 part 'scope_providers.g.dart';
 
@@ -60,9 +64,28 @@ part 'scope_providers.g.dart';
 /// [noAutomaticRetry].
 @Riverpod(keepAlive: true, retry: noAutomaticRetry)
 class Scopes extends _$Scopes {
+  /// Read through the local copy (offline QA pass): without it an offline
+  /// start lost the scope switcher and silently dropped the remembered scope,
+  /// because the saved id had nothing to resolve against.
   @override
   Future<List<Scope>> build() {
-    return ref.read(scopeApiProvider).fetchScopes();
+    final api = ref.read(scopeApiProvider);
+    return readThroughCache<List<Scope>>(
+      ref,
+      key: ReadCacheKeys.scopes,
+      fetch: api.fetchScopes,
+      encode: (rows) => jsonDecode(jsonEncode(rows)),
+      decode: (json) => List<Scope>.unmodifiable(
+        (json! as List<dynamic>).map(
+          (row) => Scope.fromJson((row as Map).cast<String, dynamic>()),
+        ),
+      ),
+      onLateFresh: (shown, fresh) {
+        if (ref.mounted && identical(state.value, shown)) {
+          state = AsyncData(fresh);
+        }
+      },
+    );
   }
 
   /// Re-reads the list. Used by pull-to-refresh on the scopes screen and after

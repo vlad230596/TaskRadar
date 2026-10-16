@@ -495,6 +495,9 @@ class _FocusBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final taken = ref.watch(focusedTaskIdsProvider).length;
+    // "пусто" only when the server (or its local copy) said so; a set that
+    // never loaded is not an empty one.
+    final unknown = ref.watch(focusSetProvider.select((set) => !set.hasValue && set.hasError));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 0, Insets.gutter, 10),
@@ -520,7 +523,7 @@ class _FocusBar extends ConsumerWidget {
                 if (taken == 0)
                   Expanded(
                     child: Text(
-                      'пусто — наберите задач',
+                      unknown ? 'не загрузилось' : 'пусто — наберите задач',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppText.caption.copyWith(

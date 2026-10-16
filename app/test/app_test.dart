@@ -91,26 +91,28 @@ void main() {
     };
   }
 
-  testWidgets('shows the splash while the session is being resolved', (tester) async {
+  testWidgets('a slow /auth/me does not hold a stored session on the splash', (tester) async {
+    // The probe runs behind the signed-in screen: a server that accepts the
+    // connection and does not answer must not keep the cached board off the
+    // screen until a 10-15 s timeout (the "hanging" case of the offline bench).
     storage.token = 'stored.jwt';
-
-    // Hold the probe open so the loading state is observable.
+    respondToSignedInStartup();
+    final startup = backend.responder!;
     final probe = Completer<ResponseBody>();
-    backend.responder = (_) => probe.future;
+    backend.responder = (options) =>
+        options.path == '/auth/me' ? probe.future : startup(options);
 
     await pumpApp(tester);
-    await tester.pump();
+    await settle(tester);
 
-    expect(find.byType(SplashScreen), findsOneWidget);
+    expect(find.byType(ShellScreen), findsOneWidget);
+    expect(find.byType(SplashScreen), findsNothing);
     expect(find.byType(LoginScreen), findsNothing, reason: 'no login flash on start');
 
     // Release it before the test ends: dio arms a receive-timeout timer per
     // request, and flutter_test fails a test that leaves a timer pending.
-    // Both /auth/me and the board request that follows it are served from here.
-    respondToSignedInStartup();
     probe.complete(jsonResponse(<String, dynamic>{'ok': true}));
     await settle(tester);
-
     expect(find.byType(ShellScreen), findsOneWidget);
   });
 

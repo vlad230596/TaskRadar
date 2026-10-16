@@ -17,6 +17,8 @@ import '../widgets/mode_title.dart';
 import '../widgets/mutation_feedback.dart';
 import 'pick_screen.dart';
 import 'shell_screen.dart';
+import '../storage/read_cache_store.dart';
+import '../widgets/local_copy_note.dart';
 
 /// Режим работы: две-пять задач, которые действительно в руках, и одна из них
 /// крупно (F13).
@@ -63,9 +65,18 @@ class WorkScreen extends ConsumerWidget {
       ),
     };
 
-    return RefreshIndicator(
-      onRefresh: () => ref.read(focusSetProvider.notifier).refresh(),
-      child: body,
+    return Column(
+      children: <Widget>[
+        // Offline (or a server that does not answer), the set on screen is
+        // the copy saved on the last good read -- and says so.
+        const LocalCopyNote(cacheKey: ReadCacheKeys.focus),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () => ref.read(focusSetProvider.notifier).refresh(),
+            child: body,
+          ),
+        ),
+      ],
     );
   }
 }

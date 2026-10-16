@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -6,6 +7,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/api_exception.dart';
 import '../api/patch_field.dart';
 import '../api/project_api.dart';
+import '../domain/not_loaded.dart';
 import '../domain/reminders.dart';
 import '../domain/task_reorder.dart';
 import '../models/board_project.dart';
@@ -15,9 +17,11 @@ import '../models/project.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
 import '../models/task_status.dart';
+import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
 import 'inbox_providers.dart';
+import 'read_cache_providers.dart';
 
 part 'project_providers.g.dart';
 
@@ -534,7 +538,7 @@ class ProjectTasks extends _$ProjectTasks {
   Future<void> _mutate(_MutationPlan? Function(List<Task> rows) plan) {
     return _enqueue(() async {
       final previous = state.value;
-      if (previous == null) return;
+      if (previous == null) throw state.error ?? const NotLoadedException();
 
       final step = plan(previous);
       if (step == null) return;
@@ -673,7 +677,7 @@ class ProjectCategories extends _$ProjectCategories {
     if (trimmed.isEmpty || trimmed == category.name) return;
 
     final previous = state.value;
-    if (previous == null) return;
+    if (previous == null) throw state.error ?? const NotLoadedException();
     state = AsyncData(
       List<TaskCategory>.unmodifiable(<TaskCategory>[
         for (final row in previous)
@@ -699,7 +703,7 @@ class ProjectCategories extends _$ProjectCategories {
   /// Deletes the category; its tasks stay in the project, ungrouped.
   Future<void> remove(TaskCategory category) async {
     final previous = state.value;
-    if (previous == null) return;
+    if (previous == null) throw state.error ?? const NotLoadedException();
     state = AsyncData(
       List<TaskCategory>.unmodifiable(<TaskCategory>[
         for (final row in previous)
@@ -722,9 +726,29 @@ class ProjectCategories extends _$ProjectCategories {
 
 @Riverpod(retry: noAutomaticRetry)
 class ProjectNotes extends _$ProjectNotes {
+  /// Read through the local copy, like the "in work" set: a note is the
+  /// thing you open on the street to read the measurements, and before the
+  /// offline QA pass the notes tab was an error with no network.
   @override
-  Future<List<Note>> build(String projectId) =>
-      ref.watch(projectApiProvider).fetchNotes(projectId);
+  Future<List<Note>> build(String projectId) {
+    final api = ref.watch(projectApiProvider);
+    return readThroughCache<List<Note>>(
+      ref,
+      key: ReadCacheKeys.notes(projectId),
+      fetch: () => api.fetchNotes(projectId),
+      encode: (rows) => jsonDecode(jsonEncode(rows)),
+      decode: (json) => List<Note>.unmodifiable(
+        (json! as List<dynamic>).map(
+          (row) => Note.fromJson((row as Map).cast<String, dynamic>()),
+        ),
+      ),
+      onLateFresh: (shown, fresh) {
+        if (ref.mounted && identical(state.value, shown)) {
+          state = AsyncData(fresh);
+        }
+      },
+    );
+  }
 
   ProjectApi get _api => ref.read(projectApiProvider);
 
@@ -742,7 +766,7 @@ class ProjectNotes extends _$ProjectNotes {
     if (trimmed.isEmpty) return;
 
     final previous = state.value;
-    if (previous == null) return;
+    if (previous == null) throw state.error ?? const NotLoadedException();
 
     final placeholder = _optimisticNote(trimmed);
     state = AsyncData(<Note>[...previous, placeholder]);
@@ -782,7 +806,7 @@ class ProjectNotes extends _$ProjectNotes {
     if (!changedTitle && !changedContent && !aiClear) return;
 
     final previous = state.value;
-    if (previous == null) return;
+    if (previous == null) throw state.error ?? const NotLoadedException();
 
     final index = previous.indexWhere((row) => row.id == note.id);
     if (index < 0) return;
@@ -822,7 +846,7 @@ class ProjectNotes extends _$ProjectNotes {
 
   Future<void> remove(Note note) async {
     final previous = state.value;
-    if (previous == null) return;
+    if (previous == null) throw state.error ?? const NotLoadedException();
 
     state = AsyncData(<Note>[
       for (final row in previous)

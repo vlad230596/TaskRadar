@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_error_message.dart';
 import '../api/dictation_api.dart';
 import '../domain/ai_mark.dart';
 import '../domain/reminders.dart';
@@ -25,6 +26,7 @@ import '../widgets/focus_toggle.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/reminder_time_picker.dart';
+import '../widgets/unsaved_changes_guard.dart';
 
 /// One task, large enough to read and edit (F12; compact blocks, variant A).
 ///
@@ -150,6 +152,18 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
   bool get _draft => widget.taskId == null;
 
+  static List<Task>? _rows(ProjectView view) =>
+      view is ProjectReady ? view.tasks : null;
+
+  /// The fields differ from [task] as last saved, or hold an AI answer or a
+  /// "Вернуть исходник" that has not been saved yet.
+  bool _editedAgainst(Task task) =>
+      _loadedFrom == task.id &&
+      (_title.text.trim() != task.title ||
+          _note.text.trim() != (task.description ?? '').trim() ||
+          _tidyParseId != null ||
+          _aiClear);
+
   Task? _find(List<Task>? rows) {
     final id = widget.taskId;
     if (rows == null || id == null) return null;
@@ -248,7 +262,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     // Read fresh rather than taken from the caller: this is reached straight
     // after a status change, and the row the caller is holding is the one from
     // before it -- still `pending`, which `setRemindAt` refuses.
-    final task = _find(ref.read(projectTasksProvider(widget.projectId)).value);
+    final task = _find(_rows(ref.read(projectViewProvider(widget.projectId))));
     if (task == null) return;
 
     final picked = await _pickDay(task);
@@ -583,8 +597,15 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final rows = ref.watch(projectTasksProvider(widget.projectId)).value;
-    final header = ref.watch(projectHeaderProvider(widget.projectId)).value;
+    // Through the project fold, not the network list alone: opened from a
+    // project drawn out of the board snapshot (no network, or a reminder tap
+    // on a cold start), the network list holds only an error, and this screen
+    // used to say "Загружаем задачу…" forever.
+    final view = ref.watch(projectViewProvider(widget.projectId));
+    final rows = _rows(view);
+    final header =
+        ref.watch(projectHeaderProvider(widget.projectId)).value ??
+        (view is ProjectReady ? view.project : null);
     final task = _find(rows);
 
     if (_draft) return _draftScaffold();
@@ -595,12 +616,30 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(32),
-            child: Text(
-              rows == null
-                  ? 'Загружаем задачу…'
-                  : 'Задача не найдена — её могли удалить или перенести.',
-              textAlign: TextAlign.center,
-              style: AppText.hint,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  switch (view) {
+                    ProjectUnavailable(:final error) =>
+                      'Не удалось открыть задачу. ${describeApiError(error)}',
+                    ProjectReady() || ProjectMissing() =>
+                      'Задача не найдена — её могли удалить или перенести.',
+                    ProjectLoading() => 'Загружаем задачу…',
+                  },
+                  textAlign: TextAlign.center,
+                  style: AppText.hint,
+                ),
+                if (view is ProjectUnavailable) ...<Widget>[
+                  const SizedBox(height: 16),
+                  OutlinedButton(
+                    onPressed: () => ref
+                        .read(projectTasksProvider(widget.projectId).notifier)
+                        .refresh(),
+                    child: const Text('Повторить'),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -609,57 +648,70 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
 
     _fill(task);
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            _header(task, header?.name),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(
-                  Insets.gutter,
-                  0,
-                  Insets.gutter,
-                  8,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _textField(dictateTooltip: 'Дописать голосом', task: task),
-                    const SizedBox(height: Insets.gap),
-                    // The set's rows carry the project's name; until the
-                    // header has loaded the optimistic row goes without it,
-                    // and the re-read after `take` fills it in.
-                    FocusToggleButton(
-                      task: task,
-                      projectName: header?.name ?? '',
-                    ),
-                    const SizedBox(height: Insets.gap),
-                    _statusRow(task),
-                    const SizedBox(height: Insets.gap),
-                    _categoryRow(
-                      current: task.categoryId,
-                      onPicked: (id) => runMutation(
-                        context,
-                        () => _tasks.setCategory(task, id),
-                        failure: 'Не удалось сменить категорию.',
+    return UnsavedChangesGuard(
+      listenable: Listenable.merge(<Listenable>[_title, _note]),
+      isDirty: () => _editedAgainst(task),
+      message: 'Правка задачи «${task.title}» будет потеряна.',
+      onSave: () async {
+        // `_save` leaves the screen itself when the write lands.
+        await _save(task);
+        return false;
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              _header(task, header?.name),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    Insets.gutter,
+                    0,
+                    Insets.gutter,
+                    8,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _textField(
+                        dictateTooltip: 'Дописать голосом',
+                        task: task,
                       ),
-                    ),
-                    if (task.status != TaskStatus.done) ...<Widget>[
                       const SizedBox(height: Insets.gap),
-                      _reminderRow(task),
+                      // The set's rows carry the project's name; until the
+                      // header has loaded the optimistic row goes without it,
+                      // and the re-read after `take` fills it in.
+                      FocusToggleButton(
+                        task: task,
+                        projectName: header?.name ?? '',
+                      ),
+                      const SizedBox(height: Insets.gap),
+                      _statusRow(task),
+                      const SizedBox(height: Insets.gap),
+                      _categoryRow(
+                        current: task.categoryId,
+                        onPicked: (id) => runMutation(
+                          context,
+                          () => _tasks.setCategory(task, id),
+                          failure: 'Не удалось сменить категорию.',
+                        ),
+                      ),
+                      if (task.status != TaskStatus.done) ...<Widget>[
+                        const SizedBox(height: Insets.gap),
+                        _reminderRow(task),
+                      ],
+                      const SizedBox(height: Insets.gap),
+                      _noteSection(),
+                      const SizedBox(height: Insets.gap),
+                      _LifeOfTask(task: task),
                     ],
-                    const SizedBox(height: Insets.gap),
-                    _noteSection(),
-                    const SizedBox(height: Insets.gap),
-                    _LifeOfTask(task: task),
-                  ],
+                  ),
                 ),
               ),
-            ),
-            _saveBar(task),
-          ],
+              _saveBar(task),
+            ],
+          ),
         ),
       ),
     );
@@ -671,59 +723,72 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   Widget _draftScaffold() {
     final header = ref.watch(projectHeaderProvider(widget.projectId)).value;
 
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 10, 12, 10),
-              child: Row(
-                children: <Widget>[
-                  IconButton(
-                    tooltip: 'Закрыть',
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close, size: 22),
-                    color: AppColors.ink,
-                  ),
-                  Expanded(
-                    child: Text('Новая задача', style: AppText.screenTight),
-                  ),
-                  if (header != null)
-                    Text(
-                      header.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.chip.copyWith(fontSize: 13),
-                    ),
-                  const SizedBox(width: 8),
-                ],
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+    return UnsavedChangesGuard(
+      listenable: Listenable.merge(<Listenable>[_title, _note]),
+      isDirty: () =>
+          _title.text.trim().isNotEmpty || _note.text.trim().isNotEmpty,
+      message: 'Новая задача не будет создана.',
+      onSave: () async {
+        // `_create` leaves the screen itself when the task is created.
+        await _create();
+        return false;
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 10, 12, 10),
+                child: Row(
                   children: <Widget>[
-                    _textField(dictateTooltip: 'Продиктовать'),
-                    // Open from the start, unlike on an existing task: here it
-                    // was folded away until "Причесать" filled it, and nobody
-                    // found the place to write the details of a new task.
-                    const SizedBox(height: Insets.gap),
-                    _noteSection(),
-                    const SizedBox(height: Insets.gap),
-                    _categoryRow(
-                      current: _draftCategoryId,
-                      onPicked: (id) async =>
-                          setState(() => _draftCategoryId = id),
+                    IconButton(
+                      tooltip: 'Закрыть',
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      icon: const Icon(Icons.close, size: 22),
+                      color: AppColors.ink,
                     ),
+                    Expanded(
+                      child: Text('Новая задача', style: AppText.screenTight),
+                    ),
+                    if (header != null)
+                      Text(
+                        header.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppText.chip.copyWith(fontSize: 13),
+                      ),
+                    const SizedBox(width: 8),
                   ],
                 ),
               ),
-            ),
-            _bottomButton('Добавить', () => unawaited(_create())),
-          ],
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Insets.gutter,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      _textField(dictateTooltip: 'Продиктовать'),
+                      // Open from the start, unlike on an existing task: here it
+                      // was folded away until "Причесать" filled it, and nobody
+                      // found the place to write the details of a new task.
+                      const SizedBox(height: Insets.gap),
+                      _noteSection(),
+                      const SizedBox(height: Insets.gap),
+                      _categoryRow(
+                        current: _draftCategoryId,
+                        onPicked: (id) async =>
+                            setState(() => _draftCategoryId = id),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              _bottomButton('Добавить', () => unawaited(_create())),
+            ],
+          ),
         ),
       ),
     );
@@ -736,7 +801,7 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
         children: <Widget>[
           IconButton(
             tooltip: 'Закрыть',
-            onPressed: () => Navigator.of(context).pop(),
+            onPressed: () => Navigator.of(context).maybePop(),
             icon: const Icon(Icons.close, size: 22),
             color: AppColors.ink,
           ),

@@ -115,7 +115,7 @@ final class FocusSetProvider
   FocusSet create() => FocusSet();
 }
 
-String _$focusSetHash() => r'dd952f1b5ae090cbf21664406873eeaed1c1b187';
+String _$focusSetHash() => r'0f46bf7060d6e48d2420f575201e109976efef42';
 
 /// Сам набор: `GET /focus`, и три записи, которые его меняют.
 ///

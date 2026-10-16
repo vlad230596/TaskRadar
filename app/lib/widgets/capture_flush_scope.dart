@@ -44,10 +44,28 @@ class CaptureFlushScope extends ConsumerStatefulWidget {
 class _CaptureFlushScopeState extends ConsumerState<CaptureFlushScope> {
   late final AppLifecycleListener _listener;
 
+  /// While something is unsent and the app is in front, try again every
+  /// [retryEvery]. Start and resume alone missed the most common case: the
+  /// app stays open while the phone walks back into coverage, and the line
+  /// sat "не отправлено" until the next restart. Foreground only and only
+  /// with a non-empty queue, so an idle app makes no requests.
+  static const Duration retryEvery = Duration(seconds: 30);
+  Timer? _retry;
+
   @override
   void initState() {
     super.initState();
-    _listener = AppLifecycleListener(onResume: _flush);
+    _listener = AppLifecycleListener(
+      onResume: () {
+        _flush();
+        _retry ??= Timer.periodic(retryEvery, (_) => _retryIfPending());
+      },
+      onPause: () {
+        _retry?.cancel();
+        _retry = null;
+      },
+    );
+    _retry = Timer.periodic(retryEvery, (_) => _retryIfPending());
 
     // After the first frame rather than during `initState`: reading a provider
     // here would build the queue (a file read) inside a widget's construction,
@@ -58,8 +76,13 @@ class _CaptureFlushScopeState extends ConsumerState<CaptureFlushScope> {
     });
   }
 
+  void _retryIfPending() {
+    if (ref.read(pendingCapturesProvider).isNotEmpty) _flush();
+  }
+
   @override
   void dispose() {
+    _retry?.cancel();
     _listener.dispose();
     super.dispose();
   }

@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/focus_api.dart';
 import '../api/project_api.dart';
+import '../domain/not_loaded.dart';
 import '../models/focus_task.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
+import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
+import 'read_cache_providers.dart';
 
 part 'focus_providers.g.dart';
 
@@ -55,8 +59,30 @@ FocusApi focusApi(Ref ref) => FocusApi(ref.watch(apiClientProvider));
 /// видимый похожим на сломанный.
 @Riverpod(keepAlive: true, retry: noAutomaticRetry)
 class FocusSet extends _$FocusSet {
+  /// Read through the local copy (offline QA pass, 16.10.2026): the set is
+  /// what the work mode *is*, and the app reopens on the last mode, so with no
+  /// copy an offline start was an error page where the morning's tasks should
+  /// be. See [readThroughCache].
   @override
-  Future<List<FocusTask>> build() => ref.watch(focusApiProvider).fetchFocus();
+  Future<List<FocusTask>> build() {
+    final api = ref.watch(focusApiProvider);
+    return readThroughCache<List<FocusTask>>(
+      ref,
+      key: ReadCacheKeys.focus,
+      fetch: api.fetchFocus,
+      encode: (rows) => jsonDecode(jsonEncode(rows)),
+      decode: (json) => List<FocusTask>.unmodifiable(
+        (json! as List<dynamic>).map(
+          (row) => FocusTask.fromJson((row as Map).cast<String, dynamic>()),
+        ),
+      ),
+      onLateFresh: (shown, fresh) {
+        if (ref.mounted && identical(state.value, shown)) {
+          state = AsyncData(fresh);
+        }
+      },
+    );
+  }
 
   FocusApi get _focus => ref.read(focusApiProvider);
   ProjectApi get _projects => ref.read(projectApiProvider);
@@ -182,7 +208,7 @@ class FocusSet extends _$FocusSet {
   }) {
     return _enqueue(() async {
       final previous = state.value;
-      if (previous == null) return;
+      if (previous == null) throw state.error ?? const NotLoadedException();
 
       final predicted = optimistic(previous);
       if (predicted == null) return;

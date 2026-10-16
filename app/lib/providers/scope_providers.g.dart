@@ -182,7 +182,7 @@ final class ScopesProvider extends $AsyncNotifierProvider<Scopes, List<Scope>> {
   Scopes create() => Scopes();
 }
 
-String _$scopesHash() => r'4823788260b13a3c44e940bcc69a21e2832c97a1';
+String _$scopesHash() => r'18d4405adb02c9254a02692a32c99629fab0b548';
 
 /// Scopes (F7): the list of spaces, which one the board is showing, and the
 /// filter that turns the second into the first.

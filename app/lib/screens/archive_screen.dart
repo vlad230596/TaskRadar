@@ -82,6 +82,11 @@ class ArchiveScreen extends ConsumerWidget {
             body:
                 '${describeApiError(error)}\n\nАрхив не кэшируется локально — '
                 'он нужен только когда связь есть.',
+            action: TextButton.icon(
+              onPressed: () => ref.invalidate(archivedBoardProvider),
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Повторить'),
+            ),
           ),
 
           _ => const _Message(icon: null, title: 'Загружаем архив…', body: ''),
@@ -197,12 +202,21 @@ class _ArchivedProjectTile extends ConsumerWidget {
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.icon, required this.title, required this.body});
+  const _Message({
+    required this.icon,
+    required this.title,
+    required this.body,
+    this.action,
+  });
 
   /// Null draws a progress indicator instead -- the loading state.
   final IconData? icon;
   final String title;
   final String body;
+
+  /// A retry button under the text. Pull-to-refresh alone is not discoverable
+  /// enough for the one state where retrying is the whole point.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -248,6 +262,10 @@ class _Message extends StatelessWidget {
                         color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
+                  ],
+                  if (action != null) ...[
+                    const SizedBox(height: 12),
+                    action!,
                   ],
                 ],
               ),

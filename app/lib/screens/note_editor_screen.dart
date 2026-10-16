@@ -10,6 +10,7 @@ import '../widgets/ai_tidy.dart';
 import '../widgets/dictate_into.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_markdown.dart';
+import '../widgets/unsaved_changes_guard.dart';
 
 /// Editing one note: a title, a markdown body, and a preview of it.
 ///
@@ -193,29 +194,18 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     return widget.note;
   }
 
-  /// Intercepts the back gesture / button.
-  Future<void> _onPopInvoked(bool didPop, void result) async {
-    if (didPop) return;
-
-    final leave = await confirmDestructive(
-      context,
-      title: 'Выйти без сохранения?',
-      message: 'Изменения в заметке «${widget.note.title}» будут потеряны.',
-      confirmLabel: 'Выйти',
-    );
-    if (leave && mounted) Navigator.of(context).pop();
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return PopScope<void>(
-      // `canPop: false` only while there is something to lose -- an unconditional
-      // interception would put a confirmation dialog in front of every back tap,
-      // including the read-only ones, which trains people to dismiss it.
-      canPop: !_dirty,
-      onPopInvokedWithResult: _onPopInvoked,
+    // Asks only while there is something to lose -- an unconditional
+    // interception would put a dialog in front of every read-only Back, which
+    // trains people to dismiss it. The same guard as every other screen with
+    // typed text, so Back means one thing across the app.
+    return UnsavedChangesGuard(
+      isDirty: () => _dirty,
+      message: 'Изменения в заметке «${widget.note.title}» будут потеряны.',
+      onSave: () async => _titleValid && await _save(),
       child: Scaffold(
         appBar: AppBar(
           title: Text(_dirty ? 'Заметка · не сохранено' : 'Заметка'),

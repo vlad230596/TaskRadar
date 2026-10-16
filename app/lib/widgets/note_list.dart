@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,6 +9,7 @@ import '../screens/note_editor_screen.dart';
 import 'dictate_into.dart';
 import 'mutation_feedback.dart';
 import 'note_markdown.dart';
+import 'unsaved_changes_guard.dart';
 
 /// The notes half of the project screen.
 ///
@@ -78,46 +81,56 @@ class _NoteComposerState extends ConsumerState<_NoteComposer> {
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  /// Returns whether the note was created. The field is cleared only then:
+  /// clearing it up front lost the typed title whenever the create failed
+  /// (offline, most often), with the optimistic row rolled back as well.
+  Future<bool> _submit() async {
     final title = _controller.text.trim();
-    if (title.isEmpty) return;
-    _controller.clear();
+    if (title.isEmpty) return true;
 
-    await runMutation(
+    final ok = await runMutation(
       context,
       () => ref
           .read(projectNotesProvider(widget.projectId).notifier)
           .create(title),
       failure: 'Не удалось создать заметку.',
     );
+    if (ok && _controller.text.trim() == title) _controller.clear();
+    return ok;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _controller,
-              textInputAction: TextInputAction.done,
-              textCapitalization: TextCapitalization.sentences,
-              decoration: const InputDecoration(
-                hintText: 'Новая заметка…',
-                isDense: true,
-                border: OutlineInputBorder(),
+    return UnsavedChangesGuard(
+      listenable: _controller,
+      isDirty: () => _controller.text.trim().isNotEmpty,
+      message: 'Новая заметка не будет создана.',
+      onSave: _submit,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _controller,
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'Новая заметка…',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+                onSubmitted: (_) => unawaited(_submit()),
               ),
-              onSubmitted: (_) => _submit(),
             ),
-          ),
-          DictateInto(controller: _controller, label: 'в заметку'),
-          IconButton.filled(
-            tooltip: 'Создать заметку',
-            onPressed: _submit,
-            icon: const Icon(Icons.add),
-          ),
-        ],
+            DictateInto(controller: _controller, label: 'в заметку'),
+            IconButton.filled(
+              tooltip: 'Создать заметку',
+              onPressed: () => unawaited(_submit()),
+              icon: const Icon(Icons.add),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -1134,7 +1134,7 @@ void main() {
       await settle(tester);
 
       expect(find.text('Выйти без сохранения?'), findsOneWidget);
-      await tester.tap(find.text('Отмена'));
+      await tester.tap(find.text('Остаться'));
       await settle(tester);
       // Still here, text intact.
       expect(find.byType(NoteEditorScreen), findsOneWidget);
