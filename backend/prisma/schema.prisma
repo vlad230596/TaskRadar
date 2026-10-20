@@ -511,6 +511,10 @@ model LlmModel {
   /// NAME of the env variable with the provider's key (never the key itself,
   /// which stays in `.env`); `LLM_API_KEY` when null. Must start with `LLM_`.
   apiKeyEnv String?
+  /// Sampling temperature for this model; the server's default (0.1) when
+  /// null. Providers differ: Inception accepts only 0.5-1 and quietly
+  /// replaces anything else with 1.
+  temperature Float?
   /// Switched off by the owner.
   enabled  Boolean @default(true)
 

@@ -59,19 +59,20 @@ function defaultDictation(): DictationFeature | null {
   const complete = createOpenAiCompatibleClient(config);
   const resolveModel = () => resolveDictationModel(config.model);
   /*
-   * One client per provider and key (`../domain/modelRoster.ts`): an entry
-   * with no URL or key of its own uses `.env`'s. Keys are read from the
-   * environment by the name the entry gives, never stored anywhere else.
+   * One client per provider, key and temperature (`../domain/modelRoster.ts`):
+   * an entry with no URL or key of its own uses `.env`'s. Keys are read from
+   * the environment by the name the entry gives, never stored anywhere else.
    */
   const clients = new Map<string, CompleteJson>();
   const clientFor = (entry: RosterEntry): CompleteJson => {
     const baseUrl = entry.baseUrl ?? config.baseUrl;
-    const key = `${baseUrl}\n${entry.apiKeyEnv ?? ""}`;
+    const key = `${baseUrl}\n${entry.apiKeyEnv ?? ""}\n${entry.temperature ?? ""}`;
     let client = clients.get(key);
     if (client === undefined) {
       const apiKey =
         entry.apiKeyEnv === null ? config.apiKey : (process.env[entry.apiKeyEnv] ?? "");
-      client = createOpenAiCompatibleClient({ ...config, baseUrl, apiKey });
+      const temperature = entry.temperature ?? undefined;
+      client = createOpenAiCompatibleClient({ ...config, baseUrl, apiKey, temperature });
       clients.set(key, client);
     }
     return client;

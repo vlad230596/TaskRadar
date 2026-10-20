@@ -339,6 +339,19 @@ describe("createOpenAiCompatibleClient", () => {
     });
   });
 
+  it("sends 0.1 unless the model on the roster sets its own temperature", async () => {
+    const fetchMock = vi.fn(async () => ok({ choices: [{ message: { content: "{}" } }] }));
+    await createOpenAiCompatibleClient(config, fetchMock as unknown as typeof fetch)([], "m");
+    await createOpenAiCompatibleClient(
+      { ...config, temperature: 0.5 },
+      fetchMock as unknown as typeof fetch,
+    )([], "m");
+    const sent = (fetchMock.mock.calls as unknown as [string, RequestInit][]).map(
+      ([, init]) => (JSON.parse(init.body as string) as { temperature: number }).temperature,
+    );
+    expect(sent).toEqual([0.1, 0.5]);
+  });
+
   it("sends no authorization header to a server that needs no key", async () => {
     const fetchMock = vi.fn(async () => ok({ choices: [{ message: { content: "{}" } }] }));
     await createOpenAiCompatibleClient(

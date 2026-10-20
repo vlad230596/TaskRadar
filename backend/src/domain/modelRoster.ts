@@ -39,6 +39,8 @@ export interface RosterEntry {
   baseUrl: string | null;
   /** The name of the env variable holding the key; `LLM_API_KEY` when null. */
   apiKeyEnv: string | null;
+  /** Sampling temperature; the client's default when null (`../lib/llmClient.ts`). */
+  temperature: number | null;
   enabled: boolean;
   autoDisabledAt: Date | null;
   consecutiveFailures: number;

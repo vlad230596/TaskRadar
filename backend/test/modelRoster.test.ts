@@ -28,6 +28,7 @@ function entry(name: string, overrides: Partial<RosterEntry> = {}): RosterEntry 
     label: null,
     baseUrl: null,
     apiKeyEnv: null,
+    temperature: null,
     enabled: true,
     autoDisabledAt: null,
     consecutiveFailures: 0,

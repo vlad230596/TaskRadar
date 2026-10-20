@@ -375,7 +375,8 @@ class ModelFailure {
 /// One model of the server's roster (`backend/src/domain/modelRoster.ts`),
 /// as `GET /dictation/models` describes it.
 ///
-/// [baseUrl], [apiKeyEnv] and [keyPresent] come only to the owner; for
+/// [baseUrl], [apiKeyEnv], [temperature] and [keyPresent] come only to the
+/// owner; for
 /// everyone else they are null.
 class AiModelEntry {
   const AiModelEntry({
@@ -386,6 +387,7 @@ class AiModelEntry {
     required this.status,
     this.baseUrl,
     this.apiKeyEnv,
+    this.temperature,
     this.keyPresent,
     this.autoDisabledReason,
     this.consecutiveFailures = 0,
@@ -401,6 +403,7 @@ class AiModelEntry {
     status: json['status'] as String? ?? 'ok',
     baseUrl: json['baseUrl'] as String?,
     apiKeyEnv: json['apiKeyEnv'] as String?,
+    temperature: (json['temperature'] as num?)?.toDouble(),
     keyPresent: json['keyPresent'] as bool?,
     autoDisabledReason: json['autoDisabledReason'] as String?,
     consecutiveFailures: (json['consecutiveFailures'] as num?)?.toInt() ?? 0,
@@ -422,6 +425,9 @@ class AiModelEntry {
   final String? baseUrl;
   final String? apiKeyEnv;
 
+  /// Sampling temperature sent to this model; null is the server's 0.1.
+  final double? temperature;
+
   /// Whether the variable [apiKeyEnv] names is set on the server.
   final bool? keyPresent;
   final String? autoDisabledReason;
@@ -438,6 +444,7 @@ class AiModelEntry {
     'label': label,
     'baseUrl': baseUrl,
     'apiKeyEnv': apiKeyEnv,
+    'temperature': temperature,
     'enabled': enabled,
   };
 
@@ -446,6 +453,7 @@ class AiModelEntry {
     required String? label,
     required String? baseUrl,
     required String? apiKeyEnv,
+    required double? temperature,
     bool? enabled,
   }) => AiModelEntry(
     id: id,
@@ -455,6 +463,7 @@ class AiModelEntry {
     status: status,
     baseUrl: baseUrl,
     apiKeyEnv: apiKeyEnv,
+    temperature: temperature,
     keyPresent: keyPresent,
     autoDisabledReason: autoDisabledReason,
     consecutiveFailures: consecutiveFailures,

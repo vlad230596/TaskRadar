@@ -137,6 +137,10 @@ services:
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-12000}
       LLM_STREAM_TIMEOUT_MS: ${LLM_STREAM_TIMEOUT_MS:-90000}
+      # Keys of the other providers in the model list (Settings -> models): an
+      # entry names its key's variable, and only the variables listed here
+      # reach the container. A new provider is a line here and one in .env.
+      LLM_INCEPTION_API_KEY: ${LLM_INCEPTION_API_KEY:-}
       # AI requests one user may make per UTC day. The one key pays for everyone.
       AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-50}
     depends_on:

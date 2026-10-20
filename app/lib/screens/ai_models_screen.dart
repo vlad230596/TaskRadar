@@ -86,6 +86,7 @@ class AiModelsScreen extends ConsumerWidget {
                         label: m.label,
                         baseUrl: m.baseUrl,
                         apiKeyEnv: m.apiKeyEnv,
+                        temperature: m.temperature,
                         enabled: on,
                       )
                     : m,
@@ -144,6 +145,7 @@ class AiModelsScreen extends ConsumerWidget {
         status: 'ok',
         baseUrl: added.baseUrl,
         apiKeyEnv: added.apiKeyEnv,
+        temperature: added.temperature,
       ),
     ]);
   }
@@ -168,6 +170,7 @@ class AiModelsScreen extends ConsumerWidget {
         label: edit.label,
         baseUrl: edit.baseUrl,
         apiKeyEnv: edit.apiKeyEnv,
+        temperature: edit.temperature,
       );
     }
     await _save(context, ref, list);
@@ -221,6 +224,7 @@ class _ModelRow extends StatelessWidget {
         model.keyPresent == false
             ? '${model.apiKeyEnv} — не задан на сервере'
             : model.apiKeyEnv!,
+      if (model.temperature != null) 'температура ${model.temperature}',
     ].join(' · ');
 
     return Container(
@@ -295,6 +299,7 @@ class _ModelEdit {
     this.label,
     this.baseUrl,
     this.apiKeyEnv,
+    this.temperature,
     this.delete = false,
   });
 
@@ -304,6 +309,7 @@ class _ModelEdit {
   final String? label;
   final String? baseUrl;
   final String? apiKeyEnv;
+  final double? temperature;
   final bool delete;
 }
 
@@ -329,6 +335,9 @@ class _ModelDialogState extends State<_ModelDialog> {
   late final TextEditingController _apiKeyEnv = TextEditingController(
     text: widget.current?.apiKeyEnv ?? '',
   );
+  late final TextEditingController _temperature = TextEditingController(
+    text: widget.current?.temperature?.toString() ?? '',
+  );
 
   static final RegExp _envName = RegExp(r'^LLM_[A-Z0-9_]{1,60}$');
 
@@ -338,6 +347,7 @@ class _ModelDialogState extends State<_ModelDialog> {
     _label.dispose();
     _baseUrl.dispose();
     _apiKeyEnv.dispose();
+    _temperature.dispose();
     super.dispose();
   }
 
@@ -356,8 +366,21 @@ class _ModelDialogState extends State<_ModelDialog> {
         : 'Адрес вида https://…/v1';
   }
 
+  /// The typed temperature; null when the field is empty or not a number.
+  double? get _temperatureValue =>
+      double.tryParse(_temperature.text.trim().replaceAll(',', '.'));
+
+  String? get _temperatureError {
+    if (_temperature.text.trim().isEmpty) return null;
+    final value = _temperatureValue;
+    return value != null && value >= 0 && value <= 2 ? null : 'Число от 0 до 2';
+  }
+
   bool get _valid =>
-      _name.text.trim().isNotEmpty && _envError == null && _urlError == null;
+      _name.text.trim().isNotEmpty &&
+      _envError == null &&
+      _urlError == null &&
+      _temperatureError == null;
 
   String? _orNull(TextEditingController controller) {
     final value = controller.text.trim();
@@ -409,6 +432,19 @@ class _ModelDialogState extends State<_ModelDialog> {
                 errorText: _envError,
               ),
             ),
+            TextField(
+              controller: _temperature,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: 'Температура',
+                hintText: 'пусто — 0.1',
+                helperText: 'Не все провайдеры берут 0.1: Inception — 0.5–1.',
+                errorText: _temperatureError,
+              ),
+            ),
           ],
         ),
       ),
@@ -431,6 +467,7 @@ class _ModelDialogState extends State<_ModelDialog> {
                     label: _orNull(_label),
                     baseUrl: _orNull(_baseUrl),
                     apiKeyEnv: _orNull(_apiKeyEnv),
+                    temperature: _temperatureValue,
                   ),
                 )
               : null,

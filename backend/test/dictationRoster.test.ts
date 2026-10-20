@@ -68,6 +68,7 @@ function entry(name: string, overrides: Partial<RosterEntry> = {}): RosterEntry 
     label: null,
     baseUrl: null,
     apiKeyEnv: null,
+    temperature: null,
     ...emptyHealth,
     ...overrides,
   };
@@ -300,6 +301,28 @@ describe("the parse route with a roster", () => {
       expect(body.models[0]).toMatchObject({ name: "a", status: "ok" });
       expect(body.models[0]).not.toHaveProperty("baseUrl");
       expect(body.models[0]).not.toHaveProperty("apiKeyEnv");
+    });
+
+    it("keeps a model's temperature when an older app sends the list without it", async () => {
+      stored.push({ id: "m-1", position: 0, name: "a", temperature: 0.5, ...emptyHealth });
+      prismaMock.llmModel.updateMany.mockClear();
+
+      await put(ownerToken, [{ id: "m-1", name: "a", enabled: true }]);
+      const kept = prismaMock.llmModel.updateMany.mock.calls[0] as unknown as [
+        { data: Record<string, unknown> },
+      ];
+      expect(kept[0].data).not.toHaveProperty("temperature");
+
+      await put(ownerToken, [{ id: "m-1", name: "a", temperature: null, enabled: true }]);
+      const reset = prismaMock.llmModel.updateMany.mock.calls[1] as unknown as [
+        { data: Record<string, unknown> },
+      ];
+      expect(reset[0].data).toMatchObject({ temperature: null });
+    });
+
+    it("refuses a temperature no provider accepts", async () => {
+      const res = await put(ownerToken, [{ name: "x", temperature: 5, enabled: true }]);
+      expect(res.statusCode).toBe(400);
     });
 
     it("refuses a key variable outside LLM_, so no other secret can be sent anywhere", async () => {

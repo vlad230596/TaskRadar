@@ -140,10 +140,14 @@ export function describeErrorBody(text: string): string {
  * Qwen, Ollama, llama.cpp), which is the whole reason for choosing it over any
  * provider's own SDK: switching between them is `.env`, not code.
  *
- * Temperature is low on purpose. The task is rewriting, not writing -- the same
- * dictation should come back as the same title every time, and a model allowed
- * to be creative starts adding words the user never said.
+ * Temperature is low by default on purpose ([DEFAULT_TEMPERATURE]). The task is
+ * rewriting, not writing -- the same dictation should come back as the same
+ * title every time, and a model allowed to be creative starts adding words the
+ * user never said. A roster entry may set its own: not every provider accepts
+ * 0.1 (Inception takes 0.5-1 and turns anything else into 1).
  */
+export const DEFAULT_TEMPERATURE = 0.1;
+
 export function createOpenAiCompatibleClient(
   config: LlmConfig,
   fetchImpl: typeof fetch = fetch,
@@ -162,7 +166,7 @@ export function createOpenAiCompatibleClient(
         body: JSON.stringify({
           model,
           messages,
-          temperature: 0.1,
+          temperature: config.temperature ?? DEFAULT_TEMPERATURE,
           response_format: { type: "json_object" },
         }),
         signal,

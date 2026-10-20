@@ -15,6 +15,8 @@ export interface RosterInput {
   label?: string | null | undefined;
   baseUrl?: string | null | undefined;
   apiKeyEnv?: string | null | undefined;
+  /** Absent keeps what is stored: an app that predates the field must not wipe it. */
+  temperature?: number | null | undefined;
   enabled: boolean;
 }
 
@@ -38,6 +40,7 @@ export async function rosterForParsing(defaultModel: string): Promise<RosterEntr
       label: null,
       baseUrl: null,
       apiKeyEnv: null,
+      temperature: null,
       enabled: true,
       autoDisabledAt: null,
       consecutiveFailures: 0,
@@ -79,6 +82,7 @@ export async function writeRoster(input: readonly RosterInput[]): Promise<Roster
         baseUrl: entry.baseUrl ?? null,
         apiKeyEnv: entry.apiKeyEnv ?? null,
         enabled: entry.enabled,
+        ...(entry.temperature === undefined ? {} : { temperature: entry.temperature }),
       };
       if (entry.id === undefined) {
         await tx.llmModel.create({ data: fields });

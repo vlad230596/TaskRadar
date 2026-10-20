@@ -337,6 +337,10 @@ void main() {
         find.widgetWithText(TextField, 'Переменная с ключом'),
         'LLM_QWEN_KEY',
       );
+      final temperature = find.widgetWithText(TextField, 'Температура');
+      await tester.ensureVisible(temperature);
+      // A comma, as a Russian keyboard types it.
+      await tester.enterText(temperature, '0,5');
       await tester.pump();
       await tester.tap(find.text('Сохранить'));
       await tester.pumpAndSettle();
@@ -347,6 +351,7 @@ void main() {
           'label': null,
           'baseUrl': null,
           'apiKeyEnv': 'LLM_QWEN_KEY',
+          'temperature': 0.5,
           'enabled': true,
         },
       ]);

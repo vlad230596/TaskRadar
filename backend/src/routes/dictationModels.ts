@@ -58,6 +58,8 @@ const rosterInputSchema = z.object({
           .regex(API_KEY_ENV, "apiKeyEnv must be an env variable name starting with LLM_")
           .nullish()
           .or(z.literal("").transform(() => null)),
+        // Undefined (not sent) keeps the stored value; null resets to the default.
+        temperature: z.number().min(0).max(2).nullish(),
         enabled: z.boolean().default(true),
       }),
     )
@@ -98,6 +100,7 @@ export function dictationModelRoutes(options: DictationModelsOptions | null) {
         ? {
             baseUrl: entry.baseUrl,
             apiKeyEnv: entry.apiKeyEnv,
+            temperature: entry.temperature,
             // Whether the named variable is set, so a typo shows before the
             // first failed request does. Never its value.
             keyPresent:

@@ -43,6 +43,12 @@ export interface LlmConfig {
    * wrong with the provider rather than slow.
    */
   streamTimeoutMs: number;
+  /**
+   * Sampling temperature. Not from `.env`: it belongs to a model on the
+   * roster (`../domain/modelRoster.ts`), and is [DEFAULT_TEMPERATURE] when
+   * the entry names none.
+   */
+  temperature?: number | undefined;
 }
 
 /**
