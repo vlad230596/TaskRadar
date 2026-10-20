@@ -300,7 +300,9 @@ void main() {
 
       server.history = server.historyJson(
         range: '30d',
-        closedByDay: List<int>.filled(30, 1),
+        // Two a day: a total of 30 would also be a day label on the chart
+        // whenever the 30th falls inside the last month.
+        closedByDay: List<int>.filled(30, 2),
       );
 
       await tester.tap(find.text('7 дней'));
@@ -309,7 +311,7 @@ void main() {
       await settle(tester);
 
       expect(server.lastHistoryRequest!.queryParameters['range'], '30d');
-      expect(find.text('30'), findsOneWidget);
+      expect(find.text('60'), findsOneWidget);
       expect(find.text('за месяц'), findsOneWidget);
     });
   });
