@@ -115,6 +115,7 @@ void main() {
       ParseKind kind = ParseKind.note,
       String source = 'ну значит гвозди и краска',
       String? noteTitle,
+      TidyResult? result,
       List<TidyProject> projects = const <TidyProject>[],
     }) async {
       outcome = null;
@@ -130,6 +131,7 @@ void main() {
                     context,
                     kind: kind,
                     source: source,
+                    result: result,
                     noteTitle: noteTitle,
                     projects: projects,
                   );
@@ -166,6 +168,24 @@ void main() {
       expect(find.text('Результат AI'), findsOneWidget);
       expect(find.text('- гвозди\n- краска'), findsOneWidget);
       expect(find.byType(TidyProgressCard), findsNothing);
+    });
+
+    testWidgets('handed the saved answer, shows it and asks nothing', (
+      tester,
+    ) async {
+      answers.add(<String, dynamic>{'content': 'Гвозди, краска.'});
+      await open(tester, result: const TidiedNote(content: 'Гвозди и краска.'));
+
+      expect(parses, isEmpty);
+      expect(find.byType(TidyProgressCard), findsNothing);
+      expect(find.text('Гвозди и краска.'), findsOneWidget);
+      // The level switch is there to run it again.
+      expect(find.byType(TidyLevelSwitch), findsOneWidget);
+
+      await tester.tap(find.text('Разобрать заново'));
+      await settle(tester);
+      expect(parses.single['text'], 'ну значит гвозди и краска');
+      expect(find.text('Гвозди, краска.'), findsOneWidget);
     });
 
     testWidgets('"Исходник" shows the source, and back', (tester) async {

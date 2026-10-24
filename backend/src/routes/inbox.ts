@@ -13,6 +13,7 @@ import {
   idParamSchema,
 } from "../schemas";
 import { getProjectOrThrow } from "./projects";
+import { isUniqueConstraintViolation } from "../lib/prismaErrors";
 
 /*
  * The sandbox (F8): write it down now, decide where it goes later.
@@ -45,20 +46,6 @@ import { getProjectOrThrow } from "./projects";
  * decision being deferred. The scope gets decided when the item is filed,
  * because a project already has one.
  */
-
-/**
- * Whether [error] is Prisma's "a unique index already holds this value" (P2002).
- *
- * Matched on the code rather than with `instanceof PrismaClientKnownRequestError`
- * on purpose: the route tests run against an in-memory fake of the client (there
- * is no database in that environment), and a check that insisted on the real
- * error class would make the one branch that exists for a race untestable.
- */
-function isUniqueConstraintViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && (error as { code?: unknown }).code === "P2002"
-  );
-}
 
 /**
  * A line saved from a `sandbox` answer (F15): its dataset row learns the line

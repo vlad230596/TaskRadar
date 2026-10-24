@@ -90,6 +90,17 @@ class FakeBackend {
     );
   }
 
+  /// Simulates a server that is there and says no: every request answers 500.
+  ///
+  /// The failure a rollback is still for since the outbox (offline task
+  /// writes) took over the no-network case -- see `outbox_test.dart`.
+  void alwaysAnswerServerError() {
+    responder = (options) => jsonResponse(<String, dynamic>{
+      'error': 'Internal Server Error',
+      'message': 'simulated server failure',
+    }, statusCode: 500);
+  }
+
   /// Registers a handler for one route.
   ///
   /// F3 is the first iteration where a single screen talks to five endpoints, so
@@ -180,11 +191,14 @@ class _Route {
   late final RegExp _pattern = _compile(pathPattern, _names);
 
   static RegExp _compile(String pathPattern, List<String> names) {
-    final source = pathPattern.split('/').map((segment) {
-      if (!segment.startsWith(':')) return RegExp.escape(segment);
-      names.add(segment.substring(1));
-      return '([^/]+)';
-    }).join('/');
+    final source = pathPattern
+        .split('/')
+        .map((segment) {
+          if (!segment.startsWith(':')) return RegExp.escape(segment);
+          names.add(segment.substring(1));
+          return '([^/]+)';
+        })
+        .join('/');
 
     return RegExp('^$source\$');
   }

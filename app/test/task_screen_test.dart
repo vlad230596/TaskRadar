@@ -235,9 +235,7 @@ void main() {
   );
 
   group('the note', () {
-    testWidgets('"Причесать" tidies the note alone, as a note', (
-      tester,
-    ) async {
+    testWidgets('"Причесать" tidies the note alone, as a note', (tester) async {
       final id = server.addTask(
         projectId: projectId,
         title: 'Купить кабель',
@@ -287,9 +285,7 @@ void main() {
       });
     });
 
-    testWidgets('the microphone appends the words to the note', (
-      tester,
-    ) async {
+    testWidgets('the microphone appends the words to the note', (tester) async {
       final id = server.addTask(
         projectId: projectId,
         title: 'Купить кабель',
@@ -493,8 +489,115 @@ void main() {
     await pumpTask(tester, id);
 
     // No journal for this task: the whole life belongs to "open".
-    expect(find.textContaining(RegExp(r'^открыта \d+ (день|дн)')), findsOneWidget);
+    expect(
+      find.textContaining(RegExp(r'^открыта \d+ (день|дн)')),
+      findsOneWidget,
+    );
     expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsNothing);
+  });
+
+  group('the AI mark', () {
+    /// A task AI processed from speech, as AI left it.
+    String addProcessed() {
+      final id = server.addTask(
+        projectId: projectId,
+        title: 'Купить кабель',
+        description: 'Два метра.',
+      );
+      server.tasks.last.addAll(<String, dynamic>{
+        'aiSource': 'ну купить кабель два метра',
+        'aiKind': 'task',
+        'aiResult': <String, dynamic>{
+          'title': 'Купить кабель',
+          'description': 'Два метра.',
+        },
+      });
+      return id;
+    }
+
+    testWidgets('opens the AI screen on the saved answer, asking nothing', (
+      tester,
+    ) async {
+      final parses = <Map<String, dynamic>>[];
+      backend.on('POST', '/dictation/parse', (match) {
+        parses.add(match.body);
+        return sseResponse(<String>[sseEvent('accepted')]);
+      });
+      await pumpTask(tester, addProcessed());
+
+      await tester.tap(find.text('AI'));
+      await settle(tester);
+
+      expect(find.byType(AiTidyScreen), findsOneWidget);
+      expect(parses, isEmpty);
+      expect(
+        find.descendant(
+          of: find.byType(AiTidyScreen),
+          matching: find.widgetWithText(TextField, 'Купить кабель'),
+        ),
+        findsOneWidget,
+      );
+      // The one way back is the AI screen's own.
+      expect(find.text('Вернуть исходник'), findsNothing);
+      expect(find.text('Как надиктовано'), findsOneWidget);
+    });
+
+    testWidgets('"Как надиктовано" puts the source back, forgetting nothing', (
+      tester,
+    ) async {
+      await pumpTask(tester, addProcessed());
+
+      await tester.tap(find.text('AI'));
+      await settle(tester);
+      await tester.tap(find.text('Как надиктовано'));
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(titleField()).controller!.text,
+        'ну купить кабель два метра',
+      );
+      // Back to the source: nothing AI wrote is left to mark.
+      expect(find.text('AI'), findsNothing);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+      await settle(tester);
+      expect(
+        server.patches.every((patch) => !patch.body.containsKey('aiClear')),
+        isTrue,
+      );
+      expect(server.tasks.single['aiSource'], 'ну купить кабель два метра');
+    });
+
+    testWidgets('"Причесать" works from the source, not from the answer', (
+      tester,
+    ) async {
+      final parses = <Map<String, dynamic>>[];
+      backend.on('POST', '/dictation/parse', (match) {
+        parses.add(match.body);
+        return sseResponse(<String>[sseEvent('accepted')]);
+      });
+      await pumpTask(tester, addProcessed());
+
+      await tester.tap(find.text('Причесать').first);
+      await settle(tester);
+      expect(parses.single['text'], 'ну купить кабель два метра');
+    });
+
+    testWidgets('edited by hand after AI, "Причесать" keeps the edit', (
+      tester,
+    ) async {
+      final parses = <Map<String, dynamic>>[];
+      backend.on('POST', '/dictation/parse', (match) {
+        parses.add(match.body);
+        return sseResponse(<String>[sseEvent('accepted')]);
+      });
+      await pumpTask(tester, addProcessed());
+
+      await tester.enterText(titleField(), 'Купить кабель и вилку');
+      await tester.tap(find.text('Причесать').first);
+      await settle(tester);
+      expect(parses.single['text'], 'Купить кабель и вилку\nДва метра.');
+    });
   });
 
   testWidgets('everything fits a 375 px phone without overflow', (

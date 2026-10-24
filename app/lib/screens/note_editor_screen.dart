@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -73,10 +75,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   /// when the draft holds no answer.
   String? _tidyParseId;
 
-  /// "Вернуть исходник" was picked: the draft holds the source again, and the
-  /// save tells the server to forget AI touched the note (`domain/ai_mark.dart`).
-  bool _aiClear = false;
-
   @override
   void initState() {
     super.initState();
@@ -97,9 +95,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   void _onChanged() => setState(() {});
 
   bool get _dirty =>
-      _title.text.trim() != _savedTitle ||
-      _content.text != _savedContent ||
-      _aiClear;
+      _title.text.trim() != _savedTitle || _content.text != _savedContent;
 
   /// A title cannot be emptied: `updateNoteSchema` rejects `""` with a 400, and
   /// a note with no title is unfindable in the list anyway.
@@ -120,8 +116,7 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
             widget.note,
             title: title,
             content: content,
-            dictationParseId: _aiClear ? null : _tidyParseId,
-            aiClear: _aiClear,
+            dictationParseId: _tidyParseId,
           ),
       failure: 'Не удалось сохранить заметку.',
     );
@@ -133,7 +128,6 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
         _savedTitle = title;
         _savedContent = content;
         _tidyParseId = null;
-        _aiClear = false;
       }
     });
     return ok;
@@ -145,15 +139,22 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
   ///
   /// The title goes along so the model knows the note has one and leaves it
   /// alone; it proposes one only for a note whose title was emptied.
-  Future<void> _tidy() async {
-    final source = _content.text.trim();
-    if (source.isEmpty) return;
+  ///
+  /// A body AI processed and nobody touched since goes from the source the
+  /// server kept: the model never works from its own answer. With [shown] --
+  /// the "AI" mark -- the screen opens on that answer and the source, and the
+  /// model runs only if asked again.
+  Future<void> _tidy({bool shown = false}) async {
+    final current = _content.text.trim();
+    if (current.isEmpty && !shown) return;
     final title = _title.text.trim();
+    final mark = _markOf(_row);
 
     final outcome = await openAiTidy(
       context,
       kind: ParseKind.note,
-      source: source,
+      source: shown ? mark.source ?? current : mark.tidySource(current),
+      result: shown ? TidiedNote(content: current) : null,
       noteTitle: title.isEmpty ? null : title,
     );
     if (!mounted) return;
@@ -163,8 +164,8 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
       ):
         _content.text = content;
         if (title != null && _title.text.trim().isEmpty) _title.text = title;
-        _tidyParseId = parseId;
-        _aiClear = false;
+        // The saved answer taken back as it was has no new record.
+        _tidyParseId = parseId ?? _tidyParseId;
       // "Как надиктовано" after correcting the source by hand keeps the
       // correction.
       case TidyKeptSource(:final source) when source != _content.text.trim():
@@ -175,19 +176,20 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
     }
   }
 
-  /// "Вернуть исходник" from the AI mark: into the draft, saved by
-  /// "Сохранить" like any edit.
-  void _revertToSource(String source) {
-    setState(() {
-      _content.text = source;
-      _tidyParseId = null;
-      _aiClear = true;
-    });
-  }
+  /// The draft's AI mark: against the fields as they stand, so text put back
+  /// to the source shows no mark before it is even saved.
+  AiMark _markOf(Note note) =>
+      noteAiMark(note, title: _title.text, content: _content.text);
 
   /// The note as the list has it now -- the mark follows saves made here.
-  Note get _current {
-    final rows = ref.watch(projectNotesProvider(widget.projectId)).value;
+  Note get _current =>
+      _find(ref.watch(projectNotesProvider(widget.projectId)).value);
+
+  /// [_current] outside of build.
+  Note get _row =>
+      _find(ref.read(projectNotesProvider(widget.projectId)).value);
+
+  Note _find(List<Note>? rows) {
     for (final row in rows ?? const <Note>[]) {
       if (row.id == widget.note.id) return row;
     }
@@ -258,14 +260,13 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                   DictateInto(controller: _title, label: 'в заголовок'),
                 ],
               ),
-              if (!_aiClear && noteAiMark(_current).shown) ...[
+              if (_markOf(_current).shown) ...[
                 const SizedBox(height: 8),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: AiSourceMark(
-                    mark: noteAiMark(_current),
-                    onRevert: () =>
-                        _revertToSource(noteAiMark(_current).source ?? ''),
+                    mark: _markOf(_current),
+                    onOpen: () => unawaited(_tidy(shown: true)),
                   ),
                 ),
               ],

@@ -8,10 +8,17 @@ import '../models/task.dart';
 /// before the first "Обработать" (`aiSource`), the kind of that first parse
 /// (`aiKind`), and the fields as the last AI answer saved them (`aiResult`).
 /// This file turns them into what the screens need: whether to show the mark,
-/// whether the text was changed by hand since, and what "вернуть исходник"
-/// writes back.
+/// whether the text was changed by hand since, what "Причесать" starts from,
+/// and how the source goes back into the fields.
+///
+/// Nothing here forgets the source (25.10.2026). There used to be "Вернуть
+/// исходник", which wrote the source back and cleared all three columns; next
+/// to "Как надиктовано" on the AI screen it read as the same button, and one of
+/// the two always looked broken. Now the mark opens the AI screen itself, and
+/// text put back to the source simply shows no mark -- the source is still
+/// there for the next "Причесать".
 enum AiMarkState {
-  /// AI never touched it, or it was put back.
+  /// AI never touched it, or the text is the source again.
   none,
 
   /// As the last AI answer left it.
@@ -21,7 +28,7 @@ enum AiMarkState {
   editedAfter,
 }
 
-/// What a row says about AI, for the mark and its sheet.
+/// What a row says about AI, for the mark and the AI screen behind it.
 class AiMark {
   const AiMark(this.state, this.source);
 
@@ -33,14 +40,27 @@ class AiMark {
   final String? source;
 
   bool get shown => state != AiMarkState.none;
+
+  /// What "Причесать" sends for text that stands as [current]: the source
+  /// while the text is as AI left it -- the model never works from its own
+  /// answer -- and [current] otherwise. Edited by hand after AI, the edit is
+  /// the newer word and is not thrown away for an older one.
+  String tidySource(String current) =>
+      state == AiMarkState.asAi ? source ?? current : current;
 }
 
 AiMark _mark(
   String? source,
   Map<String, dynamic>? result,
   Map<String, Object?> current,
+  Map<String, Object?> asSource,
 ) {
   if (source == null) return AiMark.none;
+  // Back to the source: nothing AI wrote is left to point at.
+  bool same(Map<String, Object?> fields) => fields.entries.every(
+    (field) => _norm(field.value) == _norm(current[field.key]),
+  );
+  if (same(asSource)) return AiMark.none;
   // No snapshot to compare with is "as AI left it": the mark is what matters.
   final edited =
       result != null &&
@@ -53,22 +73,44 @@ AiMark _mark(
 /// Null, empty and surrounding spaces are one thing: the server trims too.
 String _norm(Object? value) => (value as String? ?? '').trim();
 
-AiMark taskAiMark(Task task) => _mark(
-  task.aiSource,
-  task.aiResult,
-  <String, Object?>{'title': task.title, 'description': task.description},
-);
+/// [title] and [description] are the fields as they stand on the screen,
+/// when they differ from the row's.
+AiMark taskAiMark(Task task, {String? title, String? description}) {
+  final source = task.aiSource == null ? null : taskSourceFields(task);
+  return _mark(
+    task.aiSource,
+    task.aiResult,
+    <String, Object?>{
+      'title': title ?? task.title,
+      'description': description ?? task.description,
+    },
+    <String, Object?>{
+      'title': source?.title,
+      'description': source?.description,
+    },
+  );
+}
 
-AiMark noteAiMark(Note note) => _mark(
+AiMark noteAiMark(Note note, {String? title, String? content}) => _mark(
   note.aiSource,
   note.aiResult,
-  <String, Object?>{'title': note.title, 'content': note.content},
+  <String, Object?>{
+    'title': title ?? note.title,
+    'content': content ?? note.content,
+  },
+  // A note's source is its body; the title was never processed.
+  <String, Object?>{'content': note.aiSource},
 );
 
-AiMark inboxAiMark(InboxItem item) =>
-    _mark(item.aiSource, item.aiResult, <String, Object?>{'text': item.text});
+AiMark inboxAiMark(InboxItem item, {String? text}) => _mark(
+  item.aiSource,
+  item.aiResult,
+  <String, Object?>{'text': text ?? item.text},
+  <String, Object?>{'text': item.aiSource},
+);
 
-/// What "вернуть исходник" writes into a task, by how the source was made.
+/// The source of [task] -- or [source], the same words corrected by hand on
+/// the AI screen -- as the task's fields, by how the source was made.
 ///
 /// - `note`: only the description was processed -- it gets the source back,
 ///   the title stays.
@@ -76,13 +118,16 @@ AiMark inboxAiMark(InboxItem item) =>
 ///   line (`task_screen.dart`) -- split back the same way.
 /// - `task`, `sandbox`: the source is speech or a sandbox line with no title
 ///   of its own -- split the way the server files a line ([splitSourceText]).
-({String title, String? description}) taskSourceFields(Task task) {
-  final source = task.aiSource?.trim() ?? '';
+({String title, String? description}) taskSourceFields(
+  Task task, [
+  String? source,
+]) {
+  final text = (source ?? task.aiSource)?.trim() ?? '';
   switch (task.aiKind) {
     case 'note':
-      return (title: task.title, description: source.isEmpty ? null : source);
+      return (title: task.title, description: text.isEmpty ? null : text);
     case 'task_tidy':
-      final lines = source.split('\n');
+      final lines = text.split('\n');
       final rest = lines.skip(1).join('\n').trim();
       final title = lines.first.trim();
       return (
@@ -90,7 +135,7 @@ AiMark inboxAiMark(InboxItem item) =>
         description: rest.isEmpty ? null : rest,
       );
     default:
-      final parts = splitSourceText(source);
+      final parts = splitSourceText(text);
       return (
         title: parts.title.isEmpty ? task.title : parts.title,
         description: parts.description,

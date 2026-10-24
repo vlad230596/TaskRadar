@@ -201,6 +201,14 @@ model Task {
   aiKind   String?
   aiResult Json?
 
+  /// Idempotency key of a task created from the phone's offline outbox: the
+  /// client stamps a queued create with it, and `POST /projects/:id/tasks`
+  /// answers a replay with the task it already made instead of a twin -- the
+  /// same design as `InboxItem.captureKey`, see there and src/routes/tasks.ts.
+  /// Null for every task created without one (Postgres treats NULLs in a
+  /// unique index as distinct).
+  createKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -211,6 +219,14 @@ model Task {
 
   @@index([projectId, position])
   @@index([categoryId])
+  // Per project, which is per user: a task has no userId of its own, a project
+  // belongs to exactly one user, and a task never changes project. So this
+  // scopes a key to its owner the way `@@unique([userId, captureKey])` does on
+  // the inbox, without denormalising userId onto every task -- and a key that
+  // two people's phones happened to share can neither collide nor answer one
+  // user's replay with the other's task. (A replay always names the project of
+  // the original request: it is the same request, sent again.)
+  @@unique([projectId, createKey])
   @@map("tasks")
 }
 

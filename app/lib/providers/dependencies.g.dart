@@ -252,6 +252,58 @@ final class CaptureQueueStoreProvider
 
 String _$captureQueueStoreHash() => r'b16af3d3fe18d9dc421b237c7c7b4a196d1f51f7';
 
+/// The outbox of task writes made with no network (creates and edits), and a
+/// week of what became of them. Single instance for the reason
+/// [captureQueueStore] is: for an offline edit this file is the only copy.
+
+@ProviderFor(outboxStore)
+final outboxStoreProvider = OutboxStoreProvider._();
+
+/// The outbox of task writes made with no network (creates and edits), and a
+/// week of what became of them. Single instance for the reason
+/// [captureQueueStore] is: for an offline edit this file is the only copy.
+
+final class OutboxStoreProvider
+    extends $FunctionalProvider<OutboxStore, OutboxStore, OutboxStore>
+    with $Provider<OutboxStore> {
+  /// The outbox of task writes made with no network (creates and edits), and a
+  /// week of what became of them. Single instance for the reason
+  /// [captureQueueStore] is: for an offline edit this file is the only copy.
+  OutboxStoreProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'outboxStoreProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$outboxStoreHash();
+
+  @$internal
+  @override
+  $ProviderElement<OutboxStore> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  OutboxStore create(Ref ref) {
+    return outboxStore(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(OutboxStore value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<OutboxStore>(value),
+    );
+  }
+}
+
+String _$outboxStoreHash() => r'c8c14c8f300b73317c79b2d01bcfc3f7fbf55000';
+
 /// Persisted user preferences (F4): currently the reminder hour.
 ///
 /// Here rather than in `reminder_providers.dart` for the same reason as

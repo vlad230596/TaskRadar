@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/api/dictation_api.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/project_providers.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/dictation_screen.dart';
@@ -13,6 +14,7 @@ import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/widgets/ai_tidy.dart';
 import 'package:taskradar/widgets/tidy_progress.dart';
 
+import 'support/fake_outbox_store.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_capture_queue_store.dart';
 import 'support/fake_project_backend.dart';
@@ -31,6 +33,7 @@ void main() {
   late FakeBackend backend;
   late FakeProjectBackend server;
   late List<Map<String, dynamic>> parseBodies;
+  late FakeOutboxStore outbox;
 
   /// What the screen popped with -- what a [FieldDestination] hands back.
   FieldDictation? popped;
@@ -42,6 +45,7 @@ void main() {
   };
 
   setUp(() {
+    outbox = FakeOutboxStore();
     popped = null;
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
@@ -98,6 +102,7 @@ void main() {
       name: 'Дом',
     ),
     String heard = 'Купить кабель',
+    bool projectBehind = false,
   }) async {
     // A phone: the size the keyboard bug was seen at.
     tester.view.physicalSize = const Size(390, 844);
@@ -117,27 +122,34 @@ void main() {
             (ref) async => 'Europe/Moscow',
           ),
           captureQueueStoreProvider.overrideWithValue(FakeCaptureQueueStore()),
+          outboxStoreProvider.overrideWithValue(outbox),
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
           // A screen underneath, as in the app: the dictation screen pops when
           // it has saved, and the snackbar is shown on whatever is left.
-          home: Builder(
-            builder: (context) => Scaffold(
-              body: Center(
-                child: ElevatedButton(
-                  onPressed: () async {
-                    popped = await Navigator.of(context).push<FieldDictation>(
-                      MaterialPageRoute<FieldDictation>(
-                        builder: (_) =>
-                            DictationScreen(destination: destination),
-                      ),
-                    );
-                  },
-                  child: const Text('открыть'),
+          //
+          // [projectBehind]: the host watches the project's task list, as the
+          // project screen -- whose microphone dictates into it -- does.
+          home: Consumer(
+            builder: (context, ref, _) {
+              if (projectBehind) ref.watch(projectTasksProvider('prj_1'));
+              return Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      popped = await Navigator.of(context).push<FieldDictation>(
+                        MaterialPageRoute<FieldDictation>(
+                          builder: (_) =>
+                              DictationScreen(destination: destination),
+                        ),
+                      );
+                    },
+                    child: const Text('открыть'),
+                  ),
                 ),
-              ),
-            ),
+              );
+            },
           ),
         ),
       ),
@@ -428,35 +440,34 @@ void main() {
       },
     );
 
-    testWidgets(
-      'while it runs, the words move up under the stage',
-      (tester) async {
-        final events = modelStreams();
+    testWidgets('while it runs, the words move up under the stage', (
+      tester,
+    ) async {
+      final events = modelStreams();
 
-        await dictate(
-          tester,
-          destination: const SandboxDestination(),
-          heard:
-              'Надо в выходные разобраться с вентилятором в туалете, он опять '
-              'не включается. Сначала посмотреть автомат в щитке, второй '
-              'слева. Если дело не в нём, то снять решётку и проверить, '
-              'крутится ли он от руки. Потом уже звонить мастеру.',
-        );
-        await tester.tap(find.text('Разобрать'));
-        events
-          ..add(sseEvent('accepted', <String, dynamic>{'kind': 'sandbox'}))
-          ..add(sseEvent('model_started', <String, dynamic>{'model': 'm'}));
-        await settle(tester);
-        expect(find.byType(TidyProgressCard), findsOneWidget);
+      await dictate(
+        tester,
+        destination: const SandboxDestination(),
+        heard:
+            'Надо в выходные разобраться с вентилятором в туалете, он опять '
+            'не включается. Сначала посмотреть автомат в щитке, второй '
+            'слева. Если дело не в нём, то снять решётку и проверить, '
+            'крутится ли он от руки. Потом уже звонить мастеру.',
+      );
+      await tester.tap(find.text('Разобрать'));
+      events
+        ..add(sseEvent('accepted', <String, dynamic>{'kind': 'sandbox'}))
+        ..add(sseEvent('model_started', <String, dynamic>{'model': 'm'}));
+      await settle(tester);
+      expect(find.byType(TidyProgressCard), findsOneWidget);
 
-        // The room held for the level meter is for the moment the recording
-        // stops; with the card under the words it only pushed them down, and
-        // the card cut off their end.
-        final stage = tester.getRect(find.text('Разбираю'));
-        final field = tester.getRect(find.byType(TextField));
-        expect(field.top - stage.bottom, lessThan(40));
-      },
-    );
+      // The room held for the level meter is for the moment the recording
+      // stops; with the card under the words it only pushed them down, and
+      // the card cut off their end.
+      final stage = tester.getRect(find.text('Разбираю'));
+      final field = tester.getRect(find.byType(TextField));
+      expect(field.top - stage.bottom, lessThan(40));
+    });
 
     testWidgets(
       '"Отменить" on the card drops the request and keeps the words',
@@ -964,6 +975,45 @@ void main() {
       expect(field.top, greaterThanOrEqualTo(list.top));
       expect(field.bottom, lessThanOrEqualTo(list.bottom));
       expect(field.bottom, lessThanOrEqualTo(780.0 - 400));
+    });
+  });
+
+  group('no network, then the network again', () {
+    // The owner's report: dictated from the project screen with no signal,
+    // "Готово" failed -- fair -- and kept failing once the signal was back,
+    // until a pull-to-refresh on the project screen. The screen underneath
+    // keeps the task list alive, so the load that failed offline was still
+    // the answer the next "Готово" waited for.
+    testWidgets('a list that failed to load offline does not fail "Готово" '
+        'once the signal is back', (tester) async {
+      backend.failingPaths.add('/projects/prj_1/tasks');
+      await dictate(tester, projectBehind: true);
+
+      // The signal is back. Nothing else is done -- no going back, no
+      // refresh -- before "Готово" is pressed.
+      backend.failingPaths.clear();
+      await save(tester);
+
+      expect(server.tasks.single['title'], 'Купить кабель');
+      expect(outbox.entries, isEmpty);
+      expect(find.text('Задача добавлена в «Дом».'), findsOneWidget);
+      expect(find.byType(DictationScreen), findsNothing);
+    });
+
+    testWidgets('with no signal "Готово" keeps the task on the phone', (
+      tester,
+    ) async {
+      backend.failingPaths.add('/projects/prj_1/tasks');
+      await dictate(tester, projectBehind: true);
+      await save(tester);
+
+      expect(server.tasks, isEmpty);
+      expect(outbox.entries.single.body['title'], 'Купить кабель');
+      expect(
+        find.text('Задача в «Дом» сохранена на телефоне — уйдёт при связи.'),
+        findsOneWidget,
+      );
+      expect(find.byType(DictationScreen), findsNothing);
     });
   });
 }

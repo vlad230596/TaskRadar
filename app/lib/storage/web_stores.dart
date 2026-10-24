@@ -42,6 +42,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/board_project.dart';
 import 'board_snapshot_store.dart';
 import 'capture_queue_store.dart';
+import 'outbox_store.dart';
 
 /// The key/value half of the two stores below, so they can be tested without a
 /// platform channel and without `SharedPreferences.setMockInitialValues` -- a
@@ -254,6 +255,57 @@ class WebCaptureQueueStore implements CaptureQueueStore {
       await _storage.remove(key);
     } catch (error) {
       debugPrint('Could not set the unusable capture queue aside: $error');
+    }
+  }
+}
+
+/// The outbox of task writes (`outbox_store.dart`) in `localStorage`, for the
+/// same reason as [WebCaptureQueueStore]: the file store throws on every write
+/// in a browser, and its writes are the only copy of an offline edit.
+class WebOutboxStore implements OutboxStore {
+  WebOutboxStore({WebKeyValueStore? storage})
+    : _storage = storage ?? PreferencesKeyValueStore();
+
+  static const String key = OutboxStore.fileName;
+  static const String corruptKey = '$key.corrupt';
+
+  final WebKeyValueStore _storage;
+
+  @override
+  Future<List<OutboxEntry>> read() async {
+    String? raw;
+    try {
+      raw = await _storage.read(key);
+    } catch (error) {
+      debugPrint('Outbox unreadable (browser storage): $error');
+      return const <OutboxEntry>[];
+    }
+    if (raw == null) return const <OutboxEntry>[];
+
+    try {
+      return OutboxStore.decode(raw);
+    } catch (error) {
+      debugPrint('Unusable outbox, setting it aside: $error');
+      try {
+        await _storage.write(corruptKey, raw);
+        await _storage.remove(key);
+      } catch (error) {
+        debugPrint('Could not set the unusable outbox aside: $error');
+      }
+      return const <OutboxEntry>[];
+    }
+  }
+
+  @override
+  Future<void> write(List<OutboxEntry> entries) =>
+      _storage.write(key, OutboxStore.encode(entries));
+
+  @override
+  Future<void> clear() async {
+    try {
+      await _storage.remove(key);
+    } catch (error) {
+      debugPrint('Could not clear the outbox: $error');
     }
   }
 }

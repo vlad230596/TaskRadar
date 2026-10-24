@@ -13,6 +13,7 @@ import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/focus_providers.dart';
+import '../providers/outbox_providers.dart';
 import '../providers/project_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -490,7 +491,8 @@ class _ListToolbar extends StatelessWidget {
                     ),
                   ),
                   TextSpan(
-                    text: ' справа, внутри своей категории. Категорию '
+                    text:
+                        ' справа, внутри своей категории. Категорию '
                         'задачи меняют на её экране.',
                   ),
                 ],
@@ -604,6 +606,11 @@ class TaskRow extends ConsumerWidget {
     final blocked = task.status == TaskStatus.blocked;
     final done = task.status == TaskStatus.done;
     final current = task.isCurrent;
+    // Made with no network and not sent yet, or sent a moment ago. The mark
+    // is the other half of drawing an unsent change at all: without it,
+    // "saved" and "saved in my pocket" would look the same.
+    final mark = ref.watch(outboxMarksProvider(projectId))[task.id];
+    final waiting = mark == OutboxMark.waiting;
 
     final age = daysSinceMovement(
       task.updatedAt,
@@ -676,6 +683,20 @@ class TaskRow extends ConsumerWidget {
                 colour: AppColors.waitingInk,
               ),
             ],
+            if (mark != null) ...<Widget>[
+              const SizedBox(height: 6),
+              waiting
+                  ? const _Meta(
+                      icon: Icons.cloud_upload_outlined,
+                      text: 'не отправлено',
+                      colour: AppColors.muted,
+                    )
+                  : const _Meta(
+                      icon: Icons.cloud_done_outlined,
+                      text: 'отправлено',
+                      colour: AppColors.done,
+                    ),
+            ],
           ],
         ),
       ),
@@ -685,7 +706,13 @@ class TaskRow extends ConsumerWidget {
       decoration: BoxDecoration(
         // A done row is a line of history, not a card: no fill, no border, the
         // same as the reference's done list.
-        color: done
+        color: mark == OutboxMark.sent
+            ? _kSentFill
+            : waiting
+            // On the page's own grey rather than a card: not quite a row of
+            // the server's list yet.
+            ? AppColors.background
+            : done
             ? Colors.transparent
             : blocked
             ? AppColors.waitingFill
@@ -693,6 +720,10 @@ class TaskRow extends ConsumerWidget {
         border: Border.all(
           color: isHighlighted
               ? AppColors.indigoLink
+              : mark == OutboxMark.sent
+              ? _kSentLine
+              : waiting
+              ? AppColors.lineStrong
               : inWork
               ? AppColors.indigo
               : done
@@ -752,6 +783,17 @@ class TaskRow extends ConsumerWidget {
             // Nothing to take into work: the server drops a finished task from
             // the set, so the target would be a button that undoes itself.
             const SizedBox(width: 12)
+          else if (_unconfirmed && waiting)
+            // Not a spinner: nothing is in flight, it waits for a network.
+            const SizedBox(
+              width: Targets.minimum,
+              height: Targets.row,
+              child: Icon(
+                Icons.cloud_upload_outlined,
+                size: 20,
+                color: AppColors.muted,
+              ),
+            )
           else if (_unconfirmed)
             const SizedBox(
               width: Targets.minimum,
@@ -952,6 +994,12 @@ void _offerUndo(
       ),
     );
 }
+
+/// The green of a row the outbox has just sent (the offline mockup's
+/// `--done-fill` / `--done-line`): the [AppColors.done] family, light enough
+/// to sit under ink. Used nowhere else, so not a token.
+const Color _kSentFill = Color(0xFFE5F0EA);
+const Color _kSentLine = Color(0xFFBFDCCB);
 
 /// [lead] followed by the reminder date of an open, unblocked row
 /// ("следующая · 23.09", "пора · 23.09"); just [lead] when there is no date.

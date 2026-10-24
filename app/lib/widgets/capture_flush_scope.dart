@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/capture_queue_providers.dart';
+import '../providers/outbox_providers.dart';
 
 /// Sends whatever the capture queue is holding, whenever there is a fresh
 /// reason to believe the network is back (F8.1).
@@ -77,7 +78,10 @@ class _CaptureFlushScopeState extends ConsumerState<CaptureFlushScope> {
   }
 
   void _retryIfPending() {
-    if (ref.read(pendingCapturesProvider).isNotEmpty) _flush();
+    if (ref.read(pendingCapturesProvider).isNotEmpty ||
+        ref.read(outboxCountsProvider).waiting > 0) {
+      _flush();
+    }
   }
 
   @override
@@ -92,6 +96,9 @@ class _CaptureFlushScopeState extends ConsumerState<CaptureFlushScope> {
     // `flush` already swallows its own failures -- an unsendable queue is a
     // normal state, not an error to report from here.
     unawaited(ref.read(captureQueueProvider.notifier).flush());
+    // The outbox of task writes rides the same moments: it waits for the
+    // same network.
+    unawaited(ref.read(outboxProvider.notifier).flush());
   }
 
   @override

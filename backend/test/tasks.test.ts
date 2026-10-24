@@ -69,6 +69,8 @@ interface TaskRow {
   remindAt: Date | null;
   remindTime: string | null;
   focusedAt: Date | null;
+  /** The client's idempotency key for an offline create, if it sent one. */
+  createKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -329,9 +331,24 @@ beforeEach(() => {
       projects.find((p) => projectMatches(p, args.where)) ?? null,
   );
 
-  // Only used for a neighbour in `PATCH /tasks/:id/position`, always by id.
+  // By id for a neighbour in `PATCH /tasks/:id/position`, or by the compound
+  // `{ projectId_createKey }` for an idempotent create. Anything else throws.
   prismaMock.task.findUnique.mockImplementation(
-    (args: { where: { id: string } }) => tasks.find((t) => t.id === args.where.id) ?? null,
+    (args: {
+      where: { id?: string; projectId_createKey?: { projectId: string; createKey: string } };
+    }) => {
+      const compound = args.where.projectId_createKey;
+      if (compound === undefined && args.where.id === undefined) {
+        throw new Error(`findUnique where the fake does not know: ${JSON.stringify(args.where)}`);
+      }
+      return (
+        tasks.find((t) =>
+          compound === undefined
+            ? t.id === args.where.id
+            : t.projectId === compound.projectId && t.createKey === compound.createKey,
+        ) ?? null
+      );
+    },
   );
 
   prismaMock.task.findFirst.mockImplementation(
@@ -399,6 +416,17 @@ beforeEach(() => {
   });
 
   prismaMock.task.create.mockImplementation((args: { data: Partial<TaskRow> }) => {
+    // The unique index on (`projectId`, `createKey`): modelled because the
+    // route has a branch that exists only for losing that race.
+    if (
+      args.data.createKey != null &&
+      tasks.some((t) => t.projectId === args.data.projectId && t.createKey === args.data.createKey)
+    ) {
+      throw Object.assign(new Error("Unique constraint failed"), {
+        code: "P2002",
+        meta: { target: ["projectId", "createKey"] },
+      });
+    }
     const row = task({
       id: `tsk-new-${++nextId}`,
       projectId: args.data.projectId!,
@@ -587,6 +615,101 @@ describe("POST /projects/:projectId/tasks", () => {
   });
 });
 
+describe("POST /projects/:projectId/tasks with a createKey (offline outbox)", () => {
+  const KEY = "3c9a1f7e-5b2d-4e8a-9f01-2a3b4c5d6e7f";
+
+  it("stores the key with the task", async () => {
+    const res = await call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY });
+
+    expect(res.statusCode).toBe(201);
+    expect(tasks.find((t) => t.title === "Офлайн")!.createKey).toBe(KEY);
+  });
+
+  it("answers a replay with the same task, and creates nothing -- not even an event", async () => {
+    const first = await call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY });
+    const replay = await call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY });
+
+    // 200 rather than 201, as `POST /inbox` answers a replay: not new here.
+    expect(replay.statusCode).toBe(200);
+    const id = (first.json() as TaskRow).id;
+    expect((replay.json() as TaskRow).id).toBe(id);
+    expect(tasks.filter((t) => t.title === "Офлайн")).toHaveLength(1);
+    expect(events.filter((e) => e.taskId === id && e.kind === "created")).toHaveLength(1);
+  });
+
+  it("does not let a late replay undo an edit", async () => {
+    const first = await call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY });
+    const id = (first.json() as TaskRow).id;
+    await call("PATCH", `/tasks/${id}`, { title: "Офлайн, исправлено" });
+
+    const replay = await call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY });
+
+    expect((replay.json() as TaskRow).title).toBe("Офлайн, исправлено");
+  });
+
+  it("survives two copies of the same retry racing each other", async () => {
+    // Both lookups miss, whatever order the requests interleave in: the
+    // database answers that way when neither transaction has committed yet.
+    // Only then does the unique index decide, which is the branch under test.
+    prismaMock.task.findUnique
+      .mockImplementationOnce(() => null)
+      .mockImplementationOnce(() => null);
+    const [a, b] = await Promise.all([
+      call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY }),
+      call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: KEY }),
+    ]);
+
+    expect([a.statusCode, b.statusCode].sort()).toEqual([200, 201]);
+    const id = (a.json() as TaskRow).id;
+    expect((b.json() as TaskRow).id).toBe(id);
+    expect(tasks.filter((t) => t.createKey === KEY)).toHaveLength(1);
+    // Both got past the lookup and tried to create: the index decided, which
+    // is the branch this test exists for.
+    expect(prismaMock.task.create).toHaveBeenCalledTimes(2);
+    // The loser's transaction rolled back whole: one `created` event, not two.
+    expect(events.filter((e) => e.taskId === id && e.kind === "created")).toHaveLength(1);
+  });
+
+  it("keeps different keys apart", async () => {
+    await call("POST", "/projects/prj-1/tasks", { title: "Одно и то же", createKey: KEY });
+    await call("POST", "/projects/prj-1/tasks", { title: "Одно и то же", createKey: `${KEY}-2` });
+
+    expect(tasks.filter((t) => t.title === "Одно и то же")).toHaveLength(2);
+  });
+
+  it("does not answer one user's replay with another user's task", async () => {
+    await call("POST", "/projects/prj-1/tasks", { title: "У A", createKey: KEY });
+    const res = await call(
+      "POST",
+      "/projects/prj-b/tasks",
+      { title: "У B", createKey: KEY },
+      true,
+      tokenB,
+    );
+
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as TaskRow).title).toBe("У B");
+    expect(tasks.filter((t) => t.createKey === KEY)).toHaveLength(2);
+  });
+
+  it("refuses a key too short to be one", async () => {
+    const res = await call("POST", "/projects/prj-1/tasks", { title: "Офлайн", createKey: "abc" });
+
+    expect(res.statusCode).toBe(400);
+    expect(prismaMock.task.create).not.toHaveBeenCalled();
+  });
+
+  it("creates a twin without a key, as before", async () => {
+    const a = await call("POST", "/projects/prj-1/tasks", { title: "Без ключа" });
+    const b = await call("POST", "/projects/prj-1/tasks", { title: "Без ключа" });
+
+    expect([a.statusCode, b.statusCode]).toEqual([201, 201]);
+    expect(tasks.filter((t) => t.title === "Без ключа")).toHaveLength(2);
+    expect(tasks.find((t) => t.title === "Без ключа")!.createKey ?? null).toBeNull();
+    expect(prismaMock.task.findUnique).not.toHaveBeenCalled();
+  });
+});
+
 describe("PATCH /tasks/:id", () => {
   it("records a status change", async () => {
     const res = await call("PATCH", "/tasks/tsk-1", { status: "blocked" });
@@ -713,6 +836,151 @@ describe("PATCH /tasks/:id", () => {
       const res = await call("PATCH", "/tasks/tsk-1", { remindAt: "2026-10-09", remindTime });
       expect(res.statusCode, remindTime).toBe(400);
     }
+  });
+});
+
+describe("PATCH /tasks/:id with `expected` (offline outbox)", () => {
+  it("applies an edit whose base still matches", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      description: "под мойкой",
+      expected: { description: null },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(tasks.find((t) => t.id === "tsk-1")!.description).toBe("под мойкой");
+  });
+
+  it("refuses an edit whose base moved, names the fields, and changes nothing", async () => {
+    // Edited on another device while this one was offline.
+    tasks.find((t) => t.id === "tsk-1")!.description = "с другого телефона";
+    const eventsBefore = events.length;
+
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      title: "Починить смеситель",
+      description: "под мойкой",
+      status: "done",
+      expected: { title: "Починить кран", description: null, status: "pending" },
+    });
+
+    expect(res.statusCode).toBe(409);
+    const body = res.json() as { error: string; fields: string[]; task: TaskRow };
+    expect(body.error).toBe("conflict");
+    expect(body.fields).toEqual(["description"]);
+    expect(body.task).toMatchObject({
+      id: "tsk-1",
+      title: "Починить кран",
+      description: "с другого телефона",
+      status: "pending",
+    });
+    const row = tasks.find((t) => t.id === "tsk-1")!;
+    expect(row.title).toBe("Починить кран");
+    expect(row.status).toBe("pending");
+    expect(events).toHaveLength(eventsBefore);
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("lists every field that moved", async () => {
+    Object.assign(
+      tasks.find((t) => t.id === "tsk-1")!,
+      { title: "Другое", status: "blocked" },
+    );
+
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      title: "Моё",
+      status: "done",
+      expected: { title: "Починить кран", status: "pending" },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect((res.json() as { fields: string[] }).fields).toEqual(["title", "status"]);
+  });
+
+  it("ignores an expectation about a field the edit does not touch", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      title: "Починить смеситель",
+      expected: { title: "Починить кран", description: "совсем не то", status: "done" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(tasks.find((t) => t.id === "tsk-1")!.title).toBe("Починить смеситель");
+  });
+
+  it("treats a retry that already landed as a success, not a conflict", async () => {
+    // The first attempt was applied and only the answer was lost: the base the
+    // client sends no longer matches, but the task already says what it asks.
+    await call("PATCH", "/tasks/tsk-1", { status: "done", expected: { status: "pending" } });
+    const statusEvents = events.filter((e) => e.taskId === "tsk-1" && e.kind === "status").length;
+
+    const retry = await call("PATCH", "/tasks/tsk-1", {
+      status: "done",
+      expected: { status: "pending" },
+    });
+
+    expect(retry.statusCode).toBe(200);
+    expect(events.filter((e) => e.taskId === "tsk-1" && e.kind === "status")).toHaveLength(
+      statusEvents,
+    );
+  });
+
+  it("refuses a body that carries only the expectation", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", { expected: { title: "Починить кран" } });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("compares the reminder by its date", async () => {
+    tasks.find((t) => t.id === "tsk-1")!.remindAt = at("2026-10-02T00:00:00.000Z");
+
+    const ok = await call("PATCH", "/tasks/tsk-1", {
+      remindAt: "2026-10-05",
+      expected: { remindAt: "2026-10-02" },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(tasks.find((t) => t.id === "tsk-1")!.remindAt).toEqual(at("2026-10-05T00:00:00.000Z"));
+
+    const stale = await call("PATCH", "/tasks/tsk-1", {
+      remindAt: "2026-10-09",
+      expected: { remindAt: "2026-10-02" },
+    });
+    expect(stale.statusCode).toBe(409);
+    expect((stale.json() as { fields: string[] }).fields).toEqual(["remindAt"]);
+    expect((stale.json() as { task: { remindAt: string } }).task.remindAt).toBe(
+      "2026-10-05T00:00:00.000Z",
+    );
+
+    const cleared = await call("PATCH", "/tasks/tsk-1", {
+      remindAt: null,
+      expected: { remindAt: null },
+    });
+    expect(cleared.statusCode).toBe(409);
+    expect((cleared.json() as { fields: string[] }).fields).toEqual(["remindAt"]);
+  });
+
+  it("checks the time of day and the category the same way", async () => {
+    Object.assign(
+      tasks.find((t) => t.id === "tsk-1")!,
+      {
+        remindAt: at("2026-10-02T00:00:00.000Z"),
+        remindTime: "09:00",
+      },
+    );
+
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      remindTime: "18:00",
+      categoryId: null,
+      expected: { remindTime: "10:00", categoryId: null },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect((res.json() as { fields: string[] }).fields).toEqual(["remindTime"]);
+    expect(tasks.find((t) => t.id === "tsk-1")!.remindTime).toBe("09:00");
+  });
+
+  it("is a 404, not a 409, for somebody else's task", async () => {
+    const res = await call("PATCH", "/tasks/tsk-b1", {
+      title: "Чужое",
+      expected: { title: "не то" },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });
 

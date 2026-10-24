@@ -15,6 +15,7 @@ import 'package:taskradar/storage/read_cache_store.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_project_backend.dart';
+import 'support/fake_outbox_store.dart';
 import 'support/memory_read_cache_store.dart';
 
 /// The offline read set beyond the board (offline QA pass, 16.10.2026): the
@@ -27,12 +28,14 @@ void main() {
   late FakeBackend backend;
   late FakeProjectBackend server;
   late MemoryReadCacheStore cache;
+  late FakeOutboxStore outbox;
   late String projectId;
 
   setUp(() {
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
     cache = MemoryReadCacheStore();
+    outbox = FakeOutboxStore();
     projectId = server.addProject(name: 'Кухня', id: 'prj_kitchen');
     server.addTask(projectId: projectId, title: 'Плитка', focused: true);
     server.addNote(projectId: projectId, title: 'Размеры', content: '3,2 м');
@@ -43,6 +46,7 @@ void main() {
       overrides: [
         apiClientProvider.overrideWithValue(backend.client),
         boardSnapshotStoreProvider.overrideWithValue(FakeBoardSnapshotStore()),
+        outboxStoreProvider.overrideWithValue(outbox),
         readCacheStoreProvider.overrideWithValue(cache),
       ],
     );
@@ -94,15 +98,18 @@ void main() {
       );
     });
 
-    test('with no copy it is still an honest error, not an empty list', () async {
-      backend.alwaysFailToConnect();
+    test(
+      'with no copy it is still an honest error, not an empty list',
+      () async {
+        backend.alwaysFailToConnect();
 
-      final offline = makeContainer();
-      await expectLater(
-        offline.read(focusSetProvider.future),
-        throwsA(isA<NetworkException>()),
-      );
-    });
+        final offline = makeContainer();
+        await expectLater(
+          offline.read(focusSetProvider.future),
+          throwsA(isA<NetworkException>()),
+        );
+      },
+    );
   });
 
   group('a server that does not answer', () {
@@ -127,12 +134,15 @@ void main() {
         slow.read(focusSetProvider).value!.map((row) => row.title),
         <String>['Плитка', 'Затирка'],
       );
-      expect(slow.read(cachedReadsProvider), isNot(contains(ReadCacheKeys.focus)));
+      expect(
+        slow.read(cachedReadsProvider),
+        isNot(contains(ReadCacheKeys.focus)),
+      );
     });
   });
 
   group('writes against a list that never loaded fail loudly', () {
-    test('a task write rethrows the network error', () async {
+    test('a task create is kept in the outbox, never lost', () async {
       backend.alwaysFailToConnect();
       final offline = makeContainer();
       // Kept alive the way the project screen keeps it: by watching it.
@@ -141,17 +151,32 @@ void main() {
           .read(projectTasksProvider(projectId).future)
           .then<void>((_) {}, onError: (Object _) {});
 
-      Object? failure;
-      try {
-        await offline
-            .read(projectTasksProvider(projectId).notifier)
-            .create('Новая');
-      } catch (error) {
-        failure = error;
-      }
-      // It used to complete normally, and the draft screen closed over the
-      // lost text.
-      expect(failure, isA<NetworkException>());
+      final outcome = await offline
+          .read(projectTasksProvider(projectId).notifier)
+          .create('Новая');
+
+      // It once completed normally with the text lost; then it threw. Now it
+      // says where the text is: on the device, waiting for a network.
+      expect(outcome, WriteOutcome.queued);
+      expect(outbox.entries.single.body['title'], 'Новая');
+    });
+
+    test('a task delete still rethrows the network error', () async {
+      backend.alwaysFailToConnect();
+      final offline = makeContainer();
+      offline.listen(projectTasksProvider(projectId), (_, _) {});
+      await offline
+          .read(projectTasksProvider(projectId).future)
+          .then<void>((_) {}, onError: (Object _) {});
+
+      final task = Task.fromJson(<String, dynamic>{
+        ...server.tasks.single,
+        'isCurrent': true,
+      });
+      await expectLater(
+        offline.read(projectTasksProvider(projectId).notifier).remove(task),
+        throwsA(isA<NetworkException>()),
+      );
     });
 
     test('a set write while the read is still in flight', () async {

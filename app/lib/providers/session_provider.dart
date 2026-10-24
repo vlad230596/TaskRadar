@@ -221,6 +221,7 @@ class Session extends _$Session {
   Future<void> _wipeLocalUserData() async {
     await ref.read(boardSnapshotStoreProvider).clear();
     await ref.read(captureQueueStoreProvider).clear();
+    await ref.read(outboxStoreProvider).clear();
     await ref.read(settingsStoreProvider).clearSelectedScopeId();
     await ref.read(readCacheStoreProvider).clear();
   }

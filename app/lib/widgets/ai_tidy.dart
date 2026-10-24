@@ -25,10 +25,11 @@ import 'unsaved_changes_guard.dart';
 ///   never an earlier answer. "Разобрать заново" sends the source again; a
 ///   tidied text tidied again drifts a little further from what was said each
 ///   time, and there would be no way back.
-/// - **The source lives on the screen, and only there.** It is what the user
-///   can compare the answer with and go back to ("Как надиктовано"); once the
-///   result is saved nothing remembers it, and the server keeps no copy
-///   beyond its dataset row.
+/// - **The source is the one way back.** It is what the user can compare the
+///   answer with and go back to ("Как надиктовано"). Once an answer is saved
+///   the server keeps the first source with the row (`domain/ai_mark.dart`),
+///   and the "AI" mark opens this same screen on it -- there is no second,
+///   separate "back to the source" anywhere.
 /// - **Nothing is saved behind the user's back.** The answer is shown, editable,
 ///   and becomes the text only on "Готово".
 ///
@@ -844,6 +845,7 @@ Future<TidyOutcome?> openAiTidy(
   BuildContext context, {
   required ParseKind kind,
   required String source,
+  TidyResult? result,
   String? noteTitle,
   String? destination,
   List<TidyProject> projects = const <TidyProject>[],
@@ -854,6 +856,7 @@ Future<TidyOutcome?> openAiTidy(
       builder: (_) => AiTidyScreen(
         kind: kind,
         source: source,
+        result: result,
         noteTitle: noteTitle,
         destination: destination,
         projects: projects,
@@ -864,7 +867,9 @@ Future<TidyOutcome?> openAiTidy(
 
 /// "Причесать" for text that is already somewhere: a task, a note, a sandbox
 /// line (F15). Starts the parse the moment it opens -- the button that opened
-/// it was the request.
+/// it was the request -- unless it is handed the [result] already saved: then
+/// it is the "AI" mark's screen, the answer and the source side by side, and
+/// the model runs only on "Разобрать заново".
 ///
 /// Dark, like the dictation screen, because it is the same moment -- words
 /// being turned into something -- and the same pieces: the step card while the
@@ -874,6 +879,7 @@ class AiTidyScreen extends ConsumerStatefulWidget {
   const AiTidyScreen({
     required this.kind,
     required this.source,
+    this.result,
     this.noteTitle,
     this.destination,
     this.projects = const <TidyProject>[],
@@ -883,8 +889,13 @@ class AiTidyScreen extends ConsumerStatefulWidget {
   /// [ParseKind.taskTidy], [ParseKind.note] or [ParseKind.sandbox].
   final ParseKind kind;
 
-  /// The text as it stands where "Причесать" was pressed.
+  /// The text the model works from: the source the server kept for
+  /// processed text, or the text as it stands where "Причесать" was pressed.
   final String source;
+
+  /// The answer already in place, shown without asking the model again; null
+  /// to ask it now.
+  final TidyResult? result;
 
   /// [ParseKind.note]: the note's title, when it has one.
   final String? noteTitle;
@@ -937,7 +948,15 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _run());
+    final result = widget.result;
+    if (result == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _run());
+      return;
+    }
+    _fill(result);
+    // The switches over the answer are there to run it again.
+    _level = ref.read(aiLevelSettingProvider).value ?? aiLevelDefault;
+    _multi = ref.read(aiMultiSettingProvider).value ?? false;
   }
 
   @override

@@ -125,10 +125,6 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   /// hold no answer.
   String? _tidyParseId;
 
-  /// "Вернуть исходник" was picked: the fields hold the source again, and the
-  /// save tells the server to forget AI touched the task (`domain/ai_mark.dart`).
-  bool _aiClear = false;
-
   /// The category a draft will be created in. An existing task's category is
   /// the task's own and is written the moment it is picked.
   String? _draftCategoryId;
@@ -155,14 +151,13 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   static List<Task>? _rows(ProjectView view) =>
       view is ProjectReady ? view.tasks : null;
 
-  /// The fields differ from [task] as last saved, or hold an AI answer or a
-  /// "Вернуть исходник" that has not been saved yet.
+  /// The fields differ from [task] as last saved, or hold an AI answer that
+  /// has not been saved yet.
   bool _editedAgainst(Task task) =>
       _loadedFrom == task.id &&
       (_title.text.trim() != task.title ||
           _note.text.trim() != (task.description ?? '').trim() ||
-          _tidyParseId != null ||
-          _aiClear);
+          _tidyParseId != null);
 
   Task? _find(List<Task>? rows) {
     final id = widget.taskId;
@@ -213,15 +208,13 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     // one PATCH in the common case and zero when nothing was touched. A
     // tidied text is one PATCH of both, with the record of the answer.
     final parseId = _tidyParseId;
-    final aiClear = _aiClear;
     final ok = await runMutation(context, () async {
-      if (parseId != null || aiClear) {
+      if (parseId != null) {
         await _tasks.editText(
           task,
           title: title,
           description: note.isEmpty ? null : note,
-          dictationParseId: aiClear ? null : parseId,
-          aiClear: aiClear,
+          dictationParseId: parseId,
         );
         return;
       }
@@ -230,7 +223,6 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     }, failure: 'Не удалось сохранить задачу.');
     if (!ok || !mounted) return;
     _tidyParseId = null;
-    _aiClear = false;
     Navigator.of(context).pop();
   }
 
@@ -453,13 +445,24 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     });
   }
 
+  /// The task as the list has it now, for what the server kept about AI.
+  Task? get _row =>
+      _find(_rows(ref.read(projectViewProvider(widget.projectId))));
+
+  /// The fields' AI mark, against the text as it stands on the screen.
+  AiMark _markOf(Task task) =>
+      taskAiMark(task, title: _title.text, description: _note.text);
+
   /// "Причесать" in the app: [AiTidyScreen], from the title and the note as
-  /// they stand -- one source, the title on its first line.
+  /// they stand -- one source, the title on its first line. Text AI processed
+  /// whole and nobody touched since goes from the source the server kept
+  /// instead: the model never works from its own answer.
   Future<TaskText?> _tidyWithModel(TaskText current) async {
-    final source = <String>[
-      current.title,
-      ?current.description,
-    ].where((part) => part.isNotEmpty).join('\n');
+    final joined = _joinedSource(current);
+    final task = _row;
+    final source = task == null || task.aiKind == 'note'
+        ? joined
+        : _markOf(task).tidySource(joined);
     final outcome = await openAiTidy(
       context,
       kind: ParseKind.taskTidy,
@@ -474,13 +477,15 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
         result: TidiedTask(:final title, :final description, :final parseId),
       ):
         _tidyParseId = parseId;
-        _aiClear = false;
         return (title: title, description: description);
-      // "Как надиктовано" after correcting the source by hand: the corrected
-      // text is what the user asked for, split back the way it was joined.
-      case TidyKeptSource(:final source) when source != _joinedSource(current):
+      // The kept source, as fields: split back the way the server's source
+      // was made, or the way [joined] was joined.
+      case TidyKeptSource(source: final kept) when kept != joined:
         _tidyParseId = null;
-        final lines = source.split('\n');
+        if (task != null && source != joined) {
+          return taskSourceFields(task, kept);
+        }
+        final lines = kept.split('\n');
         final rest = lines.skip(1).join('\n').trim();
         return (
           title: lines.first.trim(),
@@ -496,18 +501,53 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     ?text.description,
   ].where((part) => part.isNotEmpty).join('\n');
 
-  /// "Вернуть исходник" from the AI mark: the source goes into the fields,
-  /// split back the way it was made (`taskSourceFields`), and is written by
-  /// "Сохранить" like any edit.
-  void _revertToSource(Task task) {
-    final fields = taskSourceFields(task);
-    setState(() {
-      _title.text = fields.title;
-      _note.text = fields.description ?? '';
-      if (_note.text.isNotEmpty) _noteOpen = true;
-      _tidyParseId = null;
-      _aiClear = true;
-    });
+  /// The "AI" mark: [AiTidyScreen] on the answer in the fields and the source
+  /// the server kept -- compare, keep the source, or run the model again.
+  /// Whatever it ends with goes into the fields, saved by "Сохранить".
+  Future<void> _openAiMark(Task task) async {
+    final title = _title.text.trim();
+    final note = _note.text.trim();
+    // Only the note was processed: the screen is the note's, the title stays.
+    final noteOnly = task.aiKind == 'note';
+    final outcome = await openAiTidy(
+      context,
+      kind: noteOnly ? ParseKind.note : ParseKind.taskTidy,
+      source: task.aiSource ?? '',
+      result: noteOnly
+          ? TidiedNote(content: note)
+          : TidiedTask(title: title, description: note.isEmpty ? null : note),
+      noteTitle: noteOnly && title.isNotEmpty ? title : null,
+      destination: noteOnly
+          ? null
+          : ref.read(projectHeaderProvider(widget.projectId)).value?.name,
+    );
+    if (!mounted) return;
+    switch (outcome) {
+      case TidyAccepted(
+        result: TidiedTask(:final title, :final description, :final parseId),
+      ):
+        setState(() {
+          _title.text = title;
+          _note.text = description ?? '';
+          // The saved answer taken back as it was has no new record.
+          _tidyParseId = parseId ?? _tidyParseId;
+        });
+      case TidyAccepted(result: TidiedNote(:final content, :final parseId)):
+        setState(() {
+          _note.text = content;
+          _tidyParseId = parseId ?? _tidyParseId;
+        });
+      case TidyKeptSource(:final source):
+        final fields = taskSourceFields(task, source);
+        setState(() {
+          _title.text = fields.title;
+          _note.text = fields.description ?? '';
+          _tidyParseId = null;
+        });
+      default:
+        return;
+    }
+    if (_note.text.isNotEmpty) setState(() => _noteOpen = true);
   }
 
   /// Dictation into the task.
@@ -547,11 +587,16 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
   }
 
   /// "Причесать" on the note alone: [ParseKind.note], with the task's title
-  /// as the note's title so the model leaves it be.
+  /// as the note's title so the model leaves it be. A note AI processed and
+  /// nobody touched since goes from the source the server kept.
   Future<void> _tidyNote() async {
-    final source = _note.text.trim();
-    if (source.isEmpty) return;
+    final current = _note.text.trim();
+    if (current.isEmpty) return;
     final title = _title.text.trim();
+    final task = _row;
+    final source = task != null && task.aiKind == 'note'
+        ? _markOf(task).tidySource(current)
+        : current;
     final outcome = await openAiTidy(
       context,
       kind: ParseKind.note,
@@ -566,10 +611,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
         setState(() {
           _note.text = content;
           _tidyParseId = parseId;
-          _aiClear = false;
         });
       case TidyKeptSource(:final source) when source != _note.text.trim():
-        setState(() => _note.text = source);
+        setState(() {
+          _note.text = source;
+          _tidyParseId = null;
+        });
       default:
         break;
     }
@@ -884,12 +931,12 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              // Hidden once "вернуть исходник" is picked: the fields no longer
-              // hold what AI wrote, whatever the saved row still says.
-              if (task != null && !_aiClear)
+              // Against the fields, not the saved row: text put back to the
+              // source here shows no mark before it is even saved.
+              if (task != null)
                 AiSourceMark(
-                  mark: taskAiMark(task),
-                  onRevert: () => _revertToSource(task),
+                  mark: _markOf(task),
+                  onOpen: () => unawaited(_openAiMark(task)),
                 ),
               const Spacer(),
               _FieldChip(

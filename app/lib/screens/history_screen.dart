@@ -7,6 +7,7 @@ import '../models/history_snapshot.dart';
 import '../models/history_task_event.dart';
 import '../navigation/app_routes.dart';
 import '../providers/history_providers.dart';
+import '../providers/outbox_providers.dart';
 import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -14,6 +15,7 @@ import '../widgets/adaptive_layout.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mode_title.dart';
+import '../widgets/outbox_history.dart';
 import 'shell_screen.dart';
 
 /// История: что закрыто и что висит (F13).
@@ -46,6 +48,21 @@ class HistoryScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // «Офлайн»: what this device wrote with no network. Here rather than a
+    // screen of its own because it is history too -- of this device's writes
+    // -- and the mode's header already has room for one more switch.
+    if (ref.watch(historyShowsOutboxProvider)) {
+      return RefreshIndicator(
+        onRefresh: () => ref.read(outboxProvider.notifier).flush(),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 760),
+            child: const OutboxHistoryView(),
+          ),
+        ),
+      );
+    }
+
     final feed = ref.watch(historyFeedProvider);
     final snapshot = feed.value;
 
@@ -93,22 +110,91 @@ class HistoryScreen extends ConsumerWidget {
 /// на телефоне — плашка с выпадающим списком (три подписи в строку съели бы
 /// половину узкой шапки), на широком экране — сегменты, где все три диапазона
 /// видны сразу и стоят один тап.
-class HistoryHeader extends StatelessWidget {
+class HistoryHeader extends ConsumerWidget {
   const HistoryHeader({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final offline = ref.watch(historyShowsOutboxProvider);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
       child: Row(
         children: <Widget>[
           Expanded(child: ModeTitle(AppMode.history.title)),
-          if (isWideLayout(context))
+          const _OfflinePill(),
+          const SizedBox(width: 8),
+          // The range belongs to the charts; the outbox is one week anyway.
+          if (offline)
+            const SizedBox.shrink()
+          else if (isWideLayout(context))
             const _RangeSegments()
           else
             const _RangePill(),
           const ShellOverflowButton(),
         ],
+      ),
+    );
+  }
+}
+
+/// «Офлайн» in the header: switches the mode between its charts and the
+/// outbox, with the outbox's count on it.
+///
+/// Filled ink while the outbox is shown, like a selected range segment.
+/// Otherwise a quiet outline -- amber only when something waits for a
+/// decision, which is the one state worth pulling the eye.
+class _OfflinePill extends ConsumerWidget {
+  const _OfflinePill();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final on = ref.watch(historyShowsOutboxProvider);
+    final counts = ref.watch(outboxCountsProvider);
+    final total = counts.waiting + counts.decisions;
+    final ink = on
+        ? AppColors.onInk
+        : counts.decisions > 0
+        ? AppColors.waitingInk
+        : AppColors.inkSoft;
+
+    return Semantics(
+      button: true,
+      selected: on,
+      child: Material(
+        color: on
+            ? AppColors.ink
+            : counts.decisions > 0
+            ? AppColors.waitingChip
+            : AppColors.card,
+        shape: StadiumBorder(
+          side: BorderSide(color: on ? AppColors.ink : AppColors.lineStrong),
+        ),
+        child: InkWell(
+          customBorder: const StadiumBorder(),
+          onTap: () => ref.read(historyShowsOutboxProvider.notifier).show(!on),
+          child: Container(
+            height: 36,
+            padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Icon(
+                  total == 0
+                      ? Icons.cloud_done_outlined
+                      : Icons.cloud_upload_outlined,
+                  size: 17,
+                  color: ink,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  total == 0 ? 'Офлайн' : 'Офлайн · $total',
+                  style: AppText.action.copyWith(fontSize: 14, color: ink),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -813,12 +899,7 @@ class _Heading extends StatelessWidget {
 /// «Тут ещё ничего не происходило» — и почему это может быть правдой.
 class _EmptyCard extends StatelessWidget {
   const _EmptyCard({
-    this.margin = const EdgeInsets.fromLTRB(
-      Insets.gutter,
-      4,
-      Insets.gutter,
-      0,
-    ),
+    this.margin = const EdgeInsets.fromLTRB(Insets.gutter, 4, Insets.gutter, 0),
   });
 
   final EdgeInsets margin;
@@ -833,7 +914,11 @@ class _EmptyCard extends StatelessWidget {
         children: <Widget>[
           Row(
             children: <Widget>[
-              const Icon(Icons.bar_chart, size: 22, color: AppColors.lineStrong),
+              const Icon(
+                Icons.bar_chart,
+                size: 22,
+                color: AppColors.lineStrong,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text('Итогов пока нет', style: AppText.projectName),

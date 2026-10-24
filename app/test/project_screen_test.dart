@@ -16,6 +16,7 @@ import 'package:taskradar/storage/board_snapshot_store.dart';
 import 'package:taskradar/widgets/note_list.dart';
 import 'package:taskradar/widgets/task_list.dart';
 
+import 'support/fake_outbox_store.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_notification_gateway.dart';
@@ -35,8 +36,10 @@ void main() {
   late FakeBoardSnapshotStore snapshots;
   late FakeNotificationGateway gateway;
   late String projectId;
+  late FakeOutboxStore outbox;
 
   setUp(() {
+    outbox = FakeOutboxStore();
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
     snapshots = FakeBoardSnapshotStore();
@@ -75,6 +78,7 @@ void main() {
           apiClientProvider.overrideWithValue(backend.client),
           boardSnapshotStoreProvider.overrideWithValue(snapshots),
           notificationGatewayProvider.overrideWithValue(gateway),
+          outboxStoreProvider.overrideWithValue(outbox),
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
@@ -253,7 +257,7 @@ void main() {
 
       expect(find.text('Задача из снимка'), findsOneWidget);
       expect(
-        find.textContaining('изменения сейчас не сохранятся'),
+        find.textContaining('уйдут, когда появится связь'),
         findsOneWidget,
       );
     });
@@ -567,29 +571,46 @@ void main() {
       expect(find.text('Позвонить прорабу'), findsOneWidget);
     });
 
-    testWidgets('a create with no network rolls back and says why', (
+    testWidgets('a create with no network is kept on the phone and marked', (
       tester,
     ) async {
       await pumpProject(tester);
       await openDraft(tester);
       backend.alwaysFailToConnect();
 
+      await tester.enterText(find.byType(TextField).first, 'Доедет потом');
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+
+      // Not on the server yet...
+      expect(server.tasks, isEmpty);
+      // ...but on the device, in the outbox, and in the list with a mark that
+      // says so -- the words are not lost and not pretended to be saved.
+      expect(outbox.entries.single.body['title'], 'Доедет потом');
+      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.text('Доедет потом'), findsOneWidget);
+      expect(find.text('не отправлено'), findsOneWidget);
+    });
+
+    testWidgets('a create the server refuses rolls back and says why', (
+      tester,
+    ) async {
+      await pumpProject(tester);
+      await openDraft(tester);
+      backend.alwaysAnswerServerError();
+
       await tester.enterText(find.byType(TextField).first, 'Не доедет');
       await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
 
-      // Nothing was created...
       expect(server.tasks, isEmpty);
-      // ...the reason is on screen, not swallowed -- a silent revert reads as a
-      // UI bug and gets retried forever...
+      // The reason is on screen, not swallowed -- a silent revert reads as a
+      // UI bug and gets retried forever -- and the words are still in the
+      // field: a screen that is still open can simply keep them.
       expect(
         find.textContaining('Не удалось добавить задачу.'),
         findsOneWidget,
       );
-      expect(find.textContaining('Нет связи с сервером.'), findsOneWidget);
-      // ...and the words are still in the field. The old composer cleared
-      // before the await and relied on a snackbar to say the sentence was
-      // gone; a screen that is still open can simply keep it.
       expect(find.byType(TaskScreen), findsOneWidget);
       expect(
         tester.widget<TextField>(find.byType(TextField).first).controller!.text,

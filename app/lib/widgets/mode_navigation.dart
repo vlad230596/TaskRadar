@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/outbox_providers.dart';
 import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
@@ -94,6 +96,7 @@ class ModeBar extends StatelessWidget {
                 icon: mode.icon,
                 label: mode.label,
                 active: mode == current,
+                outbox: mode == AppMode.history,
                 onTap: () => onSelect(mode),
               ),
             ),
@@ -122,12 +125,16 @@ class _BarItem extends StatelessWidget {
     required this.active,
     required this.onTap,
     this.voice = false,
+    this.outbox = false,
   });
 
   final IconData icon;
   final String label;
   final bool active;
   final bool voice;
+
+  /// Carries the outbox's count: see [OutboxBadge].
+  final bool outbox;
   final VoidCallback onTap;
 
   @override
@@ -158,7 +165,10 @@ class _BarItem extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Icon(icon, size: voice ? 22 : 21, color: foreground),
+                OutboxBadge(
+                  enabled: outbox,
+                  child: Icon(icon, size: voice ? 22 : 21, color: foreground),
+                ),
                 const SizedBox(height: 3),
                 Text(
                   label,
@@ -221,6 +231,7 @@ class ModeRail extends StatelessWidget {
               icon: mode.icon,
               label: mode.railLabel,
               active: mode == current,
+              outbox: mode == AppMode.history,
               onTap: () => onSelect(mode),
             ),
             const SizedBox(height: 10),
@@ -253,12 +264,14 @@ class _RailItem extends StatelessWidget {
     required this.active,
     required this.onTap,
     this.voice = false,
+    this.outbox = false,
   });
 
   final IconData icon;
   final String label;
   final bool active;
   final bool voice;
+  final bool outbox;
   final VoidCallback onTap;
 
   @override
@@ -286,7 +299,10 @@ class _RailItem extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Icon(icon, size: 22, color: foreground),
+                OutboxBadge(
+                  enabled: outbox,
+                  child: Icon(icon, size: 22, color: foreground),
+                ),
                 const SizedBox(height: 2),
                 Text(
                   label,
@@ -298,6 +314,37 @@ class _RailItem extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The count of task writes that have not reached the server, on the history
+/// mode's icon -- the outbox lives in that mode, under «Офлайн».
+///
+/// Calm on purpose: muted ink while the entries only wait for a network,
+/// which is not something to act on. Amber once one waits for a decision
+/// (skipped or refused), since then there is something to do. Gone when there
+/// is nothing.
+class OutboxBadge extends ConsumerWidget {
+  const OutboxBadge({required this.child, this.enabled = true, super.key});
+
+  final Widget child;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!enabled) return child;
+    final counts = ref.watch(outboxCountsProvider);
+    final total = counts.waiting + counts.decisions;
+    if (total == 0) return child;
+
+    return Badge(
+      label: Text('$total'),
+      backgroundColor: counts.decisions > 0
+          ? AppColors.waitingDot
+          : AppColors.muted,
+      textColor: AppColors.onInk,
+      child: child,
     );
   }
 }

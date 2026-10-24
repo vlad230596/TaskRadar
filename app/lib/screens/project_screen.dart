@@ -761,7 +761,10 @@ class _ProjectBanner extends ConsumerWidget {
     final text = <String>[
       if (failed) describeApiError(view.refreshError!),
       if (view.isStale)
-        'Показан локальный снимок — изменения сейчас не сохранятся.'
+        // Not "изменения не сохранятся" any more: creates and field edits go
+        // to the outbox. Deletes and moves still need the network and say so
+        // at the moment they fail.
+        'Показан локальный снимок — задачи и правки уйдут, когда появится связь.'
       else if (failed)
         'Список задач может быть неактуален.',
     ].join(' ');

@@ -7,6 +7,7 @@ import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/task_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 
+import 'support/fake_outbox_store.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_history_backend.dart';
@@ -24,8 +25,10 @@ void main() {
   late FakeProjectBackend server;
   late String projectId;
   late String taskId;
+  late FakeOutboxStore outbox;
 
   setUp(() {
+    outbox = FakeOutboxStore();
     backend = FakeBackend();
     server = FakeProjectBackend(backend);
     FakeHistoryBackend(backend);
@@ -50,8 +53,13 @@ void main() {
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(backend.client),
-          boardSnapshotStoreProvider.overrideWithValue(FakeBoardSnapshotStore()),
-          deviceTimeZoneNameProvider.overrideWith((ref) async => 'Europe/Moscow'),
+          boardSnapshotStoreProvider.overrideWithValue(
+            FakeBoardSnapshotStore(),
+          ),
+          outboxStoreProvider.overrideWithValue(outbox),
+          deviceTimeZoneNameProvider.overrideWith(
+            (ref) async => 'Europe/Moscow',
+          ),
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
@@ -131,7 +139,9 @@ void main() {
     expect(find.text('home'), findsOneWidget);
   });
 
-  testWidgets('a draft: Back asks, and «Выйти» creates nothing', (tester) async {
+  testWidgets('a draft: Back asks, and «Выйти» creates nothing', (
+    tester,
+  ) async {
     await pumpOver(tester);
     await tester.enterText(titleField(), 'Позвонить электрику');
     await settle(tester);
@@ -147,7 +157,7 @@ void main() {
     expect(server.tasks, hasLength(1));
   });
 
-  testWidgets('a draft with the network down stays open with its text', (
+  testWidgets('a draft with the network down is kept on the phone', (
     tester,
   ) async {
     await pumpOver(tester);
@@ -158,10 +168,13 @@ void main() {
     await tester.tap(find.text('Добавить'));
     await settle(tester);
 
-    // Before the offline QA pass the screen closed here and the text was gone.
-    expect(find.byType(TaskScreen), findsOneWidget);
-    expect(find.text('Позвонить электрику'), findsOneWidget);
-    expect(find.textContaining('Не удалось добавить задачу.'), findsOneWidget);
+    // Before the offline QA pass the screen closed here and the text was
+    // gone; then it stayed open with an error. Now the text is in the outbox
+    // and will be sent when there is a network.
+    // The write goes to disk first; the pop and its transition follow.
+    await settle(tester);
+    expect(find.byType(TaskScreen), findsNothing);
+    expect(outbox.entries.single.body['title'], 'Позвонить электрику');
   });
 
   testWidgets('the close button follows the same rule as Back', (tester) async {

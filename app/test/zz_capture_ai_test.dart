@@ -142,11 +142,11 @@ void main() {
     await shot(tester, '01-Task-AI-mark');
   });
 
-  testWidgets('02 the source sheet', (tester) async {
+  testWidgets('02 the AI screen from the mark', (tester) async {
     await pump(tester, const TaskScreen(projectId: 'prj_dom', taskId: 't1'));
     await tester.tap(find.text('AI'));
     await settle(tester);
-    await shot(tester, '02-Task-AI-source');
+    await shot(tester, '02-Task-AI-screen');
   });
 
   testWidgets('03 task edited after AI', (tester) async {

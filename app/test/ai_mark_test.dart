@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/domain/ai_mark.dart';
 import 'package:taskradar/models/inbox_item.dart';
+import 'package:taskradar/models/note.dart';
 import 'package:taskradar/models/task.dart';
 import 'package:taskradar/models/task_status.dart';
 
@@ -61,6 +62,70 @@ void main() {
       );
       expect(mark.state, AiMarkState.editedAfter);
     });
+  });
+
+  group('back at the source', () {
+    final processed = _task(
+      title: 'ну позвонить в сервис',
+      aiSource: 'ну позвонить в сервис',
+      aiKind: 'task',
+      aiResult: <String, dynamic>{
+        'title': 'Позвонить в сервис',
+        'description': null,
+      },
+    );
+
+    test('text that is the source again shows no mark', () {
+      expect(taskAiMark(processed).shown, isFalse);
+    });
+
+    test('the fields on the screen count over the saved row', () {
+      expect(
+        taskAiMark(processed, title: 'Позвонить в сервис').state,
+        AiMarkState.asAi,
+      );
+    });
+
+    test('a note whose body is the source again', () {
+      const note = Note(
+        id: 'n1',
+        projectId: 'p1',
+        title: 'Сервис',
+        content: 'ну колодки',
+        aiSource: 'ну колодки',
+        aiKind: 'note',
+        aiResult: <String, dynamic>{'title': 'Сервис', 'content': 'Колодки.'},
+        createdAt: '',
+        updatedAt: '',
+      );
+      expect(noteAiMark(note).shown, isFalse);
+      expect(noteAiMark(note, content: 'Колодки.').shown, isTrue);
+    });
+  });
+
+  group('tidySource', () {
+    test('as AI left it: the source, never the answer', () {
+      const mark = AiMark(AiMarkState.asAi, 'ну купить корм');
+      expect(mark.tidySource('Купить корм'), 'ну купить корм');
+    });
+
+    test('edited by hand since: the text as it stands', () {
+      const mark = AiMark(AiMarkState.editedAfter, 'ну купить корм');
+      expect(mark.tidySource('Купить корм коту'), 'Купить корм коту');
+    });
+
+    test('never processed: the text as it stands', () {
+      expect(AiMark.none.tidySource('Купить корм'), 'Купить корм');
+    });
+  });
+
+  test('taskSourceFields splits a source corrected by hand', () {
+    final fields = taskSourceFields(
+      _task(aiSource: 'старое\nстарое', aiKind: 'task_tidy'),
+      'позвонить\nи колодки',
+    );
+    expect(fields.title, 'позвонить');
+    expect(fields.description, 'и колодки');
   });
 
   test('inboxAiMark compares the text', () {

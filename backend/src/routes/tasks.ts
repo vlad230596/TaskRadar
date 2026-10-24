@@ -1,4 +1,5 @@
 import { FastifyInstance } from "fastify";
+import type { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
 import { NotFoundError, ValidationError } from "../lib/errors";
@@ -20,6 +21,7 @@ import {
 import { linkDictationParse } from "../domain/dictationLink";
 import { aiClearData, aiMarkFields } from "../domain/aiMark";
 import { getProjectOrThrow } from "./projects";
+import { isUniqueConstraintViolation } from "../lib/prismaErrors";
 
 export async function getTaskOrThrow(userId: string, id: string) {
   // A task belongs to whoever owns its project's scope.
@@ -51,12 +53,98 @@ async function assertCategoryInProject(
   }
 }
 
+type Task = Awaited<ReturnType<typeof getTaskOrThrow>>;
+type TaskPatch = z.infer<typeof updateTaskSchema>;
+
+/** The fields `expected` may describe, in the order a 409 lists them. */
+const CHECKED_FIELDS = [
+  "title",
+  "description",
+  "categoryId",
+  "status",
+  "remindAt",
+  "remindTime",
+] as const;
+type CheckedField = (typeof CHECKED_FIELDS)[number];
+
+/**
+ * Whether two values of one task field mean the same thing.
+ *
+ * `remindAt` is a calendar date stored as UTC midnight, and everything that
+ * reads it takes the `YYYY-MM-DD` prefix (see `remindTime` on the model), so
+ * that prefix is what is compared. A description of `""` and of `null` are both
+ * "no description" -- a client that normalised one into the other is not
+ * looking at a different task. Everything else compares as stored, with
+ * `undefined` read as `null`.
+ */
+function sameValue(field: CheckedField, a: unknown, b: unknown): boolean {
+  if (field === "remindAt") {
+    const day = (v: unknown) => (v instanceof Date ? v.toISOString().slice(0, 10) : null);
+    return day(a) === day(b);
+  }
+  if (field === "description") return (a || null) === (b || null);
+  return (a ?? null) === (b ?? null);
+}
+
+/**
+ * The fields of [body] whose base the task no longer has: for each field the
+ * client both changes and states an `expected` value for, a conflict is the
+ * task's current value differing from the expected one -- *unless* the task
+ * already holds the value being asked for. That exception is what makes a
+ * retry safe: an edit that landed and whose answer was lost comes back with a
+ * base that no longer matches, and turning it into a conflict would ask the
+ * user to resolve a disagreement with themselves.
+ *
+ * Fields described in `expected` but not being changed are ignored: the client
+ * is not overwriting them, so whatever happened to them is not this edit's
+ * business.
+ */
+function conflictingFields(before: Task, body: TaskPatch): CheckedField[] {
+  const expected = body.expected;
+  if (expected === undefined) return [];
+  return CHECKED_FIELDS.filter((field) => {
+    if (body[field] === undefined || expected[field] === undefined) return false;
+    const current = before[field];
+    if (sameValue(field, current, body[field])) return false;
+    return !sameValue(field, current, expected[field]);
+  });
+}
+
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
+  /*
+   * Creating a task -- and, since the offline outbox, optionally with the
+   * client's idempotency key `createKey`.
+   *
+   * The design is `POST /inbox`'s `captureKey`, and its note says why a queue
+   * needs one. In short: a queued create retried after a lost answer must not
+   * become a twin. A known key answers 200 with the task as it stands now --
+   * not rewritten from the replayed body, which would let a late duplicate
+   * undo an edit made since -- and writes nothing, so no second `created`
+   * event either. A new key answers 201, as a create without one always has.
+   *
+   * The key is looked up within the project, which is what the unique index
+   * covers (see `@@unique([projectId, createKey])` in schema.prisma for why
+   * per project is per user). A task deleted (or unfiled) since is not
+   * remembered: a replay arriving after that creates it again, exactly as a
+   * replayed inbox capture does after its line was discarded.
+   */
   app.post("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
     const userId = userIdOf(request);
     const body = createTaskSchema.parse(request.body);
+    const { createKey } = body;
     await getProjectOrThrow(userId, projectId);
+
+    if (createKey !== undefined) {
+      const known = await prisma.task.findUnique({
+        where: { projectId_createKey: { projectId, createKey } },
+      });
+      if (known) {
+        reply.status(200).send(known);
+        return;
+      }
+    }
+
     await assertCategoryInProject(body.categoryId, projectId);
 
     const last = await prisma.task.aggregate({
@@ -80,62 +168,77 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
      * the task row to know where its first interval began is a journal that
      * cannot be replayed on its own.
      */
-    const task = await prisma.$transaction(async (tx) => {
-      // A dictated or tidied task remembers the words it came from: ../domain/aiMark.ts.
-      const ai = await aiMarkFields(
-        tx,
-        userId,
-        body.dictationParseId,
-        ["task", "sandbox", "task_tidy"],
-        null,
-        { title: body.title, description: body.description ?? null },
-      );
-      const created = await tx.task.create({
-        data: {
-          ...ai,
-          projectId,
-          title: body.title,
-          description: body.description ?? null,
-          categoryId: body.categoryId ?? null,
-          ...(body.status !== undefined ? { status: body.status } : {}),
-          remindAt: body.remindAt ?? null,
-          // A time with no day is not a reminder; see `remindTime` on the model.
-          remindTime: body.remindAt ? (body.remindTime ?? null) : null,
-          position,
-        },
-      });
-
-      await tx.taskEvent.create({
-        data: { taskId: created.id, kind: "created", toStatus: created.status },
-      });
-
-      /*
-       * A dictated task (F14): link the dataset row and snapshot what was kept
-       * -- the proposal after the user's corrections, the label a replay of
-       * this input is scored against. A no-op for an unknown or already
-       * labelled row; see ../domain/dictationLink.ts. Three kinds end as a new
-       * task: a dictation parsed as one, a sandbox answer whose project was
-       * taken, and a draft task tidied before its first save.
-       */
-      if (body.dictationParseId !== undefined) {
-        await linkDictationParse(
+    const create = () =>
+      prisma.$transaction(async (tx) => {
+        // A dictated or tidied task remembers the words it came from: ../domain/aiMark.ts.
+        const ai = await aiMarkFields(
           tx,
           userId,
           body.dictationParseId,
           ["task", "sandbox", "task_tidy"],
-          {
-            taskId: created.id,
-            finalTitle: created.title,
-            finalDescription: created.description,
-            finalRemindAt: created.remindAt,
-          },
+          null,
+          { title: body.title, description: body.description ?? null },
         );
-      }
+        const created = await tx.task.create({
+          data: {
+            ...ai,
+            projectId,
+            title: body.title,
+            description: body.description ?? null,
+            categoryId: body.categoryId ?? null,
+            ...(body.status !== undefined ? { status: body.status } : {}),
+            remindAt: body.remindAt ?? null,
+            // A time with no day is not a reminder; see `remindTime` on the model.
+            remindTime: body.remindAt ? (body.remindTime ?? null) : null,
+            position,
+            ...(createKey !== undefined ? { createKey } : {}),
+          },
+        });
 
-      return created;
-    });
+        await tx.taskEvent.create({
+          data: { taskId: created.id, kind: "created", toStatus: created.status },
+        });
 
-    reply.status(201).send(task);
+        /*
+         * A dictated task (F14): link the dataset row and snapshot what was kept
+         * -- the proposal after the user's corrections, the label a replay of
+         * this input is scored against. A no-op for an unknown or already
+         * labelled row; see ../domain/dictationLink.ts. Three kinds end as a new
+         * task: a dictation parsed as one, a sandbox answer whose project was
+         * taken, and a draft task tidied before its first save.
+         */
+        if (body.dictationParseId !== undefined) {
+          await linkDictationParse(
+            tx,
+            userId,
+            body.dictationParseId,
+            ["task", "sandbox", "task_tidy"],
+            {
+              taskId: created.id,
+              finalTitle: created.title,
+              finalDescription: created.description,
+              finalRemindAt: created.remindAt,
+            },
+          );
+        }
+
+        return created;
+      });
+
+    try {
+      reply.status(201).send(await create());
+    } catch (error) {
+      // Two copies of the same retry in flight at once: both found no task
+      // above, and the unique index caught the loser inside its transaction,
+      // which rolled back whole -- its `created` event included. Answer it as
+      // the replay it is. Anything else is a real error.
+      if (createKey === undefined || !isUniqueConstraintViolation(error)) throw error;
+      const raced = await prisma.task.findUnique({
+        where: { projectId_createKey: { projectId, createKey } },
+      });
+      if (!raced) throw error;
+      reply.status(200).send(raced);
+    }
   });
 
   app.get("/projects/:projectId/tasks", async (request, reply) => {
@@ -154,6 +257,29 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     const userId = userIdOf(request);
     const body = updateTaskSchema.parse(request.body);
     const before = await getTaskOrThrow(userId, id);
+
+    /*
+     * The offline outbox's conflict check (`expected` in ../schemas.ts): an
+     * edit made against a task that has since changed under it, in a field
+     * this edit would overwrite, is refused whole -- 409, nothing written, no
+     * journal row -- and the reply carries the task as it now stands, in the
+     * shape this route answers with, so the client can show both versions
+     * without another round trip. Rules in `conflictingFields`.
+     *
+     * Checked against the row read just above, before any write. That leaves
+     * a window: an edit committed between this read and the transaction below
+     * is overwritten unchecked. Closing it would take `SELECT ... FOR UPDATE`
+     * or a conditional `updateMany` on every checked field inside the
+     * transaction; for one person's devices replaying an outbox the window is
+     * milliseconds against the hours the check exists for, so it stays open
+     * on purpose.
+     */
+    const conflicts = conflictingFields(before, body);
+    if (conflicts.length > 0) {
+      reply.status(409).send({ error: "conflict", fields: conflicts, task: before });
+      return;
+    }
+
     await assertCategoryInProject(body.categoryId, before.projectId);
 
     /*

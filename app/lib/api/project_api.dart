@@ -203,11 +203,15 @@ class ProjectApi {
     String? remindAt,
     String? remindTime,
     String? dictationParseId,
+    String? createKey,
   }) async {
     final json = await _client.post<Map<String, dynamic>>(
       '/projects/$projectId/tasks',
       body: <String, dynamic>{
         'title': title,
+        // The outbox's idempotency key: a create replayed after a lost answer
+        // gets the row the first attempt made, not a twin.
+        'createKey': ?createKey,
         'description': ?description,
         'categoryId': ?categoryId,
         'status': ?status?.name,
@@ -274,6 +278,28 @@ class ProjectApi {
     final json = await _client.patch<Map<String, dynamic>>(
       '/tasks/$taskId',
       body: body,
+    );
+    return _taskFromMutation(json);
+  }
+
+  /// `PATCH /tasks/:id` with a body the outbox stored earlier, and the values
+  /// the edit was made against as `expected`.
+  ///
+  /// A raw map rather than [updateTask]'s typed parameters because the body
+  /// was built by [updateTask]'s callers hours ago -- see `OutboxEntry.body`.
+  /// The server answers **409** `{ error: "conflict", fields, task }` when a
+  /// field in [expected] no longer holds what it says.
+  Future<Task> replayTaskPatch(
+    String taskId,
+    Map<String, Object?> body, {
+    Map<String, Object?> expected = const <String, Object?>{},
+  }) async {
+    final json = await _client.patch<Map<String, dynamic>>(
+      '/tasks/$taskId',
+      body: <String, dynamic>{
+        ...body,
+        if (expected.isNotEmpty) 'expected': expected,
+      },
     );
     return _taskFromMutation(json);
   }

@@ -11,6 +11,7 @@ import 'package:taskradar/screens/shell_screen.dart';
 import 'package:taskradar/screens/login_screen.dart';
 import 'package:taskradar/screens/splash_screen.dart';
 
+import 'support/fake_outbox_store.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_board_snapshot_store.dart';
 import 'support/fake_capture_queue_store.dart';
@@ -46,11 +47,14 @@ void main() {
           // Signing in wipes the per-user local data (the capture queue too), and
           // the real store would reach for `path_provider` here as well.
           captureQueueStoreProvider.overrideWithValue(FakeCaptureQueueStore()),
+          outboxStoreProvider.overrideWithValue(FakeOutboxStore()),
           // Likewise: the board screen brings the reminder bridge up, which
           // initialises the notification plugin. The real gateway degrades to
           // "this platform cannot do reminders" in the test VM, but these tests
           // are about navigation and should not depend on that.
-          notificationGatewayProvider.overrideWithValue(FakeNotificationGateway()),
+          notificationGatewayProvider.overrideWithValue(
+            FakeNotificationGateway(),
+          ),
           // Likewise a platform channel: the reminder hour is persisted from F4
           // on, and `reminderSync` waits for it before arming anything.
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
@@ -91,7 +95,9 @@ void main() {
     };
   }
 
-  testWidgets('a slow /auth/me does not hold a stored session on the splash', (tester) async {
+  testWidgets('a slow /auth/me does not hold a stored session on the splash', (
+    tester,
+  ) async {
     // The probe runs behind the signed-in screen: a server that accepts the
     // connection and does not answer must not keep the cached board off the
     // screen until a 10-15 s timeout (the "hanging" case of the offline bench).
@@ -107,7 +113,11 @@ void main() {
 
     expect(find.byType(ShellScreen), findsOneWidget);
     expect(find.byType(SplashScreen), findsNothing);
-    expect(find.byType(LoginScreen), findsNothing, reason: 'no login flash on start');
+    expect(
+      find.byType(LoginScreen),
+      findsNothing,
+      reason: 'no login flash on start',
+    );
 
     // Release it before the test ends: dio arms a receive-timeout timer per
     // request, and flutter_test fails a test that leaves a timer pending.
@@ -147,44 +157,52 @@ void main() {
     expect(storage.token, isNull);
   });
 
-  testWidgets('a wrong password is shown inline and keeps the user on the form', (
-    tester,
-  ) async {
-    backend.alwaysRespond(
-      unauthorizedJson(message: 'Invalid email or password'),
-      statusCode: 401,
-    );
+  testWidgets(
+    'a wrong password is shown inline and keeps the user on the form',
+    (tester) async {
+      backend.alwaysRespond(
+        unauthorizedJson(message: 'Invalid email or password'),
+        statusCode: 401,
+      );
 
-    await pumpApp(tester);
-    await settle(tester);
+      await pumpApp(tester);
+      await settle(tester);
 
-    await tester.enterText(find.byType(TextFormField).first, 'owner@example.com');
-    await tester.enterText(find.byType(TextFormField).last, 'wrong');
-    await tester.tap(find.text('Войти'));
-    await settle(tester);
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'owner@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).last, 'wrong');
+      await tester.tap(find.text('Войти'));
+      await settle(tester);
 
-    expect(find.text('Неверный email или пароль'), findsOneWidget);
-    expect(find.byType(LoginScreen), findsOneWidget);
-  });
+      expect(find.text('Неверный email или пароль'), findsOneWidget);
+      expect(find.byType(LoginScreen), findsOneWidget);
+    },
+  );
 
-  testWidgets('an unreachable server says so, rather than blaming the password', (
-    tester,
-  ) async {
-    backend.alwaysFailToConnect();
+  testWidgets(
+    'an unreachable server says so, rather than blaming the password',
+    (tester) async {
+      backend.alwaysFailToConnect();
 
-    await pumpApp(tester);
-    await settle(tester);
+      await pumpApp(tester);
+      await settle(tester);
 
-    await tester.enterText(find.byType(TextFormField).first, 'owner@example.com');
-    await tester.enterText(find.byType(TextFormField).last, 'secret');
-    await tester.tap(find.text('Войти'));
-    await settle(tester);
+      await tester.enterText(
+        find.byType(TextFormField).first,
+        'owner@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).last, 'secret');
+      await tester.tap(find.text('Войти'));
+      await settle(tester);
 
-    expect(
-      find.text('Не удалось подключиться к серверу. Попробуйте ещё раз.'),
-      findsOneWidget,
-    );
-  });
+      expect(
+        find.text('Не удалось подключиться к серверу. Попробуйте ещё раз.'),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('empty fields are rejected without a request', (tester) async {
     await pumpApp(tester);
@@ -198,13 +216,18 @@ void main() {
     expect(backend.requests, isEmpty);
   });
 
-  testWidgets('a successful login lands on the signed-in screen', (tester) async {
+  testWidgets('a successful login lands on the signed-in screen', (
+    tester,
+  ) async {
     respondToSignedInStartup();
 
     await pumpApp(tester);
     await settle(tester);
 
-    await tester.enterText(find.byType(TextFormField).first, 'owner@example.com');
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'owner@example.com',
+    );
     await tester.enterText(find.byType(TextFormField).last, 'secret');
     await tester.tap(find.text('Войти'));
     await settle(tester);
@@ -257,7 +280,10 @@ void main() {
     await signOut(tester);
     expect(find.byType(LoginScreen), findsOneWidget);
 
-    await tester.enterText(find.byType(TextFormField).first, 'owner@example.com');
+    await tester.enterText(
+      find.byType(TextFormField).first,
+      'owner@example.com',
+    );
     await tester.enterText(find.byType(TextFormField).last, 'secret');
     await tester.tap(find.text('Войти'));
     await settle(tester);

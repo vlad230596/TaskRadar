@@ -8,6 +8,7 @@ import '../api/api_exception.dart';
 import '../api/patch_field.dart';
 import '../api/project_api.dart';
 import '../domain/not_loaded.dart';
+import '../domain/outbox_overlay.dart';
 import '../domain/reminders.dart';
 import '../domain/task_reorder.dart';
 import '../models/board_project.dart';
@@ -21,6 +22,7 @@ import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
 import 'inbox_providers.dart';
+import 'outbox_providers.dart';
 import 'read_cache_providers.dart';
 
 part 'project_providers.g.dart';
@@ -40,10 +42,12 @@ part 'project_providers.g.dart';
 ///    ordered list, and a second copy of it would drift the first time the
 ///    backend gains a status, an archived flag, or a scope.
 ///
-/// 2. **The cache is read-only; every write needs the network.** There is no
-///    operation queue and no conflict resolution. An optimistic update is a
-///    *prediction shown for one round trip*, not an offline edit: when the write
-///    fails the prediction is rolled back and the failure is said out loud.
+/// 2. **A write that fails is rolled back -- unless it failed for want of a
+///    network and the outbox can hold it.** An optimistic update is a
+///    *prediction shown for one round trip*. Creates and field edits that hit
+///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+///    and are drawn over the list by [projectView] until they are sent; a
+///    delete, a move or an unfile still needs the network and still says so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -133,12 +137,19 @@ class ProjectTasks extends _$ProjectTasks {
   /// same reason [Board.refresh] does -- the gesture's future only drives a
   /// spinner, and the failure belongs on screen.
   Future<void> refresh() async {
+    // A pull is also the user saying "the network may be back".
+    unawaited(ref.read(outboxProvider.notifier).flush());
     ref.invalidateSelf();
     try {
       await future;
     } catch (error) {
       debugPrint('Task refresh failed: $error');
     }
+  }
+
+  /// Takes a list someone else has just read -- the outbox, after sending.
+  void adopt(List<Task> rows) {
+    state = AsyncData(List<Task>.unmodifiable(rows));
   }
 
   // --- writes ---------------------------------------------------------------
@@ -158,7 +169,10 @@ class ProjectTasks extends _$ProjectTasks {
   ///
   /// [dictationParseId] links the task to the server's record of the parse
   /// it came from -- see `ProjectApi.createTask`.
-  Future<void> create(
+  ///
+  /// With no network the task goes to the outbox and the answer is
+  /// [WriteOutcome.queued]: it is on this device, and drawn in the list.
+  Future<WriteOutcome> create(
     String title, {
     String? description,
     String? categoryId,
@@ -167,35 +181,51 @@ class ProjectTasks extends _$ProjectTasks {
     String? dictationParseId,
   }) {
     final trimmed = title.trim();
-    if (trimmed.isEmpty) return Future<void>.value();
+    if (trimmed.isEmpty) return Future<WriteOutcome>.value(WriteOutcome.sent);
 
-    return _mutate((rows) {
-      return _MutationPlan(
-        optimistic: <Task>[
-          ...rows,
-          _optimisticTask(
-            trimmed,
-            rows,
-            description: description,
-            categoryId: categoryId,
-            remindAt: remindAt,
-            remindTime: remindAt == null ? null : remindTime,
-          ),
-        ],
-        send: () async {
-          await _api.createTask(
+    final time = remindAt == null ? null : remindTime;
+    return _mutate(
+      offline: () => ref
+          .read(outboxProvider.notifier)
+          .queueCreate(
             projectId: projectId,
-            title: trimmed,
-            description: description,
-            categoryId: categoryId,
-            remindAt: remindAt,
-            remindTime: remindAt == null ? null : remindTime,
-            dictationParseId: dictationParseId,
-          );
-          return null; // reconcile: the new row may be the current one now
-        },
-      );
-    });
+            body: <String, Object?>{
+              'title': trimmed,
+              'description': ?description,
+              'categoryId': ?categoryId,
+              'remindAt': ?remindAt,
+              'remindTime': ?time,
+              'dictationParseId': ?dictationParseId,
+            },
+          ),
+      (rows) {
+        return _MutationPlan(
+          optimistic: <Task>[
+            ...rows,
+            _optimisticTask(
+              trimmed,
+              rows,
+              description: description,
+              categoryId: categoryId,
+              remindAt: remindAt,
+              remindTime: remindAt == null ? null : remindTime,
+            ),
+          ],
+          send: () async {
+            await _api.createTask(
+              projectId: projectId,
+              title: trimmed,
+              description: description,
+              categoryId: categoryId,
+              remindAt: remindAt,
+              remindTime: remindAt == null ? null : remindTime,
+              dictationParseId: dictationParseId,
+            );
+            return null; // reconcile: the new row may be the current one now
+          },
+        );
+      },
+    );
   }
 
   /// Moves a task between `pending` / `done` / `blocked`.
@@ -209,44 +239,58 @@ class ProjectTasks extends _$ProjectTasks {
   /// `description` is left as [PatchField.keep], which is the whole point of
   /// that type: a status change must not touch the description, and the way to
   /// not touch it is to omit the key.
-  Future<void> setStatus(Task task, TaskStatus status) {
-    if (task.status == status) return Future<void>.value();
+  Future<WriteOutcome> setStatus(Task task, TaskStatus status) {
+    if (task.status == status) {
+      return Future<WriteOutcome>.value(WriteOutcome.sent);
+    }
 
-    return _mutate((rows) {
-      final index = rows.indexWhere((row) => row.id == task.id);
-      if (index < 0) return null;
-
-      final clearsDate =
-          status == TaskStatus.done && rows[index].remindAt != null;
-
-      return _MutationPlan(
-        optimistic: _replaceAt(
-          rows,
-          index,
-          rows[index].copyWith(
-            status: status,
-            remindAt: clearsDate ? null : rows[index].remindAt,
-            // The server clears the time with the date.
-            remindTime: clearsDate ? null : rows[index].remindTime,
-            // The one optimistic touch of `isCurrent` anywhere, and it is a
-            // weakening, never an invention: a task that is not `pending`
-            // cannot be current, so dropping the highlight is knowledge, not a
-            // guess. Which task gains it instead is the reconcile's answer.
-            isCurrent: rows[index].isCurrent && status == TaskStatus.pending,
+    final clearsDate = status == TaskStatus.done && task.remindAt != null;
+    return _mutate(
+      // Checked on the status alone: a reminder moved on the laptop is no
+      // reason to refuse "сделано" from the phone.
+      offline: () => ref
+          .read(outboxProvider.notifier)
+          .queueEdit(
+            base: task,
+            body: <String, Object?>{
+              'status': status.name,
+              if (clearsDate) 'remindAt': null,
+            },
+            checked: const <String>{'status'},
           ),
-        ),
-        send: () async {
-          await _api.updateTask(
-            task.id,
-            status: status,
-            remindAt: clearsDate
-                ? const PatchField<String>.clear()
-                : const PatchField<String>.keep(),
-          );
-          return null; // reconcile: the current task has almost certainly moved
-        },
-      );
-    });
+      (rows) {
+        final index = rows.indexWhere((row) => row.id == task.id);
+        if (index < 0) return null;
+
+        return _MutationPlan(
+          optimistic: _replaceAt(
+            rows,
+            index,
+            rows[index].copyWith(
+              status: status,
+              remindAt: clearsDate ? null : rows[index].remindAt,
+              // The server clears the time with the date.
+              remindTime: clearsDate ? null : rows[index].remindTime,
+              // The one optimistic touch of `isCurrent` anywhere, and it is a
+              // weakening, never an invention: a task that is not `pending`
+              // cannot be current, so dropping the highlight is knowledge, not a
+              // guess. Which task gains it instead is the reconcile's answer.
+              isCurrent: rows[index].isCurrent && status == TaskStatus.pending,
+            ),
+          ),
+          send: () async {
+            await _api.updateTask(
+              task.id,
+              status: status,
+              remindAt: clearsDate
+                  ? const PatchField<String>.clear()
+                  : const PatchField<String>.keep(),
+            );
+            return null; // reconcile: the current task has almost certainly moved
+          },
+        );
+      },
+    );
   }
 
   /// Sets or clears an open (not done) task's reminder date (F4), and its
@@ -277,7 +321,7 @@ class ProjectTasks extends _$ProjectTasks {
   /// (`remindersFromBoard` filters on the status), so setting one would be a
   /// write whose entire effect is a value that resurfaces if the task is
   /// reopened -- which is the exact bug [setStatus] clears the date to avoid.
-  Future<void> setRemindAt(Task task, String? date, {String? time}) {
+  Future<WriteOutcome> setRemindAt(Task task, String? date, {String? time}) {
     if (task.status == TaskStatus.done) {
       throw StateError(
         'task ${task.id} is done; a finished task has no reminder date',
@@ -303,19 +347,26 @@ class ProjectTasks extends _$ProjectTasks {
             ? const PatchField<String>.keep()
             : PatchField<String>.toOrClear(time),
       ),
+      offline: <String, Object?>{
+        'remindAt': date,
+        if (date != null) 'remindTime': time,
+      },
     );
   }
 
   /// Renames a task. No reconcile: a title cannot change the order or which task
   /// is current, so the server's row is merged in with [mergeMutatedTask].
-  Future<void> editTitle(Task task, String title) {
+  Future<WriteOutcome> editTitle(Task task, String title) {
     final trimmed = title.trim();
-    if (trimmed.isEmpty || trimmed == task.title) return Future<void>.value();
+    if (trimmed.isEmpty || trimmed == task.title) {
+      return Future<WriteOutcome>.value(WriteOutcome.sent);
+    }
 
     return _editText(
       task,
       (rows, index) => rows[index].copyWith(title: trimmed),
       () => _api.updateTask(task.id, title: trimmed),
+      offline: <String, Object?>{'title': trimmed},
     );
   }
 
@@ -325,10 +376,12 @@ class ProjectTasks extends _$ProjectTasks {
   /// caller is a text field that the user emptied on purpose. That intent is
   /// converted to a [PatchField.clear] one line down, and the conversion is the
   /// only place in the app where a null description becomes a wire `null`.
-  Future<void> editDescription(Task task, String? description) {
+  Future<WriteOutcome> editDescription(Task task, String? description) {
     final trimmed = description?.trim();
     final next = (trimmed == null || trimmed.isEmpty) ? null : trimmed;
-    if (next == task.description) return Future<void>.value();
+    if (next == task.description) {
+      return Future<WriteOutcome>.value(WriteOutcome.sent);
+    }
 
     return _editText(
       task,
@@ -337,6 +390,7 @@ class ProjectTasks extends _$ProjectTasks {
         task.id,
         description: PatchField<String>.toOrClear(next),
       ),
+      offline: <String, Object?>{'description': next},
     );
   }
 
@@ -352,7 +406,7 @@ class ProjectTasks extends _$ProjectTasks {
   ///
   /// With [aiClear] instead -- "вернуть исходник" -- the text is the source
   /// put back and the task forgets that AI touched it (`domain/ai_mark.dart`).
-  Future<void> editText(
+  Future<WriteOutcome> editText(
     Task task, {
     required String title,
     required String? description,
@@ -381,6 +435,12 @@ class ProjectTasks extends _$ProjectTasks {
         dictationParseId: dictationParseId,
         aiClear: aiClear,
       ),
+      offline: <String, Object?>{
+        'title': nextTitle,
+        'description': next,
+        'dictationParseId': ?dictationParseId,
+        if (aiClear) 'aiClear': true,
+      },
     );
   }
 
@@ -392,8 +452,10 @@ class ProjectTasks extends _$ProjectTasks {
   /// -- including the reconcile, since the task may have been the current one.
   /// Moves the task into another group of the project screen, or out of all
   /// of them (null). Optimistic: the row jumps to its new group at once.
-  Future<void> setCategory(Task task, String? categoryId) {
-    if (task.categoryId == categoryId) return Future<void>.value();
+  Future<WriteOutcome> setCategory(Task task, String? categoryId) {
+    if (task.categoryId == categoryId) {
+      return Future<WriteOutcome>.value(WriteOutcome.sent);
+    }
 
     return _editText(
       task,
@@ -402,6 +464,7 @@ class ProjectTasks extends _$ProjectTasks {
         task.id,
         categoryId: PatchField<String>.toOrClear(categoryId),
       ),
+      offline: <String, Object?>{'categoryId': categoryId},
     );
   }
 
@@ -497,28 +560,39 @@ class ProjectTasks extends _$ProjectTasks {
   // --- plumbing -------------------------------------------------------------
 
   /// The shared shape of a text edit: optimistic swap, one PATCH, merge the
-  /// answer, no reconcile.
-  Future<void> _editText(
+  /// answer, no reconcile. [offline] is the same PATCH as a body, for the
+  /// outbox to send when there is a network again.
+  Future<WriteOutcome> _editText(
     Task task,
     Task Function(List<Task> rows, int index) optimistic,
-    Future<Task> Function() send,
-  ) {
-    return _mutate((rows) {
-      final index = rows.indexWhere((row) => row.id == task.id);
-      if (index < 0) return null;
+    Future<Task> Function() send, {
+    required Map<String, Object?> offline,
+  }) {
+    return _mutate(
+      offline: () => ref
+          .read(outboxProvider.notifier)
+          .queueEdit(base: task, body: offline),
+      (rows) {
+        final index = rows.indexWhere((row) => row.id == task.id);
+        if (index < 0) return null;
 
-      return _MutationPlan(
-        optimistic: _replaceAt(rows, index, optimistic(rows, index)),
-        send: () async {
-          final saved = await send();
-          final current = state.value ?? rows;
-          final at = current.indexWhere((row) => row.id == task.id);
-          if (at < 0) return current;
+        return _MutationPlan(
+          optimistic: _replaceAt(rows, index, optimistic(rows, index)),
+          send: () async {
+            final saved = await send();
+            final current = state.value ?? rows;
+            final at = current.indexWhere((row) => row.id == task.id);
+            if (at < 0) return current;
 
-          return _replaceAt(current, at, mergeMutatedTask(current[at], saved));
-        },
-      );
-    });
+            return _replaceAt(
+              current,
+              at,
+              mergeMutatedTask(current[at], saved),
+            );
+          },
+        );
+      },
+    );
   }
 
   /// Runs one mutation: show the prediction, send the write, settle on the
@@ -535,13 +609,44 @@ class ProjectTasks extends _$ProjectTasks {
   /// replace the list with an error page for a failed single-row edit, and the
   /// list is still perfectly good -- it is the *edit* that failed. The caller (a
   /// button handler) turns the exception into a message.
-  Future<void> _mutate(_MutationPlan? Function(List<Task> rows) plan) {
+  ///
+  /// ## No network
+  ///
+  /// With [offline] given, a [NetworkException] -- from the write, or from
+  /// loading the list it needs -- hands the write to the outbox instead of
+  /// failing it, and the list goes back to the server's truth: the change is
+  /// drawn over it by [projectView] until it is sent, so a refresh in the
+  /// meantime cannot make it disappear.
+  ///
+  /// ## A list that never loaded
+  ///
+  /// Is loaded now, including one whose load *failed*. The list does not
+  /// retry on its own (`noAutomaticRetry`), so the old rule -- throw the stored
+  /// error -- answered every later write with the "Нет связи" of a load that
+  /// failed minutes ago, without sending a request, until a pull-to-refresh.
+  Future<WriteOutcome> _mutate(
+    _MutationPlan? Function(List<Task> rows) plan, {
+    Future<Object?> Function()? offline,
+  }) {
     return _enqueue(() async {
-      final previous = state.value;
-      if (previous == null) throw state.error ?? const NotLoadedException();
+      Future<WriteOutcome> queue(NetworkException error) async {
+        if (offline == null) throw error;
+        await offline();
+        return WriteOutcome.queued;
+      }
+
+      var previous = state.value;
+      if (previous == null) {
+        if (state.hasError) ref.invalidateSelf();
+        try {
+          previous = await future;
+        } on NetworkException catch (error) {
+          return queue(error);
+        }
+      }
 
       final step = plan(previous);
-      if (step == null) return;
+      if (step == null) return WriteOutcome.sent;
 
       state = AsyncData(step.optimistic);
 
@@ -550,7 +655,7 @@ class ProjectTasks extends _$ProjectTasks {
 
         // The screen may have been popped mid-flight. The write still happened
         // and that is fine; there is simply nobody left to tell.
-        if (!ref.mounted) return;
+        if (!ref.mounted) return WriteOutcome.sent;
 
         final rows = List<Task>.unmodifiable(settled);
         state = AsyncData(rows);
@@ -558,8 +663,12 @@ class ProjectTasks extends _$ProjectTasks {
         // The board is keepAlive and outlives this provider, so it is updated
         // even when nothing is watching this screen any more.
         ref.read(boardProvider.notifier).applyProjectTasks(projectId, rows);
+        return WriteOutcome.sent;
+      } on NetworkException catch (error) {
+        if (ref.mounted) state = AsyncData(previous);
+        return queue(error);
       } catch (error) {
-        // Rollback. Rule 2: no network, no write, no pretending otherwise.
+        // Rollback: the server answered, and said no.
         if (ref.mounted) state = AsyncData(previous);
         rethrow;
       }
@@ -581,12 +690,12 @@ class ProjectTasks extends _$ProjectTasks {
   /// write after it.
   Future<void> _pending = Future<void>.value();
 
-  Future<void> _enqueue(Future<void> Function() action) {
-    final chained = _pending.then<void>(
+  Future<T> _enqueue<T>(Future<T> Function() action) {
+    final chained = _pending.then<T>(
       (_) => action(),
       onError: (Object _) => action(),
     );
-    _pending = chained.catchError((Object _) {});
+    _pending = chained.then<void>((_) {}).catchError((Object _) {});
     return chained;
   }
 
@@ -621,6 +730,16 @@ class ProjectTasks extends _$ProjectTasks {
       isCurrent: false,
     );
   }
+}
+
+/// What became of a task write.
+enum WriteOutcome {
+  /// The server has it.
+  sent,
+
+  /// There was no network; it is in the outbox, on this device, and will be
+  /// sent when there is one.
+  queued,
 }
 
 /// True for a row this client invented and the server has not confirmed yet.
@@ -950,7 +1069,12 @@ ProjectView projectView(Ref ref, String projectId) {
   }
 
   final project = header.value ?? cached?.project;
-  final tasks = live.value ?? cached?.tasks;
+  final source = live.value ?? cached?.tasks;
+  // Writes made with no network, drawn over whichever list there is -- see
+  // [overlayOutbox] for why on top and not into it.
+  final tasks = source == null
+      ? null
+      : overlayOutbox(source, ref.watch(outboxEntriesProvider), projectId);
   final error = live.error ?? header.error;
 
   if (project != null && tasks != null) {

@@ -23,10 +23,12 @@ part of 'project_providers.dart';
 ///    ordered list, and a second copy of it would drift the first time the
 ///    backend gains a status, an archived flag, or a scope.
 ///
-/// 2. **The cache is read-only; every write needs the network.** There is no
-///    operation queue and no conflict resolution. An optimistic update is a
-///    *prediction shown for one round trip*, not an offline edit: when the write
-///    fails the prediction is rolled back and the failure is said out loud.
+/// 2. **A write that fails is rolled back -- unless it failed for want of a
+///    network and the outbox can hold it.** An optimistic update is a
+///    *prediction shown for one round trip*. Creates and field edits that hit
+///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+///    and are drawn over the list by [projectView] until they are sent; a
+///    delete, a move or an unfile still needs the network and still says so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -96,10 +98,12 @@ final projectHeaderProvider = ProjectHeaderFamily._();
 ///    ordered list, and a second copy of it would drift the first time the
 ///    backend gains a status, an archived flag, or a scope.
 ///
-/// 2. **The cache is read-only; every write needs the network.** There is no
-///    operation queue and no conflict resolution. An optimistic update is a
-///    *prediction shown for one round trip*, not an offline edit: when the write
-///    fails the prediction is rolled back and the failure is said out loud.
+/// 2. **A write that fails is rolled back -- unless it failed for want of a
+///    network and the outbox can hold it.** An optimistic update is a
+///    *prediction shown for one round trip*. Creates and field edits that hit
+///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+///    and are drawn over the list by [projectView] until they are sent; a
+///    delete, a move or an unfile still needs the network and still says so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -167,10 +171,12 @@ final class ProjectHeaderProvider
   ///    ordered list, and a second copy of it would drift the first time the
   ///    backend gains a status, an archived flag, or a scope.
   ///
-  /// 2. **The cache is read-only; every write needs the network.** There is no
-  ///    operation queue and no conflict resolution. An optimistic update is a
-  ///    *prediction shown for one round trip*, not an offline edit: when the write
-  ///    fails the prediction is rolled back and the failure is said out loud.
+  /// 2. **A write that fails is rolled back -- unless it failed for want of a
+  ///    network and the outbox can hold it.** An optimistic update is a
+  ///    *prediction shown for one round trip*. Creates and field edits that hit
+  ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+  ///    and are drawn over the list by [projectView] until they are sent; a
+  ///    delete, a move or an unfile still needs the network and still says so.
   ///
   /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
   ///    file mentions the scheduler. Writes flow into the board (see
@@ -274,10 +280,12 @@ String _$projectHeaderHash() => r'fa6bbc40c5a329b6c2e938a56f654c0fa35805d9';
 ///    ordered list, and a second copy of it would drift the first time the
 ///    backend gains a status, an archived flag, or a scope.
 ///
-/// 2. **The cache is read-only; every write needs the network.** There is no
-///    operation queue and no conflict resolution. An optimistic update is a
-///    *prediction shown for one round trip*, not an offline edit: when the write
-///    fails the prediction is rolled back and the failure is said out loud.
+/// 2. **A write that fails is rolled back -- unless it failed for want of a
+///    network and the outbox can hold it.** An optimistic update is a
+///    *prediction shown for one round trip*. Creates and field edits that hit
+///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+///    and are drawn over the list by [projectView] until they are sent; a
+///    delete, a move or an unfile still needs the network and still says so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -362,10 +370,12 @@ final class ProjectHeaderFamily extends $Family
   ///    ordered list, and a second copy of it would drift the first time the
   ///    backend gains a status, an archived flag, or a scope.
   ///
-  /// 2. **The cache is read-only; every write needs the network.** There is no
-  ///    operation queue and no conflict resolution. An optimistic update is a
-  ///    *prediction shown for one round trip*, not an offline edit: when the write
-  ///    fails the prediction is rolled back and the failure is said out loud.
+  /// 2. **A write that fails is rolled back -- unless it failed for want of a
+  ///    network and the outbox can hold it.** An optimistic update is a
+  ///    *prediction shown for one round trip*. Creates and field edits that hit
+  ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+  ///    and are drawn over the list by [projectView] until they are sent; a
+  ///    delete, a move or an unfile still needs the network and still says so.
   ///
   /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
   ///    file mentions the scheduler. Writes flow into the board (see
@@ -439,10 +449,12 @@ final class ProjectHeaderFamily extends $Family
 ///    ordered list, and a second copy of it would drift the first time the
 ///    backend gains a status, an archived flag, or a scope.
 ///
-/// 2. **The cache is read-only; every write needs the network.** There is no
-///    operation queue and no conflict resolution. An optimistic update is a
-///    *prediction shown for one round trip*, not an offline edit: when the write
-///    fails the prediction is rolled back and the failure is said out loud.
+/// 2. **A write that fails is rolled back -- unless it failed for want of a
+///    network and the outbox can hold it.** An optimistic update is a
+///    *prediction shown for one round trip*. Creates and field edits that hit
+///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
+///    and are drawn over the list by [projectView] until they are sent; a
+///    delete, a move or an unfile still needs the network and still says so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -560,7 +572,7 @@ final class ProjectTasksProvider
   }
 }
 
-String _$projectTasksHash() => r'da6017d8c696f4493d2f83fc91ce03033b2f3742';
+String _$projectTasksHash() => r'25e4e11f7351a4cd1b05582b487ea1b119eadf27';
 
 /// One project's tasks, and every write that touches them.
 
@@ -979,7 +991,7 @@ final class ProjectViewProvider
   }
 }
 
-String _$projectViewHash() => r'b6157c4652f60de2a825d34fa7fb258cecb8e66d';
+String _$projectViewHash() => r'3f865d8fd77f74c3450331b97a3baaf8883f67b6';
 
 /// Folds the network reads and the board snapshot into the single value the
 /// screen renders.

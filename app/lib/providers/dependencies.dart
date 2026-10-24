@@ -10,6 +10,7 @@ import '../api/inbox_api.dart';
 import '../api/scope_api.dart';
 import '../storage/board_snapshot_store.dart';
 import '../storage/capture_queue_store.dart';
+import '../storage/outbox_store.dart';
 import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
 import '../storage/web_stores.dart';
@@ -61,6 +62,12 @@ BoardSnapshotStore boardSnapshotStore(Ref ref) =>
 @Riverpod(keepAlive: true)
 CaptureQueueStore captureQueueStore(Ref ref) =>
     kIsWeb ? WebCaptureQueueStore() : CaptureQueueStore();
+
+/// The outbox of task writes made with no network (creates and edits), and a
+/// week of what became of them. Single instance for the reason
+/// [captureQueueStore] is: for an offline edit this file is the only copy.
+@Riverpod(keepAlive: true)
+OutboxStore outboxStore(Ref ref) => kIsWeb ? WebOutboxStore() : OutboxStore();
 
 /// Persisted user preferences (F4): currently the reminder hour.
 ///

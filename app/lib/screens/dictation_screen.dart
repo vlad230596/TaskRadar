@@ -342,9 +342,12 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         final description = parsed ? _description.text.trim() : '';
         final remindDate = proposal is ParsedDictation ? _remindDate : null;
         final remindTime = remindDate == null ? null : _remindTime;
+        // Resolved before the await, for the reason `runMutation` gives.
+        final messenger = ScaffoldMessenger.of(context);
+        WriteOutcome? outcome;
         final ok = await runMutation(
           context,
-          () => _createTask(
+          () async => outcome = await _createTask(
             projectId,
             title.isEmpty ? text : title,
             description: description.isEmpty ? null : description,
@@ -355,13 +358,22 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             // with them would score the model against an answer it never gave.
             dictationParseId: proposal?.parseId,
           ),
-          success: remindDate == null
-              ? 'Задача добавлена в «$name».'
-              : 'Задача добавлена в «$name», напомню '
-                    '${_shortDate(remindDate, remindTime)}.',
           failure: 'Не удалось добавить задачу.',
         );
-        if (ok) await _leave(null);
+        if (ok) {
+          // No network is not a failure any more: the task is on the phone
+          // and in the project's list, marked as not sent yet.
+          final said = outcome == WriteOutcome.queued
+              ? 'Задача в «$name» сохранена на телефоне — уйдёт при связи.'
+              : remindDate == null
+              ? 'Задача добавлена в «$name».'
+              : 'Задача добавлена в «$name», напомню '
+                    '${_shortDate(remindDate, remindTime)}.';
+          messenger
+            ..clearSnackBars()
+            ..showSnackBar(SnackBar(content: Text(said)));
+          await _leave(null);
+        }
     }
   }
 
@@ -604,7 +616,12 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// task was silently dropped while the snackbar said "Задача добавлена". The
   /// subscription keeps the provider alive for the length of the write, and
   /// the `future` is the load it has to wait for.
-  Future<void> _createTask(
+  ///
+  /// The write itself loads the list it needs -- also one whose load *failed*
+  /// earlier, which used to answer every later "Готово" with that old "Нет
+  /// связи" (see `ProjectTasks._mutate`) -- and with no network at all puts
+  /// the task in the outbox: [WriteOutcome.queued].
+  Future<WriteOutcome> _createTask(
     String projectId,
     String title, {
     String? description,
@@ -615,8 +632,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     final provider = projectTasksProvider(projectId);
     final keepAlive = ref.listenManual(provider, (_, _) {});
     try {
-      await ref.read(provider.future);
-      await ref
+      return await ref
           .read(provider.notifier)
           .create(
             title,
@@ -894,12 +910,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   }
 
   /// What happens to the words with no network, by where they are going.
-  /// Only the sandbox has an offline queue; a project needs the server, and
-  /// promising otherwise was the one false sentence on this screen.
+  /// Both have a queue now: the sandbox its capture queue, a project the
+  /// outbox (`outbox_providers.dart`).
   String? get _offlineNote => switch (_destination) {
     SandboxDestination() => 'сохранится и без сети',
-    ProjectDestination() =>
-      'в проект — только при связи; без неё — в песочницу',
+    ProjectDestination() => 'без сети сохранится и уйдёт, когда появится связь',
     FieldDestination() => null,
   };
 

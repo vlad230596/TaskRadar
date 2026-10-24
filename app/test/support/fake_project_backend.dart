@@ -570,8 +570,21 @@ class FakeProjectBackend {
       if (!_categoryFits(body['categoryId'], projectId)) {
         return _error(400, 'Category was not found in this project');
       }
+
+      // The outbox's idempotency key (`routes/tasks.ts`): a replay answers
+      // 200 with the row the first attempt made, never a twin.
+      final createKey = body['createKey'] as String?;
+      if (createKey != null) {
+        for (final known in tasks) {
+          if (known['projectId'] == projectId &&
+              known['createKey'] == createKey) {
+            return jsonResponse(known, statusCode: 200);
+          }
+        }
+      }
       final row = <String, dynamic>{
         'id': _id('tsk'),
+        'createKey': createKey,
         'projectId': projectId,
         'title': body['title'] as String,
         'description': body['description'],
@@ -759,8 +772,45 @@ class FakeProjectBackend {
       final body = match.body;
       patches.add((path: match.options.path, body: body));
 
-      if (body.isEmpty) {
+      if (body.keys.where((key) => key != 'expected').isEmpty) {
         return _error(400, 'At least one field must be provided');
+      }
+
+      // `expected` (`routes/tasks.ts`): a field whose current value is
+      // neither what the edit was made against nor what it asks for was
+      // changed elsewhere -- 409, and nothing is written.
+      final expected = body['expected'] as Map<String, dynamic>?;
+      if (expected != null) {
+        String? norm(String field, Object? value) {
+          if (value == null) return null;
+          final text = value as String;
+          if (field == 'remindAt') return text.substring(0, 10);
+          if (field == 'description' && text.isEmpty) return null;
+          return text;
+        }
+
+        final conflicts = <String>[
+          for (final field in const <String>[
+            'title',
+            'description',
+            'categoryId',
+            'status',
+            'remindAt',
+            'remindTime',
+          ])
+            if (body.containsKey(field) &&
+                expected.containsKey(field) &&
+                norm(field, task[field]) != norm(field, expected[field]) &&
+                norm(field, task[field]) != norm(field, body[field]))
+              field,
+        ];
+        if (conflicts.isNotEmpty) {
+          return jsonResponse(<String, dynamic>{
+            'error': 'conflict',
+            'fields': conflicts,
+            'task': task,
+          }, statusCode: 409);
+        }
       }
 
       // The three-state copy, exactly as `routes/tasks.ts` writes it:

@@ -239,16 +239,17 @@ void main() {
 
       final container = makeContainer();
       await loadTasks(container, projectId);
-      backend.alwaysFailToConnect();
+      // A server that answers no: no network is the outbox's case now.
+      backend.alwaysAnswerServerError();
 
       await expectLater(
         container
             .read(projectTasksProvider(projectId).notifier)
             .create('Не доедет'),
-        throwsA(isA<NetworkException>()),
+        throwsA(isA<ApiException>()),
       );
 
-      // Rolled back to exactly what was there. No queue, no "will sync later".
+      // Rolled back to exactly what was there.
       expect(titles(tasksNow(container, projectId)), <String>['Была']);
     });
 
@@ -359,13 +360,14 @@ void main() {
 
       final container = makeContainer();
       final tasks = await loadTasks(container, projectId);
-      backend.alwaysFailToConnect();
+      // A server that answers no: no network is the outbox's case now.
+      backend.alwaysAnswerServerError();
 
       await expectLater(
         container
             .read(projectTasksProvider(projectId).notifier)
             .setStatus(tasks.single, TaskStatus.done),
-        throwsA(isA<NetworkException>()),
+        throwsA(isA<ApiException>()),
       );
 
       final after = tasksNow(container, projectId).single;
@@ -443,13 +445,14 @@ void main() {
 
       final container = makeContainer();
       final tasks = await loadTasks(container, projectId);
-      backend.alwaysFailToConnect();
+      // A server that answers no: no network is the outbox's case now.
+      backend.alwaysAnswerServerError();
 
       await expectLater(
         container
             .read(projectTasksProvider(projectId).notifier)
             .editDescription(tasks.single, 'другое'),
-        throwsA(isA<NetworkException>()),
+        throwsA(isA<ApiException>()),
       );
 
       expect(
@@ -815,13 +818,14 @@ void main() {
         remindAt: '2026-10-01T00:00:00.000Z',
       );
 
-      backend.alwaysFailToConnect();
+      // A server that answers no: no network is the outbox's case now.
+      backend.alwaysAnswerServerError();
 
       await expectLater(
         container
             .read(projectTasksProvider(projectId).notifier)
             .setRemindAt(task, '2026-11-11'),
-        throwsA(isA<NetworkException>()),
+        throwsA(isA<ApiException>()),
       );
 
       expect(
@@ -1139,12 +1143,13 @@ void main() {
       final tasks = await loadTasks(container, projectId);
       await pumpEventQueue();
 
-      backend.alwaysFailToConnect();
+      // A server that answers no: no network is the outbox's case now.
+      backend.alwaysAnswerServerError();
       await expectLater(
         container
             .read(projectTasksProvider(projectId).notifier)
             .setStatus(tasks.single, TaskStatus.done),
-        throwsA(isA<NetworkException>()),
+        throwsA(isA<ApiException>()),
       );
       await pumpEventQueue();
 

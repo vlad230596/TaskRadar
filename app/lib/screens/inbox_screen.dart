@@ -297,18 +297,8 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
     );
   }
 
-  /// "Вернуть исходник" from the AI mark. Written at once: a line has no
-  /// "Сохранить" to wait for (see [_commitEdit]).
-  Future<void> _revertToSource(String source) async {
-    _text.text = source;
-    await runMutation(
-      context,
-      () => ref
-          .read(inboxProvider.notifier)
-          .edit(widget.item, source, aiClear: true),
-      failure: 'Не удалось вернуть исходник.',
-    );
-  }
+  /// The line's AI mark, against the text as it stands in the field.
+  AiMark get _mark => inboxAiMark(widget.item, text: _text.text);
 
   /// [offerTidy] false: the line was tidied a moment ago, on its way here,
   /// and asking again would be asking twice -- [shaped] and [parseId] are then
@@ -382,7 +372,8 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
     final outcome = await openAiTidy(
       context,
       kind: ParseKind.taskTidy,
-      source: text,
+      // A line as AI left it goes from the words AI got, not from its answer.
+      source: _mark.tidySource(text),
       destination: projectName,
     );
     switch (outcome) {
@@ -410,9 +401,15 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
   /// "Причесать" on the line itself (F15): the line tidied, and the project it
   /// most likely belongs to -- taken with one tap, which files it there.
   /// Without a project the tidied line stays in the sandbox, saved.
-  Future<void> _tidyLine() async {
+  ///
+  /// A line as AI left it goes from the source the server kept: the model
+  /// never works from its own answer. With [shown] -- the "AI" mark -- the
+  /// screen opens on the line and that source, and runs the model only if
+  /// asked again.
+  Future<void> _tidyLine({bool shown = false}) async {
     final text = _text.text.trim();
     if (text.isEmpty) return;
+    final mark = _mark;
     final view = ref.read(boardViewProvider);
     final projects = view is BoardReady
         ? <TidyProject>[
@@ -424,7 +421,8 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
     final outcome = await openAiTidy(
       context,
       kind: ParseKind.sandbox,
-      source: text,
+      source: shown ? mark.source ?? text : mark.tidySource(text),
+      result: shown ? TidiedLine(text: text) : null,
       projects: projects,
     );
     if (!mounted) return;
@@ -585,12 +583,10 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
                     style: AppText.caption,
                   ),
                 ),
-                if (inboxAiMark(widget.item).shown) ...<Widget>[
+                if (_mark.shown) ...<Widget>[
                   AiSourceMark(
-                    mark: inboxAiMark(widget.item),
-                    onRevert: () => unawaited(
-                      _revertToSource(inboxAiMark(widget.item).source ?? ''),
-                    ),
+                    mark: _mark,
+                    onOpen: () => unawaited(_tidyLine(shown: true)),
                   ),
                   const SizedBox(width: 8),
                 ],

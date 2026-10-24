@@ -256,8 +256,10 @@ String _$boardViewHash() => r'0e645314fd354af0c35497b7549a66a8943d3e9b';
 ///   `watch` would rebuild this provider on every sync report and re-register
 ///   both subscriptions.
 ///
-/// The board screen watches this once; that is the only thing that has to
-/// remember anything.
+/// `ReminderBridgeScope` in the shell subscribes to this once; that is the
+/// only thing that has to remember anything. It used to be a `ref.watch` in
+/// the planning screen, which Riverpod pauses whenever a route covers the
+/// shell -- see the scope for why that lost alarms.
 
 @ProviderFor(boardReminderBridge)
 final boardReminderBridgeProvider = BoardReminderBridgeProvider._();
@@ -284,8 +286,10 @@ final boardReminderBridgeProvider = BoardReminderBridgeProvider._();
 ///   `watch` would rebuild this provider on every sync report and re-register
 ///   both subscriptions.
 ///
-/// The board screen watches this once; that is the only thing that has to
-/// remember anything.
+/// `ReminderBridgeScope` in the shell subscribes to this once; that is the
+/// only thing that has to remember anything. It used to be a `ref.watch` in
+/// the planning screen, which Riverpod pauses whenever a route covers the
+/// shell -- see the scope for why that lost alarms.
 
 final class BoardReminderBridgeProvider
     extends $FunctionalProvider<void, void, void>
@@ -312,8 +316,10 @@ final class BoardReminderBridgeProvider
   ///   `watch` would rebuild this provider on every sync report and re-register
   ///   both subscriptions.
   ///
-  /// The board screen watches this once; that is the only thing that has to
-  /// remember anything.
+  /// `ReminderBridgeScope` in the shell subscribes to this once; that is the
+  /// only thing that has to remember anything. It used to be a `ref.watch` in
+  /// the planning screen, which Riverpod pauses whenever a route covers the
+  /// shell -- see the scope for why that lost alarms.
   BoardReminderBridgeProvider._()
     : super(
         from: null,
