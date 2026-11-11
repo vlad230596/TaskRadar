@@ -163,6 +163,57 @@ const remindTimeSchema = z
  */
 const taskCategoryIdSchema = z.string().min(1).max(100).nullable().optional();
 
+/**
+ * One checklist item (task editor, design/task-editor-spec.md §10). The id is
+ * the client's, so an item keeps its identity across reorders and offline
+ * edits. Nothing is trimmed or rewritten: the list is compared item by item
+ * for `expected`, and a server that normalised the text would make the next
+ * offline edit of the same list a conflict with itself.
+ */
+export const checklistItemSchema = z.object({
+  id: z.string().min(8, "checklist item id is too short").max(40, "checklist item id is too long"),
+  text: z
+    .string()
+    .max(500, "checklist item is too long")
+    .refine((text) => text.trim().length > 0, "checklist item text is required"),
+  done: z.boolean(),
+});
+
+export const MAX_CHECKLIST_ITEMS = 200;
+
+/** A whole checklist, or null for none. `[]` is accepted and stored as null. */
+export const checklistSchema = z
+  .array(checklistItemSchema)
+  .max(MAX_CHECKLIST_ITEMS, `at most ${MAX_CHECKLIST_ITEMS} checklist items`)
+  .refine((items) => new Set(items.map((item) => item.id)).size === items.length, {
+    message: "checklist item ids must be unique",
+  })
+  .nullable()
+  .optional();
+
+/** The label a place gets when the client sends none (the picker's default). */
+export const DEFAULT_LOCATION_LABEL = "Место";
+
+/**
+ * "Напомнить по месту" (§7): a point and a radius. The radius bounds are the
+ * picker's slider -- below 100 m Android's geofencing is unreliable. Four
+ * columns in the database (`locLat`...), one object here and in answers.
+ */
+export const locationSchema = z
+  .object({
+    lat: z.number().min(-90).max(90),
+    lng: z.number().min(-180).max(180),
+    radius: z.number().int().min(100).max(1000),
+    label: z
+      .string()
+      .max(80, "label is too long")
+      .nullable()
+      .optional()
+      .transform((label) => (label && label.trim() ? label : DEFAULT_LOCATION_LABEL)),
+  })
+  .nullable()
+  .optional();
+
 export const createTaskSchema = z.object({
   title: z.string().trim().min(1, "title is required"),
   description: z.string().nullable().optional(),
@@ -186,6 +237,10 @@ export const createTaskSchema = z.object({
    * already made instead of a twin. No key: the old behaviour.
    */
   createKey: z.string().trim().min(8, "createKey is too short").max(100).optional(),
+
+  /** Task editor (§10): the whole new task in one POST. */
+  checklist: checklistSchema,
+  location: locationSchema,
 });
 
 /**
@@ -210,6 +265,9 @@ export const updateTaskSchema = z
     status: taskStatusSchema.optional(),
     remindAt: z.coerce.date().nullable().optional(),
     remindTime: remindTimeSchema,
+    /** The whole list -- a ticked box too is a PATCH of the whole list. */
+    checklist: checklistSchema,
+    location: locationSchema,
     /**
      * An answer being saved into this task (F15): `task_tidy` for the title
      * and description together, `note` for the description alone.
@@ -237,6 +295,19 @@ export const updateTaskSchema = z
         status: taskStatusSchema.optional(),
         remindAt: z.coerce.date().nullable().optional(),
         remindTime: z.string().nullable().optional(),
+        checklist: z
+          .array(z.object({ id: z.string(), text: z.string(), done: z.boolean() }))
+          .nullable()
+          .optional(),
+        location: z
+          .object({
+            lat: z.number(),
+            lng: z.number(),
+            radius: z.number(),
+            label: z.string().nullable().optional(),
+          })
+          .nullable()
+          .optional(),
       })
       .optional(),
   })
@@ -456,3 +527,37 @@ export const updateNoteSchema = z
   .refine((body) => Object.keys(body).some((key) => key !== "dictationParseId"), {
     message: "At least one field must be provided",
   });
+
+// ---- Attachments (task editor, design/task-editor-spec.md §10) ----
+
+/**
+ * The `uploadKey` field of `POST /tasks/:id/attachments`: the outbox's
+ * idempotency key, same bounds as `createKey`.
+ */
+export const uploadKeySchema = z
+  .string()
+  .trim()
+  .min(8, "uploadKey is too short")
+  .max(100, "uploadKey is too long");
+
+// ---- Link previews ----
+
+/**
+ * Query of `GET /link-preview`. Only http(s); the rest of the checking (where
+ * the name points, redirects) is the fetcher's -- see ./domain/linkPreview.ts.
+ */
+export const linkPreviewQuerySchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .min(1, "url is required")
+    .max(2048, "url is too long")
+    .refine((value) => {
+      try {
+        const url = new URL(value);
+        return url.protocol === "http:" || url.protocol === "https:";
+      } catch {
+        return false;
+      }
+    }, "url must be an http(s) URL"),
+});

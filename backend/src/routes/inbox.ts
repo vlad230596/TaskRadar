@@ -14,6 +14,7 @@ import {
 } from "../schemas";
 import { getProjectOrThrow } from "./projects";
 import { isUniqueConstraintViolation } from "../lib/prismaErrors";
+import { taskView } from "../domain/taskView";
 
 /*
  * The sandbox (F8): write it down now, decide where it goes later.
@@ -326,6 +327,7 @@ export async function inboxRoutes(app: FastifyInstance): Promise<void> {
       return created;
     });
 
-    reply.status(201).send(task);
+    // In the shape every task answer has (no list, no place, no pictures yet).
+    reply.status(201).send(taskView(task));
   });
 }

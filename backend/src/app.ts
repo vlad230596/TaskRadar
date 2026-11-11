@@ -27,6 +27,9 @@ import { createDictationParser } from "./domain/dictation";
 import { createTidyParsers } from "./domain/tidy";
 import { resolveDictationModel } from "./domain/dictationModel";
 import { DictationFeature } from "./routes/dictation";
+import { AttachmentFeature, attachmentRoutes } from "./routes/attachments";
+import { LinkPreviewFeature, defaultLinkPreviewFeature, linkPreviewRoutes } from "./routes/linkPreview";
+import { fileAttachmentStore, loadAttachmentLimits, loadAttachmentsDir } from "./domain/attachmentStore";
 
 export interface BuildAppOptions {
   /**
@@ -51,6 +54,13 @@ export interface BuildAppOptions {
   aiDailyLimit?: number;
   /** Heartbeat of a streamed dictation parse. Tests shorten it; 5 s otherwise. */
   dictationHeartbeatMs?: number;
+  /**
+   * Task pictures (task editor): where the files go and the limits.
+   * Defaults to `ATTACHMENTS_DIR` and the `ATTACHMENT_*` limits.
+   */
+  attachments?: AttachmentFeature;
+  /** `GET /link-preview`. Injectable so tests never touch the network. */
+  linkPreview?: LinkPreviewFeature;
 }
 
 function defaultDictation(): DictationFeature | null {
@@ -152,6 +162,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     ),
   );
   await app.register(dictationInsightRoutes());
+  // Task editor (design/task-editor-spec.md §10).
+  await app.register(
+    attachmentRoutes(
+      options.attachments ?? {
+        store: fileAttachmentStore(loadAttachmentsDir()),
+        limits: loadAttachmentLimits(),
+      },
+    ),
+  );
+  await app.register(linkPreviewRoutes(options.linkPreview ?? defaultLinkPreviewFeature()));
 
   return app;
 }

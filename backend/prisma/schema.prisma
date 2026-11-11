@@ -209,10 +209,33 @@ model Task {
   /// unique index as distinct).
   createKey String?
 
+  /// Чек-лист (task editor, design/task-editor-spec.md §6, §10): an array of
+  /// `{ id, text, done }`, or null for "no list" -- `[]` is stored as null.
+  /// JSON rather than a table: nobody asks for one item on its own, and the
+  /// whole list goes through `PATCH /tasks/:id` with `expected`, so an offline
+  /// conflict is about the list as a whole -- enough for a personal tracker.
+  /// Validated by `checklistSchema` in src/schemas.ts.
+  checklist Json?
+
+  /// "Напомнить по месту" (§7): all four or none -- a CHECK constraint in the
+  /// migration (20261111100000_task_checklist_location_attachments) holds the
+  /// database to it. Outside the database the four are one `location` object,
+  /// see src/domain/taskView.ts.
+  locLat    Float?
+  locLng    Float?
+  /// Metres, 100..1000.
+  locRadius Int?
+  /// At most 80 characters.
+  locLabel  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   events TaskEvent[]
+
+  /// Pictures (§6, §10). Only metadata lives here; the files are on the
+  /// attachments volume, see src/domain/attachmentStore.ts.
+  attachments TaskAttachment[]
 
   /// The dictation parses this task was created from (F14) -- normally one.
   dictationParses DictationParse[]
@@ -547,4 +570,65 @@ model LlmModel {
 
   @@index([position])
   @@map("llm_models")
+}
+
+/// A picture attached to a task (task editor, design/task-editor-spec.md §10).
+///
+/// The row is the metadata; the bytes are two files on the attachments volume
+/// (`ATTACHMENTS_DIR`): `<userId>/<id>.<ext>` -- the original, with its
+/// metadata stripped -- and `<userId>/<id>.thumb.webp`. Files are only ever
+/// served by the API after an ownership check (src/routes/attachments.ts).
+///
+/// Rows go with their task (`Cascade`); the files they leave behind are removed
+/// by src/scripts/sweepAttachments.ts, which runs daily.
+model TaskAttachment {
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  /// Idempotency key of an upload from the phone's outbox, like `Task.createKey`:
+  /// a replayed upload answers with the attachment it already made.
+  uploadKey String
+  /// image/png | image/jpeg | image/webp, decided from the bytes, never from
+  /// what the client said.
+  mime      String
+  /// Of the stored original (after metadata was stripped).
+  sizeBytes Int
+  width     Int
+  height    Int
+  /// Of the stored original; also its ETag.
+  sha256    String
+  createdAt DateTime @default(now())
+
+  @@unique([taskId, uploadKey])
+  @@index([taskId, createdAt])
+  @@map("task_attachments")
+}
+
+/// Cache of `GET /link-preview` answers (§10): the page title for a link card.
+/// 30 days for a success, a day for a failure (`failed`), see
+/// src/domain/linkPreview.ts. The key is the URL without its fragment.
+model LinkPreview {
+  url       String   @id
+  title     String?
+  siteName  String?
+  failed    Boolean  @default(false)
+  fetchedAt DateTime @default(now())
+
+  @@map("link_previews")
+}
+
+/// How many link previews a user has had fetched on one UTC day: the limit is
+/// like the AI one (`AiUsage`) but counted apart, 100 a day by default
+/// (`LINK_PREVIEW_DAILY_LIMIT`). Cache hits are free.
+///
+/// No relation to `User` on purpose: a counter that is dead weight after a day
+/// does not need a foreign key, and leaving `User` untouched keeps this
+/// migration independent of the other changes to that model.
+model LinkPreviewUsage {
+  userId String
+  day    String
+  count  Int    @default(0)
+
+  @@id([userId, day])
+  @@map("link_preview_usage")
 }

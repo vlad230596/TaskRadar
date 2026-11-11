@@ -12,11 +12,23 @@
 set -eu
 
 # A forced command still receives the client's requested command in
-# SSH_ORIGINAL_COMMAND. Refusing when it is non-empty makes an attempt to use
-# the key for anything else fail visibly instead of being silently ignored.
-if [ -n "${SSH_ORIGINAL_COMMAND:-}" ]; then
-  echo 'This key may only export the TaskRadar PostgreSQL backup.' >&2
-  exit 64
-fi
-
-exec /usr/bin/sudo -n /usr/local/sbin/taskradar-backup-export-root
+# SSH_ORIGINAL_COMMAND. Exactly two requests are understood, each mapped to a
+# fixed exporter that takes no arguments:
+#
+#   (nothing)      the PostgreSQL dump (export-production-backup.sh)
+#   attachments    the task pictures as a tar (export-production-attachments.sh)
+#
+# Anything else is refused visibly instead of being silently ignored. The word
+# is compared, never passed on, so the client still cannot choose what runs.
+case "${SSH_ORIGINAL_COMMAND:-}" in
+  '')
+    exec /usr/bin/sudo -n /usr/local/sbin/taskradar-backup-export-root
+    ;;
+  attachments)
+    exec /usr/bin/sudo -n /usr/local/sbin/taskradar-backup-export-attachments-root
+    ;;
+  *)
+    echo 'This key may only export the TaskRadar backup (database, or "attachments").' >&2
+    exit 64
+    ;;
+esac

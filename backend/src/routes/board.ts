@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
 import { annotateIsCurrent } from "../domain/isCurrent";
 import { boardQuerySchema } from "../schemas";
+import { taskInclude, taskView } from "../domain/taskView";
 
 /**
  * `GET /board` -- the whole board (projects with their tasks) in one response.
@@ -56,7 +57,8 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
       },
       orderBy: { createdAt: "asc" },
       include: {
-        tasks: { orderBy: { position: "asc" } },
+        // Pictures' metadata only (task editor, §10): one more `IN (...)`.
+        tasks: { orderBy: { position: "asc" }, include: taskInclude },
         // How many notes each project has, for the counter on the planning
         // board. A relation `_count` is one grouped `COUNT(*)` for all the
         // projects at once, inside this same findMany -- the note bodies are
@@ -85,7 +87,7 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
       projects.map(({ _count, tasks, ...project }) => ({
         ...project,
         noteCount: _count.notes,
-        tasks: annotateIsCurrent(tasks),
+        tasks: annotateIsCurrent(tasks.map(taskView)),
       })),
     );
   });

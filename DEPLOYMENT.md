@@ -138,6 +138,8 @@ Postgres реально доступен и миграции применены)
 - compose-проект `taskradar`;
 - каталог `/opt/taskradar`;
 - том PostgreSQL `taskradar_postgres-data`;
+- том картинок задач `taskradar_attachments-data` (смонтирован только в
+  бэкенд; Caddy его не видит, файлы отдаёт только API после проверки владельца);
 - неизменяемый образ `taskradar-backend` в GHCR (деплоится только по digest);
 - свои учётные данные БД и `.env` с доступом только у root;
 - пользователь деплоя `taskradar-deploy` и одна разрешённая sudo-команда;
@@ -305,6 +307,7 @@ curl -N -H 'Accept: text/event-stream' -H 'Content-Type: application/json' \
 /opt/taskradar/.release.env                  создаётся деплоем
 /usr/local/sbin/taskradar-deploy             root:root 0755
 /usr/local/sbin/taskradar-backup-export-root root:root 0755
+/usr/local/sbin/taskradar-backup-export-attachments-root root:root 0755
 /usr/local/bin/taskradar-backup-export       root:root 0755
 /etc/sudoers.d/taskradar-deploy              root:root 0440
 /etc/sudoers.d/taskradar-backup              root:root 0440
@@ -318,6 +321,7 @@ curl -N -H 'Accept: text/event-stream' -H 'Content-Type: application/json' \
 | `/opt/taskradar/.env` | по шаблону `deploy/production.env.example` |
 | `/usr/local/sbin/taskradar-deploy` | `scripts/deploy-production.sh` |
 | `/usr/local/sbin/taskradar-backup-export-root` | `scripts/export-production-backup.sh` |
+| `/usr/local/sbin/taskradar-backup-export-attachments-root` | `scripts/export-production-attachments.sh` |
 | `/usr/local/bin/taskradar-backup-export` | `scripts/taskradar-backup-forced-command.sh` |
 | `/etc/sudoers.d/taskradar-*` | `deploy/taskradar-*.sudoers` |
 | site-блок общего Caddy | `deploy/Caddyfile.taskradar.example` |
@@ -714,6 +718,48 @@ XSS: любой выполнившийся на origin скрипт достан
 что делает эту модель приемлемой для личного инструмента за логином.
 
 ---
+
+## Обновление установки: редактор задачи (чек-лист, место, картинки, ссылки)
+
+Релиз с миграцией `20261111100000_task_checklist_location_attachments`
+(`design/task-editor-spec.md` §10). Миграция аддитивная (пять nullable-колонок
+в `tasks`, три новые таблицы, два CHECK, которым все существующие строки уже
+удовлетворяют) и применяется обычным шагом `migrate` деплоя. Но три вещи на
+сервере деплой сам не делает — их нужно сделать **до** релиза:
+
+1. **`compose.prod.yaml` → `/opt/taskradar/`.** В нём новый том
+   `attachments-data`, смонтированный в бэкенд в
+   `/var/lib/taskradar/attachments`, и переменные `ATTACHMENTS_DIR`,
+   `ATTACHMENT_*`, `LINK_PREVIEW_DAILY_LIMIT`. Со старым файлом бэкенд
+   запустится, но первая же загрузка картинки упадёт: корень контейнера
+   read-only. Том Compose создаст сам при `up`; владельца (`node`, uid 1000) он
+   возьмёт из каталога в образе — руками ничего не создавать.
+2. **Site-блок Caddy** (по разделу «Общий Caddy на VDS», с бэкапом и
+   `caddy validate`): в `@api path` добавлены `/attachments/*` и
+   `/link-preview`, а `request_body` разделён на два — 12 МБ для
+   `POST /tasks/*/attachments` (файл до 10 МБ плюс multipart) и прежний 1 МБ для
+   остального. Без этого картинки получают 404 (нет префикса) или 413 от Caddy.
+3. **Бэкап картинок** (BACKUPS.md): поставить
+   `scripts/export-production-attachments.sh` →
+   `/usr/local/sbin/taskradar-backup-export-attachments-root` (`root:root 0755`),
+   обновить `/usr/local/bin/taskradar-backup-export` из
+   `scripts/taskradar-backup-forced-command.sh` и
+   `/etc/sudoers.d/taskradar-backup` из `deploy/taskradar-backup.sudoers`
+   (`visudo -c`!). Этот же экспорт раз в сутки запускает чистку файлов-сирот
+   (`node dist/scripts/sweepAttachments.js`); вручную, с отчётом без удаления:
+
+   ```bash
+   docker compose --env-file .env -f compose.prod.yaml exec -T backend \
+     node dist/scripts/sweepAttachments.js --dry-run
+   ```
+
+`GET /link-preview` ходит с сервера наружу (заголовок страницы для карточки
+ссылки): исходящий HTTP(S) из сети `taskradar_default` должен быть открыт.
+Внутрь (приватные, loopback, link-local/metadata адреса) он не ходит —
+проверка в `backend/src/domain/linkPreview.ts`.
+
+Откат образа после этого релиза безопасен: старый бэкенд новые колонки и таблицы
+просто не читает. Том с картинками при откате остаётся.
 
 ## Обновление установки: отдельный образ миграций
 
