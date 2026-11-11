@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_name">TaskRadar · В работе</string>
+    <string name="widget_description">Задачи в работе, по проектам</string>
+    <string name="widget_title">В работе</string>
+    <string name="widget_refresh">Обновить</string>
+    <string name="widget_empty">Нет задач в работе</string>
+    <string name="widget_no_snapshot">Откройте TaskRadar, чтобы здесь появились задачи</string>
+    <string name="widget_signed_out">Войдите в TaskRadar</string>
+    <string name="widget_updated_prefix">обновлено</string>
+    <string name="widget_cached_prefix">копия от</string>
+    <string name="widget_waiting">ждёт</string>
+    <string name="widget_collapse_project">Свернуть «%1$s»</string>
+    <string name="widget_expand_project">Развернуть «%1$s»</string>
+</resources>

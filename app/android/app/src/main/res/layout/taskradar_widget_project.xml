@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A project header in the widget's list. The whole row toggles the group. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:paddingTop="6dp">
+
+    <LinearLayout
+        android:id="@+id/widget_project_row"
+        android:layout_width="match_parent"
+        android:layout_height="44dp"
+        android:background="@drawable/widget_row_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingEnd="10dp">
+
+        <FrameLayout
+            android:layout_width="24dp"
+            android:layout_height="24dp">
+
+            <ImageView
+                android:id="@+id/widget_project_badge"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:src="@drawable/widget_badge" />
+
+            <TextView
+                android:id="@+id/widget_project_letter"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:importantForAccessibility="no"
+                android:textColor="@color/widget_on_badge"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </FrameLayout>
+
+        <TextView
+            android:id="@+id/widget_project_name"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:maxLines="1"
+            android:textColor="@color/widget_ink"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_project_count"
+            android:layout_width="wrap_content"
+            android:layout_height="22dp"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/widget_pill"
+            android:gravity="center"
+            android:minWidth="22dp"
+            android:paddingStart="7dp"
+            android:paddingEnd="7dp"
+            android:textColor="@color/widget_pill_ink"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_project_chevron"
+            android:layout_width="20dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:gravity="center"
+            android:importantForAccessibility="no"
+            android:textColor="@color/widget_muted"
+            android:textSize="14sp" />
+    </LinearLayout>
+</FrameLayout>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget on a dark home screen: the dictation screen's tokens
+     (AppColors.voice*), plus the rail's active navy for the counters. -->
+<resources>
+    <color name="widget_background">#FF14183C</color>     <!-- voiceBackground -->
+    <color name="widget_card">#FF1F2552</color>           <!-- voiceWell -->
+    <color name="widget_line">#FF39407A</color>           <!-- voiceLine -->
+    <color name="widget_ink">#FFEDEEF7</color>            <!-- voiceInk -->
+    <color name="widget_ink_soft">#FFD6DBFF</color>       <!-- voiceBright -->
+    <color name="widget_muted">#FFA7AECF</color>          <!-- voiceMuted -->
+    <color name="widget_pill">#FF333A73</color>           <!-- railActive -->
+    <color name="widget_pill_ink">#FFD6DBFF</color>       <!-- voiceBright -->
+    <color name="widget_dot">#FF6C79E8</color>            <!-- voiceLevelHigh -->
+    <color name="widget_dot_waiting">#FFF0A33C</color>    <!-- waitingDotOnInk -->
+    <color name="widget_waiting_ink">#FFF0A33C</color>    <!-- waitingDotOnInk -->
+    <color name="widget_on_badge">#FFFFFFFF</color>       <!-- onInk -->
+</resources>

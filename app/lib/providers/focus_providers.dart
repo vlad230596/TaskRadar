@@ -100,6 +100,39 @@ class FocusSet extends _$FocusSet {
     }
   }
 
+  /// Перечитать набор **без** перехода в загрузку: экран продолжает показывать
+  /// то, что показывал, и меняется, только если сервер ответил иначе.
+  ///
+  /// Для виджета на рабочем столе (возврат приложения на передний план и его
+  /// кнопка «обновить»): [refresh] сбрасывает провайдер, и режим работы на
+  /// мгновение показывает «Загружаем набор…» — терпимо, когда пользователь сам
+  /// потянул список, и странно, когда он просто вернулся в приложение.
+  ///
+  /// Встаёт в ту же очередь, что и записи: ответ, пришедший посреди «взять в
+  /// работу», затёр бы её предсказание. Ошибки глотает — это фоновое уточнение,
+  /// у которого нет кнопки, чтобы о провале рассказать. Набора ещё нет (первая
+  /// загрузка упала) — это обычный [refresh].
+  Future<void> syncQuietly() {
+    if (!state.hasValue) return refresh();
+    return _enqueue(() async {
+      try {
+        final fresh = await _focus.fetchFocus();
+        if (!ref.mounted) return;
+        unawaited(
+          ref
+              .read(readCacheStoreProvider)
+              .write(ReadCacheKeys.focus, jsonDecode(jsonEncode(fresh))),
+        );
+        // Before the new state, so whoever reacts to the set already sees it
+        // as fresh rather than as the local copy.
+        ref.read(cachedReadsProvider.notifier).markFresh(ReadCacheKeys.focus);
+        state = AsyncData(List<FocusTask>.unmodifiable(fresh));
+      } catch (error) {
+        debugPrint('Quiet focus sync failed: $error');
+      }
+    });
+  }
+
   /// Взять задачу в работу.
   ///
   /// [projectName] — от вызывающего, потому что он его уже знает (строка проекта

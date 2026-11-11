@@ -13,6 +13,7 @@ import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
 import 'theme/tokens.dart';
 import 'widgets/capture_flush_scope.dart';
+import 'widgets/home_widget_scope.dart';
 import 'widgets/notification_link_scope.dart';
 
 /// Root widget.
@@ -121,9 +122,13 @@ class TaskRadarApp extends ConsumerWidget {
               value == SessionStatus.signedIn
                   ? const CaptureFlushScope(
                       child: NotificationLinkScope(
-                        child: qaBuild
-                            ? QaBoardDrawnSignal(child: ShellScreen())
-                            : ShellScreen(),
+                        // The Android home-screen widget: fed from here, and
+                        // its task taps go through the link scope just above.
+                        child: HomeWidgetScope(
+                          child: qaBuild
+                              ? QaBoardDrawnSignal(child: ShellScreen())
+                              : ShellScreen(),
+                        ),
                       ),
                     )
                   : const LoginScreen(),
