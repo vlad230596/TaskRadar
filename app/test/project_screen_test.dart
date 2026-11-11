@@ -13,6 +13,7 @@ import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
+import 'package:taskradar/widgets/editor/checklist_section.dart';
 import 'package:taskradar/widgets/note_list.dart';
 import 'package:taskradar/widgets/task_list.dart';
 
@@ -505,6 +506,66 @@ void main() {
       expect(
         server.patches.where((patch) => patch.path.endsWith('/position')),
         isEmpty,
+      );
+    });
+
+    testWidgets('a row with a checklist shows its progress beside the marks', (
+      tester,
+    ) async {
+      server.addTask(
+        projectId: projectId,
+        title: 'Собрать шкаф',
+        checklist: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 'item00000001',
+            'text': 'Полки',
+            'done': true,
+          },
+          <String, dynamic>{'id': 'item00000002', 'text': 'Дверцы'},
+          <String, dynamic>{'id': 'item00000003', 'text': 'Ручки'},
+        ],
+        location: <String, dynamic>{
+          'lat': 55.75,
+          'lng': 37.61,
+          'radius': 150,
+          'label': 'Дача',
+        },
+      );
+      await pumpProject(tester);
+
+      final row = find.ancestor(
+        of: find.text('Собрать шкаф'),
+        matching: find.byType(TaskRow),
+      );
+      final badge = find.descendant(
+        of: row,
+        matching: find.byType(ChecklistProgressBadge),
+      );
+      expect(badge, findsOneWidget);
+      expect(
+        find.descendant(of: badge, matching: find.text('1/3')),
+        findsOneWidget,
+      );
+      // After the 📍, six pixels apart like the other marks.
+      final place = find.descendant(
+        of: row,
+        matching: find.byIcon(Icons.place_outlined),
+      );
+      expect(
+        tester.getTopLeft(badge).dx - tester.getTopRight(place).dx,
+        moreOrLessEquals(6),
+      );
+
+      // A row without a list draws no badge.
+      expect(
+        find.descendant(
+          of: find.ancestor(
+            of: find.text('Позвонить прорабу'),
+            matching: find.byType(TaskRow),
+          ),
+          matching: find.byType(ChecklistProgressBadge),
+        ),
+        findsNothing,
       );
     });
   });

@@ -15,14 +15,13 @@ import 'place_tile.dart';
 /// The places in the task editor where the checklist (WP5), the pictures
 /// (WP6) and the place (WP7) plug in (task-editor spec, section 11).
 ///
-/// The *data* already flows: [EditorExtras] holds the checklist and the
-/// place, and the editor (`screens/task_editor_screen.dart`) sends them with
-/// "Добавить" (`ProjectTasks.create(checklist:, location:)`) and with
-/// "Сохранить" (`ProjectTasks.edit(checklist:, location:)`). What renders
-/// nothing yet are the *widgets*: the functions of [EditorSlots] below. A
-/// package that lands fills in its own function -- the editor calls each of
-/// them already, at the spot the spec's "Раскладка full" draws it -- and the
-/// editor screen does not need to change.
+/// [EditorExtras] holds the checklist and the place, and the editor
+/// (`screens/task_editor_screen.dart`) sends them with "Добавить"
+/// (`ProjectTasks.create(checklist:, location:)`) and with "Сохранить"
+/// (`ProjectTasks.edit(checklist:, location:)`); the pictures go through
+/// the outbox (`attachment_section.dart`). The widgets are the functions of
+/// [EditorSlots] below, which the editor calls at the spot the spec's
+/// "Раскладка full" draws each.
 ///
 /// ## The order on screen (full height)
 ///
@@ -77,9 +76,11 @@ class EditorSectionScope {
 ///   [adoptSaved] with the row's new list so the tick is not "unsaved".
 /// - [location] (WP7): the place, or null.
 /// - Pictures (WP6) are not held here: before "Добавить" they are the
-///   section's own pending list, queued in [afterCreate] against the new
-///   task's id ([WriteOutcome.taskId]); on an existing task they upload at
-///   once.
+///   section's own drafts (`PictureDrafts`), queued in [afterCreate] against
+///   the new task's id ([WriteOutcome.taskId]); on an existing task they
+///   upload at once. The drafts register themselves with [holdDrafts], so
+///   they still count for [isDirty] -- a new task with only pictures asks
+///   before it is closed.
 class EditorExtras extends ChangeNotifier {
   List<ChecklistItem>? _checklist;
   List<ChecklistItem>? _savedChecklist;
@@ -131,9 +132,34 @@ class EditorExtras extends ChangeNotifier {
       ChecklistSection.differsInContent(_checklist ?? const [], _savedChecklist);
   bool get locationChanged => _location != _savedLocation;
 
+  final List<_HeldDrafts> _drafts = <_HeldDrafts>[];
+
+  /// A section keeping drafts outside these extras (WP6's pictures) makes
+  /// them count: [hasDrafts] asks [isPending], and every notification of
+  /// [source] is passed on, so the editor re-checks "unsaved changes".
+  void holdDrafts(Listenable source, bool Function() isPending) {
+    final held = _HeldDrafts(source, isPending, notifyListeners);
+    source.addListener(held.listener);
+    _drafts.add(held);
+  }
+
+  /// Something added that lives only in this editor until "Добавить" (the
+  /// draft pictures of a new task).
+  bool get hasDrafts => _drafts.any((held) => held.isPending());
+
   /// Something here differs from the saved task (a new task: anything set at
-  /// all). Feeds the "Выйти без сохранения?" guard and "Сохранить".
-  bool get isDirty => checklistChanged || locationChanged;
+  /// all, draft pictures included). Feeds the "Выйти без сохранения?" guard
+  /// and "Сохранить".
+  bool get isDirty => checklistChanged || locationChanged || hasDrafts;
+
+  @override
+  void dispose() {
+    for (final held in _drafts) {
+      held.source.removeListener(held.listener);
+    }
+    _drafts.clear();
+    super.dispose();
+  }
 
   /// An existing task opened: its values are the saved ones. Not notifying:
   /// called while the editor builds.
@@ -171,11 +197,19 @@ class EditorExtras extends ChangeNotifier {
   }
 }
 
+class _HeldDrafts {
+  _HeldDrafts(this.source, this.isPending, this.listener);
+
+  final Listenable source;
+  final bool Function() isPending;
+  final VoidCallback listener;
+}
+
 /// The slots themselves -- the one place WP5–7 add their widgets.
 abstract final class EditorSlots {
   /// Chips for the attribute row, between the reminder and the category:
-  /// «📍 + Место» (WP7), «☑ + Список» (WP5), «🖼 + Фото» (WP6) -- an
-  /// `AttributeChip` each (`attribute_bar.dart`). Hidden until those land.
+  /// «📍 Место» (WP7), «☑ Список» (WP5, while there is no list), «🖼 + Фото»
+  /// (WP6) -- an `AttributeChip` each (`attribute_bar.dart`).
   /// [onOpen] expands a compact sheet to full height: a chip tapped in
   /// quick-add should show the section it opens.
   static List<Widget> chips(
@@ -221,23 +255,21 @@ abstract final class EditorSlots {
     AttachmentChip(scope: scope, onOpen: onOpen),
   ];
 
-  /// WP5: `ChecklistSection(items: scope.extras.checklist ?? [], onChanged:
-  /// (items) => scope.extras.checklist = items, onToggle: …)` when
-  /// `checklist != null || checklistOpen`.
+  /// WP5: «СПИСОК» ([ChecklistSection]) when `checklist != null ||
+  /// checklistOpen`, in the full editor only.
   static Widget checklist(EditorSectionScope scope) =>
       (!scope.expanded ||
           (scope.extras.checklist == null && !scope.extras.checklistOpen))
       ? const SizedBox.shrink()
       : _ChecklistSlot(scope: scope);
 
-  /// WP6: `AttachmentStrip(taskIdOrLocal, attachments: scope.task?.attachments,
-  /// pending, onAdd, onDelete)`; for a new task, register the upload of the
-  /// pending pictures in `scope.extras.createHooks`.
+  /// WP6: «КАРТИНКИ» ([AttachmentsSection]); a new task's drafts upload
+  /// through `scope.extras.createHooks` after «Добавить».
   static Widget attachments(EditorSectionScope scope) =>
       AttachmentsSection(scope: scope);
 
-  /// WP7: `LocationTile(value: scope.extras.location, onChanged: (v) =>
-  /// scope.extras.location = v)` when `location != null || locationOpen`.
+  /// WP7: «МЕСТО» ([PlaceTile]) when `location != null || locationOpen`, in
+  /// the full editor only.
   static Widget location(EditorSectionScope scope) {
     final extras = scope.extras;
     if (!scope.expanded) return const SizedBox.shrink();

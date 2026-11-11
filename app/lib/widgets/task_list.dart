@@ -20,6 +20,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'attachment_badge.dart';
 import 'category_sheets.dart';
+import 'editor/checklist_section.dart';
 import 'glance.dart';
 import 'mutation_feedback.dart';
 import 'overflow_fade_text.dart';
@@ -657,8 +658,6 @@ class TaskRow extends ConsumerWidget {
               children: <Widget>[
                 Expanded(child: title),
                 // 🔗: the task holds a link (task-editor spec, section 5).
-                // The checklist, picture and place marks join it with
-                // WP5–7.
                 if (_hasLink) ...<Widget>[
                   const SizedBox(width: 6),
                   const Padding(
@@ -684,6 +683,12 @@ class TaskRow extends ConsumerWidget {
                     ),
                   ),
                 ],
+                // ☑ 2/5: the checklist's progress (spec, section 6).
+                if (task.checklist?.isNotEmpty ?? false)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, top: 4),
+                    child: ChecklistProgressBadge(items: task.checklist),
+                  ),
                 // 🖼: pictures, the server's and those still in the outbox.
                 AttachmentCountBadge(
                   task: task,

@@ -22,6 +22,7 @@ import 'package:taskradar/providers/board_providers.dart';
 import 'package:taskradar/providers/project_providers.dart';
 import 'package:taskradar/storage/outbox_store.dart';
 import 'package:taskradar/widgets/attachment_badge.dart';
+import 'package:taskradar/widgets/editor/attachment_section.dart';
 import 'package:taskradar/widgets/editor/attachment_strip.dart';
 import 'package:taskradar/widgets/editor/sections.dart';
 
@@ -520,6 +521,34 @@ void main() {
       await tester.pumpAndSettle();
       expect(queue.added, <String>['local:outbox:k1']);
       expect(find.byType(AttachmentStrip), findsNothing);
+    });
+
+    test('draft pictures count as unsaved changes until «Добавить»', () async {
+      final extras = EditorExtras();
+      addTearDown(extras.dispose);
+      var notified = 0;
+      extras.addListener(() => notified++);
+
+      final drafts = PictureDrafts.of(extras, queue);
+      expect(extras.isDirty, isFalse);
+
+      drafts.addAll(<XFile>[picture('a.png')]);
+      expect(extras.hasDrafts, isTrue);
+      expect(extras.isDirty, isTrue);
+      // The editor re-checks its guard on the extras' notifications.
+      expect(notified, 1);
+
+      drafts.remove(drafts.files.single);
+      expect(extras.isDirty, isFalse);
+      expect(notified, 2);
+
+      drafts.addAll(<XFile>[picture('b.png')]);
+      await extras.afterCreate(
+        projectId: 'p1',
+        outcome: const WriteOutcome.sentAs('t9', 'k'),
+      );
+      expect(queue.added, <String>['t9']);
+      expect(extras.isDirty, isFalse);
     });
   });
 

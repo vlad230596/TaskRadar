@@ -1,9 +1,18 @@
+import 'dart:convert';
+
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskradar/attachments/clipboard_image.dart';
+import 'package:taskradar/attachments/compress.dart';
+import 'package:taskradar/domain/outbox_overlay.dart';
+import 'package:taskradar/models/task.dart';
 import 'package:taskradar/navigation/app_routes.dart';
+import 'package:taskradar/providers/attachment_providers.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
@@ -12,6 +21,8 @@ import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/widgets/ai_tidy.dart';
+import 'package:taskradar/storage/outbox_store.dart';
+import 'package:taskradar/widgets/editor/attachment_strip.dart';
 import 'package:taskradar/widgets/editor/checklist_section.dart';
 import 'package:taskradar/widgets/editor/editor_theme.dart';
 import 'package:taskradar/widgets/editor/smart_text_controller.dart';
@@ -38,6 +49,13 @@ void main() {
   late FakeProjectBackend server;
   late FakeOutboxStore outbox;
   late String projectId;
+  late _FakeQueue pictures;
+  late _FakeClipboard clipboard;
+
+  // A real 1x1 PNG: what a pasted screenshot looks like to the editor.
+  final png = base64Decode(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  );
 
   /// 15:00 on Wednesday 11 November 2026: «завтра» is the 12th.
   DateTime clock() => DateTime(2026, 11, 11, 15);
@@ -47,6 +65,8 @@ void main() {
     server = FakeProjectBackend(backend);
     outbox = FakeOutboxStore();
     FakeHistoryBackend(backend);
+    pictures = _FakeQueue();
+    clipboard = _FakeClipboard();
     projectId = server.addProject(name: 'Дом', id: 'prj_dom');
   });
 
@@ -61,6 +81,9 @@ void main() {
     boardSnapshotStoreProvider.overrideWithValue(FakeBoardSnapshotStore()),
     outboxStoreProvider.overrideWithValue(outbox),
     deviceTimeZoneNameProvider.overrideWith((ref) async => 'Europe/Moscow'),
+    attachmentQueueProvider.overrideWithValue(pictures),
+    imageEncoderProvider.overrideWithValue(null),
+    clipboardImageReaderProvider.overrideWithValue(clipboard),
     if (voice) ...[
       voiceRecorderProvider.overrideWithValue(FakeVoiceRecorder()),
       speechRecognizerProvider.overrideWithValue(
@@ -1249,6 +1272,219 @@ void main() {
       expect(tester.getSize(find.byType(TaskEditor)).width, 560);
     });
   });
+
+  group('pictures in the editor', () {
+    final desktop = TargetPlatformVariant.only(TargetPlatform.windows);
+
+    Future<void> pressCtrlV(WidgetTester tester) async {
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyV);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await settle(tester);
+    }
+
+    testWidgets(
+      'Ctrl+V of a screenshot in the compact sheet: expands, shows the draft, '
+      'uploads it after «Добавить»',
+      (tester) async {
+        clipboard.image = png;
+        await pumpHost(
+          tester,
+          (context) => AppRoutes.openNewTask(context, projectId: projectId),
+        );
+        expect(find.text('ОПИСАНИЕ'), findsNothing);
+
+        await tester.showKeyboard(titleField());
+        await pressCtrlV(tester);
+
+        // Expanded, so the picture is in view; the title took no text.
+        expect(find.text('ОПИСАНИЕ'), findsOneWidget);
+        expect(find.byType(AttachmentTile), findsOneWidget);
+        expect(titleController(tester).text, isEmpty);
+        expect(pictures.added, isEmpty);
+
+        // No title: the task cannot be created, but the picture is not
+        // thrown away either.
+        await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+        await settle(tester);
+        expect(find.byType(TaskEditor), findsOneWidget);
+        expect(find.byType(AttachmentTile), findsOneWidget);
+        expect(
+          find.textContaining('без этого задачу не создать'),
+          findsOneWidget,
+        );
+        expect(server.tasks, isEmpty);
+
+        await tester.enterText(titleField(), 'Ошибка на экране оплаты');
+        await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+        await settle(tester);
+
+        final id = server.tasks.single['id'] as String;
+        expect(pictures.added, <String>[id]);
+        expect(pictures.files.single.mimeType, 'image/png');
+        expect(find.byType(TaskEditor), findsNothing);
+      },
+      variant: desktop,
+    );
+
+    testWidgets(
+      'a new task with only a picture asks before it is closed',
+      (tester) async {
+        clipboard.image = png;
+        await pumpNew(tester);
+        await tester.showKeyboard(titleField());
+        await pressCtrlV(tester);
+        expect(find.byType(AttachmentTile), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Закрыть'));
+        await settle(tester);
+        expect(find.text('Выйти без сохранения?'), findsOneWidget);
+        expect(find.text('Новая задача не будет создана.'), findsOneWidget);
+      },
+      variant: desktop,
+    );
+
+    testWidgets('an empty new task still closes on «Добавить» quietly', (
+      tester,
+    ) async {
+      await pumpNew(tester);
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+      expect(find.byType(TaskEditor), findsNothing);
+    });
+
+    testWidgets(
+      'Ctrl+V in an existing task uploads at once; text still pastes',
+      (tester) async {
+        final taskId = server.addTask(
+          projectId: projectId,
+          title: 'Сломан вход',
+        );
+        await pumpTask(tester, taskId);
+        await tester.showKeyboard(titleField());
+
+        clipboard.image = png;
+        await pressCtrlV(tester);
+        expect(pictures.added, <String>[taskId]);
+        expect(titleController(tester).text, 'Сломан вход');
+
+        // Text on the clipboard goes to the field as before.
+        clipboard.image = null;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async => switch (call.method) {
+            'Clipboard.getData' => <String, Object?>{'text': ' в подъезд'},
+            'Clipboard.hasStrings' => <String, Object?>{'value': true},
+            _ => null,
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        final controller = titleController(tester);
+        controller.selection = TextSelection.collapsed(
+          offset: controller.text.length,
+        );
+        await pressCtrlV(tester);
+        expect(titleController(tester).text, 'Сломан вход в подъезд');
+        expect(pictures.added, hasLength(1));
+      },
+      variant: desktop,
+    );
+
+    testWidgets('the Android keyboard inserts a picture into either field', (
+      tester,
+    ) async {
+      await pumpNew(tester);
+      // Title and description both take keyboard pictures.
+      final configs = <ContentInsertionConfiguration>[
+        for (final field in tester.widgetList<TextField>(
+          find.byType(TextField),
+        ))
+          ?field.contentInsertionConfiguration,
+      ];
+      expect(configs, hasLength(2));
+      expect(configs.first.allowedMimeTypes, contains('image/png'));
+
+      configs.first.onContentInserted(
+        KeyboardInsertedContent(
+          mimeType: 'image/png',
+          uri: 'content://keyboard/1',
+          data: png,
+        ),
+      );
+      await settle(tester);
+      expect(find.byType(AttachmentTile), findsOneWidget);
+
+      // A GIF (not a type the server takes) is ignored.
+      configs.last.onContentInserted(
+        KeyboardInsertedContent(
+          mimeType: 'image/gif',
+          uri: 'content://keyboard/2',
+          data: Uint8List.fromList(<int>[0x47, 0x49, 0x46]),
+        ),
+      );
+      await settle(tester);
+      expect(find.byType(AttachmentTile), findsOneWidget);
+    });
+  });
+}
+
+class _FakeQueue implements AttachmentQueue {
+  final List<String> added = <String>[];
+  final List<XFile> files = <XFile>[];
+
+  @override
+  Future<PendingAttachment> add(
+    String taskIdOrLocal,
+    XFile file, {
+    String? projectId,
+    String? title,
+  }) async {
+    added.add(taskIdOrLocal);
+    files.add(file);
+    return PendingAttachment(
+      entry: OutboxEntry(
+        key: 'k${added.length}',
+        kind: OutboxKind.uploadAttachment,
+        projectId: projectId ?? 'p',
+        title: title ?? '',
+        body: const <String, Object?>{},
+        createdAt: DateTime.utc(2026),
+      ),
+      state: PendingAttachmentState.waiting,
+    );
+  }
+
+  @override
+  Future<List<PendingAttachment>> addAll(
+    String taskIdOrLocal,
+    List<XFile> files, {
+    String? projectId,
+    String? title,
+  }) async => <PendingAttachment>[
+    for (final file in files)
+      await add(taskIdOrLocal, file, projectId: projectId, title: title),
+  ];
+
+  @override
+  Future<void> discard(PendingAttachment pending) async {}
+
+  @override
+  Future<void> remove(Task task, String attachmentId) async {}
+
+  @override
+  Future<void> retry(PendingAttachment pending) async {}
+}
+
+class _FakeClipboard implements ClipboardImageReader {
+  Uint8List? image;
+
+  @override
+  Future<Uint8List?> readImage() async => image;
 }
 
 class _ReadyModel extends VoiceModelInstallation {
