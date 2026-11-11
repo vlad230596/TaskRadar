@@ -7,7 +7,10 @@ import '../api/api_exception.dart';
 import '../api/dictation_api.dart';
 import '../domain/ai_level.dart';
 import '../domain/reminder_schedule.dart';
+import '../geofence/geofence_syncer.dart';
+import '../geofence/location_access.dart';
 import '../providers/dictation_providers.dart';
+import '../providers/geofence_providers.dart';
 import '../providers/reminder_providers.dart';
 import '../providers/voice_providers.dart';
 import '../theme/app_theme.dart';
@@ -59,12 +62,7 @@ class SettingsScreen extends ConsumerWidget {
                     ),
                     children: const <Widget>[
                       _SectionLabel('Напоминания'),
-                      _SettingsGroup(
-                        children: <Widget>[
-                          _ReminderTimeTile(),
-                          _PermissionsTile(),
-                        ],
-                      ),
+                      _RemindersGroup(),
                       _SectionLabel('Голос'),
                       _SettingsGroup(children: <Widget>[_VoiceModelTile()]),
                       _SectionLabel('AI'),
@@ -117,6 +115,261 @@ class SettingsScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// The reminders group: the hour, the permissions, and -- on Android only,
+/// where zones exist -- «Напоминания по месту».
+class _RemindersGroup extends ConsumerWidget {
+  const _RemindersGroup();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final places = ref.watch(geofenceGatewayProvider).supported;
+    return _SettingsGroup(
+      children: <Widget>[
+        const _ReminderTimeTile(),
+        const _PermissionsTile(),
+        if (places) const _PlaceRemindersTile(),
+      ],
+    );
+  }
+}
+
+/// «Напоминания по месту» (`design/task-editor-spec.md` §7): off by default,
+/// and on only once Android has granted location access **all the time** --
+/// a geofence is delivered to a closed app or not at all, so «только во время
+/// использования» would be a switch that is on and does nothing.
+///
+/// The flow is two system prompts with an explanation before each, because
+/// the second one (Android 11+) is not a dialog but a trip to the app's
+/// location page, and somebody sent there unannounced presses back.
+class _PlaceRemindersTile extends ConsumerWidget {
+  const _PlaceRemindersTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(placeRemindersSettingProvider).value;
+    final report = enabled == true
+        ? ref.watch(geofenceSyncProvider).value
+        : null;
+    final missingAccess =
+        report?.status == GeofenceSyncStatus.noBackgroundAccess;
+    final failed = report?.status == GeofenceSyncStatus.failed;
+
+    final String description;
+    if (enabled == null) {
+      description = 'Загружаем…';
+    } else if (!enabled) {
+      description =
+          'Напомнит о задаче, когда окажетесь рядом с её местом. Нужен '
+          'доступ к геопозиции «Разрешать всегда»; координаты остаются на '
+          'телефоне.';
+    } else if (missingAccess) {
+      description =
+          'Включено, но нет доступа к геопозиции в фоне — места не '
+          'сработают. Нажмите, чтобы выдать.';
+    } else if (failed) {
+      description = 'Не удалось зарегистрировать места: ${report!.error}';
+    } else if (report == null) {
+      description = 'Включено.';
+    } else {
+      final over = report.overLimit > 0
+          ? ' Ещё ${report.overLimit} не помещаются в лимит телефона.'
+          : '';
+      description = 'Включено. Отслеживается мест: ${report.planned}.$over';
+    }
+
+    return _SettingRow(
+      icon: Icons.place_outlined,
+      tone: missingAccess || failed
+          ? _Tone.alarm
+          : enabled == true
+          ? _Tone.ready
+          : _Tone.plain,
+      title: 'Напоминания по месту',
+      description: description,
+      descriptionColor: missingAccess || failed ? AppColors.alarm : null,
+      trailing: Switch(
+        value: enabled ?? false,
+        onChanged: enabled == null
+            ? null
+            : (on) => on
+                  ? enablePlaceReminders(context, ref)
+                  : _disable(context, ref),
+      ),
+      onTap: missingAccess
+          ? () => enablePlaceReminders(context, ref, explain: false)
+          : null,
+    );
+  }
+
+  Future<void> _disable(BuildContext context, WidgetRef ref) => runMutation(
+    context,
+    () => ref.read(placeRemindersSettingProvider.notifier).setEnabled(false),
+    failure: 'Выключено, но сохранить настройку не удалось.',
+  );
+}
+
+/// Turns «Напоминания по месту» on, asking for location access on the way:
+/// an explanation, the foreground prompt, a second explanation, the
+/// background prompt. Any refusal is explained and leaves the switch off.
+///
+/// Returns whether the feature ended up on.
+Future<bool> enablePlaceReminders(
+  BuildContext context,
+  WidgetRef ref, {
+  bool explain = true,
+}) async {
+  final access = ref.read(locationAccessProvider);
+
+  if (explain) {
+    final go = await _ask(
+      context,
+      title: 'Напоминания по месту',
+      message:
+          'Когда вы окажетесь рядом с местом задачи, телефон покажет '
+          '«Рядом: …» — даже если приложение закрыто.\n\n'
+          'Для этого Android попросит два разрешения: сначала доступ к '
+          'геопозиции, затем — «Разрешать всегда». Координаты не уходят '
+          'на сервер: зоны отслеживает сам телефон.',
+      confirm: 'Продолжить',
+    );
+    if (!go || !context.mounted) return false;
+  }
+
+  var level = await access.check();
+  if (level == LocationAccessLevel.denied) level = await access.request();
+  if (!context.mounted) return false;
+
+  if (level == LocationAccessLevel.unsupported) {
+    await _explainRefusal(
+      context,
+      access,
+      message:
+          'На этом устройстве геопозиция недоступна, поэтому напоминания по '
+          'месту не включены.',
+      offerSettings: false,
+    );
+    return false;
+  }
+
+  if (!level.canLocate) {
+    await _explainRefusal(
+      context,
+      access,
+      message:
+          'Без доступа к геопозиции напоминания по месту не работают, '
+          'поэтому они остались выключенными. Разрешить можно в настройках '
+          'телефона: TaskRadar → Разрешения → Местоположение → '
+          '«Разрешать всегда».',
+      offerSettings: level == LocationAccessLevel.deniedForever,
+    );
+    return false;
+  }
+
+  if (level == LocationAccessLevel.whileInUse) {
+    final go = await _ask(
+      context,
+      title: 'Ещё одно разрешение',
+      message:
+          'Сейчас приложение видит геопозицию, только пока открыто. Чтобы '
+          'напоминание пришло, когда телефон в кармане, на следующем экране '
+          'выберите «Разрешать всегда».',
+      confirm: 'Открыть',
+    );
+    if (!go || !context.mounted) return false;
+    level = await access.request();
+    if (!context.mounted) return false;
+  }
+
+  if (level != LocationAccessLevel.always) {
+    await _explainRefusal(
+      context,
+      access,
+      message:
+          'Доступ есть только «во время использования» — так телефон не '
+          'сообщит, что вы рядом, когда приложение закрыто. Напоминания по '
+          'месту остались выключенными. Включить можно в настройках '
+          'телефона: TaskRadar → Разрешения → Местоположение → '
+          '«Разрешать всегда».',
+      offerSettings: true,
+    );
+    return false;
+  }
+
+  final saved = await runMutation(
+    context,
+    () => ref.read(placeRemindersSettingProvider.notifier).setEnabled(true),
+    failure: 'Включено, но сохранить настройку не удалось.',
+  );
+
+  // A place reminder is a notification; without POST_NOTIFICATIONS it would
+  // fire into nothing, just like a date reminder.
+  try {
+    final notifications = await ref.read(
+      notificationPermissionsProvider.future,
+    );
+    if (notifications.notificationsEnabled == false) {
+      await ref.read(notificationPermissionsProvider.notifier).request();
+    }
+    await ref.read(geofenceSyncProvider.notifier).resync();
+  } catch (error) {
+    debugPrint('After enabling place reminders: $error');
+  }
+  return saved;
+}
+
+Future<bool> _ask(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirm,
+}) async {
+  final answer = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: Text(message),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Отмена'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(true),
+          child: Text(confirm),
+        ),
+      ],
+    ),
+  );
+  return answer ?? false;
+}
+
+Future<void> _explainRefusal(
+  BuildContext context,
+  LocationAccess access, {
+  required String message,
+  required bool offerSettings,
+}) async {
+  final open = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Нет доступа к геопозиции'),
+      content: Text(message),
+      actions: <Widget>[
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Понятно'),
+        ),
+        if (offerSettings)
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Открыть настройки'),
+          ),
+      ],
+    ),
+  );
+  if (open == true) await access.openAppSettings();
 }
 
 /// The speech model (F9): downloading it, seeing what it costs, deleting it.

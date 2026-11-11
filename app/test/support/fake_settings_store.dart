@@ -33,6 +33,9 @@ class FakeSettingsStore implements SettingsStore {
   /// What [readAiMulti] returns. Null is "never chosen": one model.
   bool? aiMulti;
 
+  /// What [readPlaceReminders] returns. Null is "never chosen": off.
+  bool? placeReminders;
+
   /// When set, every write throws it.
   Object? writeFailure;
 
@@ -123,5 +126,15 @@ class FakeSettingsStore implements SettingsStore {
     final failure = writeFailure;
     if (failure != null) throw failure;
     aiLevel = level;
+  }
+
+  @override
+  Future<bool?> readPlaceReminders() async => placeReminders;
+
+  @override
+  Future<void> writePlaceReminders(bool enabled) async {
+    final failure = writeFailure;
+    if (failure != null) throw failure;
+    placeReminders = enabled;
   }
 }
