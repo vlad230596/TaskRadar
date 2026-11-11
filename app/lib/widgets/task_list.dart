@@ -670,6 +670,19 @@ class TaskRow extends ConsumerWidget {
                     ),
                   ),
                 ],
+                // 📍: the task has a place reminder (spec, section 7).
+                if (task.location != null) ...<Widget>[
+                  const SizedBox(width: 6),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3),
+                    child: Icon(
+                      Icons.place_outlined,
+                      size: 16,
+                      color: AppColors.muted,
+                      semanticLabel: 'есть место',
+                    ),
+                  ),
+                ],
                 // No second line to put it on, so it rides at the end of the
                 // title -- and never wraps or shrinks. See `widgets/glance.dart`.
                 // Not on a done row: how long a finished task sat still is not

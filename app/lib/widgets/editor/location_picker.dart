@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -259,18 +258,31 @@ class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
                 ),
               ],
             ),
-            RichAttributionWidget(
-              alignment: AttributionAlignment.bottomLeft,
-              showFlutterMapAttribution: false,
-              attributions: <SourceAttribution>[
-                TextSourceAttribution(
-                  '© участники OpenStreetMap',
-                  onTap: () => launchUrl(
-                    Uri.parse(osmCopyrightUrl),
-                    mode: LaunchMode.externalApplication,
+            // Always visible, not behind an «i» button: the OSM policy asks
+            // for attribution on the map itself.
+            Align(
+              alignment: Alignment.bottomLeft,
+              child: GestureDetector(
+                onTap: () => launchUrl(
+                  Uri.parse(osmCopyrightUrl),
+                  mode: LaunchMode.externalApplication,
+                ),
+                child: Container(
+                  color: const Color(0xD9FFFFFF),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 3,
+                  ),
+                  child: const Text(
+                    '© участники OpenStreetMap',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF1B2050),
+                      decoration: TextDecoration.underline,
+                    ),
                   ),
                 ),
-              ],
+              ),
             ),
           ],
         ),

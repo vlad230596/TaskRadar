@@ -5,6 +5,10 @@ import '../../models/checklist_item.dart';
 import '../../models/task.dart';
 import '../../models/task_location.dart';
 import '../../providers/project_providers.dart';
+import 'attribute_bar.dart';
+import 'editor_theme.dart';
+import 'location_picker.dart';
+import 'place_tile.dart';
 
 /// The places in the task editor where the checklist (WP5), the pictures
 /// (WP6) and the place (WP7) plug in (task-editor spec, section 11).
@@ -166,7 +170,30 @@ abstract final class EditorSlots {
   static List<Widget> chips(
     EditorSectionScope scope, {
     required VoidCallback onOpen,
-  }) => const <Widget>[];
+  }) => <Widget>[
+    // WP7: «📍 Место». Tapping goes straight to the map; the section below
+    // then shows the place with its status.
+    Builder(
+      builder: (context) {
+        final extras = scope.extras;
+        final place = extras.location;
+        final label = place?.label?.trim() ?? '';
+        return AttributeChip(
+          icon: Icons.place_outlined,
+          label: label.isEmpty ? 'Место' : label,
+          filled: place != null,
+          tooltip: place == null ? 'Напомнить по месту' : 'Изменить место',
+          onTap: () async {
+            onOpen();
+            final picked = await pickLocation(context, initial: place);
+            if (picked != null) extras.location = picked;
+          },
+          onClear: place == null ? null : () => extras.location = null,
+          clearTooltip: 'Убрать место',
+        );
+      },
+    ),
+  ];
 
   /// WP5: `ChecklistSection(items: scope.extras.checklist ?? [], onChanged:
   /// (items) => scope.extras.checklist = items, onToggle: …)` when
@@ -181,5 +208,29 @@ abstract final class EditorSlots {
 
   /// WP7: `LocationTile(value: scope.extras.location, onChanged: (v) =>
   /// scope.extras.location = v)` when `location != null || locationOpen`.
-  static Widget location(EditorSectionScope scope) => const SizedBox.shrink();
+  static Widget location(EditorSectionScope scope) {
+    final extras = scope.extras;
+    if (!scope.expanded) return const SizedBox.shrink();
+    if (extras.location == null && !extras.locationOpen) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const EditorSectionLabel('Место'),
+          const SizedBox(height: 8),
+          PlaceTile(
+            value: extras.location,
+            taskId: scope.task?.id,
+            onChanged: (value) {
+              if (value == null) extras.locationOpen = false;
+              extras.location = value;
+            },
+          ),
+        ],
+      ),
+    );
+  }
 }
