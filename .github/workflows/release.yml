@@ -298,7 +298,8 @@ jobs:
         # origin like everything else.
         run: |
           flutter pub get
-          flutter build web --release --no-web-resources-cdn --base-href /
+          flutter build web --release --no-web-resources-cdn --base-href / \
+            --build-name "$VERSION" --build-number "$GITHUB_RUN_NUMBER"
           test -s build/web/index.html
           grep -q flutter_bootstrap.js build/web/index.html
           test -d build/web/canvaskit
