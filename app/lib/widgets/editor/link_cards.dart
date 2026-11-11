@@ -1,55 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../domain/smart_tokens.dart';
+import '../../providers/attachment_providers.dart';
 import '../../theme/tokens.dart';
 import 'editor_theme.dart';
 
-/// What the server knows about a link (`GET /link-preview`, spec section 8):
-/// the page's title and site name, either may be missing.
-@immutable
-class LinkPreview {
-  const LinkPreview({required this.url, this.title, this.siteName});
-
-  final String url;
-  final String? title;
-  final String? siteName;
-}
-
-/// Where link previews come from. WP2 provides the real one (the API call,
-/// the in-memory cache and the `read_cache_store` copy) by overriding
-/// [linkPreviewSourceProvider]; until then -- and offline -- a card shows the
-/// domain, which is the spec's offline behaviour anyway.
-abstract interface class LinkPreviewSource {
-  /// The preview of [url], or null when there is none (no network, the page
-  /// has no title, the server said 204).
-  Future<LinkPreview?> fetch(String url);
-}
-
-/// The stand-in until WP2: never a preview.
-class NoLinkPreviews implements LinkPreviewSource {
-  const NoLinkPreviews();
-
-  @override
-  Future<LinkPreview?> fetch(String url) async => null;
-}
-
-/// The link-preview source the editor reads. Override it (WP2) with the
-/// server-backed one.
-final Provider<LinkPreviewSource> linkPreviewSourceProvider =
-    Provider<LinkPreviewSource>((ref) => const NoLinkPreviews());
-
-/// One link's preview, fetched once per editor visit.
-final linkPreviewProvider = FutureProvider.autoDispose
-    .family<LinkPreview?, String>(
-      (ref, url) => ref.watch(linkPreviewSourceProvider).fetch(url),
-    );
-
-/// Opens a link in the browser. `url_launcher` arrives with WP0; until it
-/// does, the default copies the address and says so -- a link the user can
-/// paste is better than a tap that does nothing. Override
-/// [linkOpenerProvider] with `launchUrl(uri, mode: externalApplication)`.
+/// Opens a link in the browser (spec section 5: `url_launcher`,
+/// `LaunchMode.externalApplication`). A provider so a test can see the tap
+/// without a platform channel. When nothing can open it, the address is
+/// copied and said so -- a link the user can paste beats a dead tap.
 typedef LinkOpener = Future<void> Function(BuildContext context, String url);
 
 Future<void> copyLinkToClipboard(BuildContext context, String url) async {
@@ -60,8 +22,21 @@ Future<void> copyLinkToClipboard(BuildContext context, String url) async {
     ..showSnackBar(const SnackBar(content: Text('Ссылка скопирована')));
 }
 
+Future<void> openLinkExternally(BuildContext context, String url) async {
+  final uri = Uri.tryParse(url);
+  var opened = false;
+  if (uri != null) {
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      opened = false;
+    }
+  }
+  if (!opened && context.mounted) await copyLinkToClipboard(context, url);
+}
+
 final Provider<LinkOpener> linkOpenerProvider = Provider<LinkOpener>(
-  (ref) => copyLinkToClipboard,
+  (ref) => openLinkExternally,
 );
 
 /// The domain of [url] without `www.`, for a card with no preview.

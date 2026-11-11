@@ -7,13 +7,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
 import '../api/dictation_api.dart';
+import '../api/patch_field.dart';
 import '../domain/ai_mark.dart';
 import '../domain/smart_tokens.dart';
 import '../domain/task_age.dart';
 import '../models/board_project.dart';
+import '../models/checklist_item.dart';
 import '../models/history_task_event.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
+import '../models/task_location.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/board_providers.dart';
@@ -255,6 +258,10 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
   ReminderValue? _reminder;
   String? _categoryId;
 
+  /// A new task's status: «Открыта» or «Блокер» -- a task is not created
+  /// done.
+  TaskStatus _newStatus = TaskStatus.pending;
+
   /// The project [_categoryId] was picked in: a category does not follow
   /// the task to another project.
   String? _categoryProject;
@@ -471,6 +478,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
       _note.text.trim().isNotEmpty ||
       _reminder != null ||
       _categoryId != null ||
+      _newStatus != TaskStatus.pending ||
       _extras.isDirty;
 
   bool _reminderDiffers(Task task) =>
@@ -512,6 +520,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     _openedTitle = task.title;
     _note.reset(task.description ?? '');
     _noteOpen = _note.text.trim().isNotEmpty;
+    _extras.loadFrom(task);
     _rememberValues();
   }
 
@@ -525,6 +534,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     String title, {
     String? description,
     String? categoryId,
+    TaskStatus? status,
     ReminderValue? reminder,
     String? dictationParseId,
   }) async {
@@ -537,8 +547,11 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
             title,
             description: description,
             categoryId: categoryId,
+            status: status,
             remindAt: reminder?.date,
             remindTime: reminder?.time,
+            checklist: _extras.checklist,
+            location: _extras.location,
             dictationParseId: dictationParseId,
           );
     } finally {
@@ -570,6 +583,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
         title,
         description: note.isEmpty ? null : note,
         categoryId: category,
+        status: _newStatus == TaskStatus.pending ? null : _newStatus,
         reminder: reminder,
         dictationParseId: _tidyParseId,
       ),
@@ -577,7 +591,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     );
     _creating = false;
     if (outcome == null || !mounted) return;
-    await _extras.afterCreate(projectId: project);
+    await _extras.afterCreate(projectId: project, outcome: outcome);
     if (!mounted) return;
 
     // Said only where the result is not in view: another project's list, or
@@ -589,7 +603,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
         ..showSnackBar(
           SnackBar(
             content: Text(
-              outcome == WriteOutcome.queued
+              outcome.isQueued
                   ? 'Задача$where сохранена на телефоне — уйдёт при связи.'
                   : 'Задача добавлена$where.',
             ),
@@ -615,6 +629,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     _reminderFromAi = false;
     _categoryId = null;
     _categoryProject = null;
+    _newStatus = TaskStatus.pending;
     _tidyParseId = null;
     _extras.clear();
     _rememberValues();
@@ -628,11 +643,20 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     final reminderChanged = _reminderDiffers(task);
     final categoryChanged = category != task.categoryId;
 
-    // Only the writes that changed: `editTitle` and `editDescription` each
-    // short-circuit on an unchanged value, so a title edit is one PATCH. A
-    // tidied text is one PATCH of both, with the record of the answer.
+    // One PATCH of what changed (`ProjectTasks.edit` drops every field equal
+    // to the row's): the text, what was recognised in it, the extras' edits.
+    // A tidied text goes first as its own PATCH of both fields with the
+    // record of the answer -- sent even when nothing changed, because "the
+    // answer was right as it came" is the most useful label there is.
     final parseId = _tidyParseId;
+    final checklist = _extras.checklistChanged
+        ? PatchField<List<ChecklistItem>>.toOrClear(_extras.checklist)
+        : const PatchField<List<ChecklistItem>>.keep();
+    final location = _extras.locationChanged
+        ? PatchField<TaskLocation>.toOrClear(_extras.location)
+        : const PatchField<TaskLocation>.keep();
     final ok = await runMutation(context, () async {
+      var base = task;
       if (parseId != null) {
         await _tasks.editText(
           task,
@@ -640,18 +664,25 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
           description: note.isEmpty ? null : note,
           dictationParseId: parseId,
         );
-      } else {
-        await _tasks.editTitle(task, title);
-        await _tasks.editDescription(task, note.isEmpty ? null : note);
+        base = _row ?? task;
       }
-      if (reminderChanged) {
-        final fresh = _row ?? task;
-        if (fresh.status != TaskStatus.done) {
-          await _tasks.setRemindAt(fresh, reminder?.date, time: reminder?.time);
-        }
-      }
-      if (categoryChanged) await _tasks.setCategory(_row ?? task, category);
-      await _extras.saveExisting(task);
+      final remind = reminderChanged && base.status != TaskStatus.done;
+      await _tasks.edit(
+        base,
+        title: title,
+        description: PatchField<String>.toOrClear(note.isEmpty ? null : note),
+        categoryId: categoryChanged
+            ? PatchField<String>.toOrClear(category)
+            : const PatchField<String>.keep(),
+        remindAt: remind
+            ? PatchField<String>.toOrClear(reminder?.date)
+            : const PatchField<String>.keep(),
+        remindTime: remind && reminder != null
+            ? PatchField<String>.toOrClear(reminder.time)
+            : const PatchField<String>.keep(),
+        checklist: checklist,
+        location: location,
+      );
     }, failure: 'Не удалось сохранить задачу.');
     if (!ok || !mounted) return;
     _tidyParseId = null;
@@ -711,7 +742,9 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     });
     final task = _row;
     if (task == null || task.status == TaskStatus.done) return;
-    if (ReminderValue.fromRow(task.remindAt, task.remindTime) == value) return;
+    // Clearing what is not there is nothing; a value picked is written even
+    // when it is the same -- the user confirmed a day.
+    if (value == null && task.remindAt == null) return;
     await runMutation(
       context,
       () => _tasks.setRemindAt(task, value?.date, time: value?.time),
@@ -1539,6 +1572,17 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
             _slot(EditorSlots.checklist(scope)),
             _slot(EditorSlots.attachments(scope)),
             _slot(EditorSlots.location(scope)),
+            if (task == null) ...<Widget>[
+              const SizedBox(height: 18),
+              _statusSegments(
+                statuses: const <TaskStatus>[
+                  TaskStatus.pending,
+                  TaskStatus.blocked,
+                ],
+                current: _newStatus,
+                onTap: (status) => setState(() => _newStatus = status),
+              ),
+            ],
             if (task != null) ...<Widget>[
               const SizedBox(height: 18),
               _statusRow(task),
@@ -1606,6 +1650,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
                 decoration: InputDecoration(
                   filled: false,
                   isCollapsed: true,
+                  contentPadding: EdgeInsets.zero,
                   border: InputBorder.none,
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
@@ -1805,6 +1850,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
             decoration: InputDecoration(
               filled: false,
               isCollapsed: true,
+              contentPadding: EdgeInsets.zero,
               border: InputBorder.none,
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,
@@ -1817,7 +1863,17 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     );
   }
 
-  Widget _statusRow(Task task) {
+  Widget _statusRow(Task task) => _statusSegments(
+    statuses: _statusOrder,
+    current: task.status,
+    onTap: (status) => unawaited(_setStatus(task, status)),
+  );
+
+  Widget _statusSegments({
+    required List<TaskStatus> statuses,
+    required TaskStatus current,
+    required ValueChanged<TaskStatus> onTap,
+  }) {
     return Container(
       height: 40,
       padding: const EdgeInsets.all(3),
@@ -1829,15 +1885,15 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final status in _statusOrder) ...<Widget>[
+          for (final status in statuses) ...<Widget>[
             Expanded(
               child: _StatusSegment(
                 status: status,
-                selected: task.status == status,
-                onTap: () => unawaited(_setStatus(task, status)),
+                selected: current == status,
+                onTap: () => onTap(status),
               ),
             ),
-            if (status != _statusOrder.last) const SizedBox(width: 3),
+            if (status != statuses.last) const SizedBox(width: 3),
           ],
         ],
       ),

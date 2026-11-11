@@ -139,6 +139,20 @@ void main() {
     await settle(tester);
   }
 
+  /// "Удалить задачу" from the editor's ⋯ menu.
+  Future<void> deleteFromMenu(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Ещё'));
+    await settle(tester);
+    await tester.tap(find.text('Удалить задачу'));
+    await settle(tester);
+  }
+
+  /// The category chip of the task editor, showing [name].
+  Finder categoryChip(String name) => find.descendant(
+    of: find.byTooltip('Категория'),
+    matching: find.text(name),
+  );
+
   /// Opens the blank task screen from the end of the list.
   Future<void> openDraft(WidgetTester tester) async {
     await tester.tap(find.widgetWithText(OutlinedButton, 'Задача'));
@@ -554,10 +568,10 @@ void main() {
       await pumpProject(tester);
 
       await openDraft(tester);
-      // The field this screen exists for: sized to its text, at 16.5 px.
+      // The task editor's quick-add sheet: the title sized to its text.
       expect(find.byType(TaskEditor), findsOneWidget);
       final field = tester.widget<TextField>(find.byType(TextField).first);
-      expect(field.style?.fontSize, 16.5);
+      expect(field.style?.fontSize, 22);
       expect(field.maxLines, isNull);
 
       await tester.enterText(find.byType(TextField).first, 'Позвонить прорабу');
@@ -720,6 +734,7 @@ void main() {
 
       await openTask(tester, 'Старое');
       await tester.enterText(find.byType(TextField).first, 'Новое');
+      await tester.pump(); // "Сохранить" shows once there is an edit.
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
@@ -735,8 +750,7 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Лишняя');
 
-      await tester.tap(find.byTooltip('Удалить задачу'));
-      await settle(tester);
+      await deleteFromMenu(tester);
       expect(find.text('Удалить задачу?'), findsOneWidget);
 
       // Cancelling really cancels.
@@ -744,8 +758,7 @@ void main() {
       await settle(tester);
       expect(server.tasks, hasLength(1));
 
-      await tester.tap(find.byTooltip('Удалить задачу'));
-      await settle(tester);
+      await deleteFromMenu(tester);
       await tester.tap(find.widgetWithText(FilledButton, 'Удалить'));
       await settle(tester);
 
@@ -765,12 +778,13 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Вентилятор в туалете');
 
-      await tester.tap(find.text('Заметка к задаче'));
+      await tester.tap(find.text('+ Описание'));
       await settle(tester);
       await tester.enterText(
         find.byType(TextField).last,
         'у Петра до вторника',
       );
+      await tester.pump(); // "Сохранить" shows once there is an edit.
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
@@ -784,6 +798,7 @@ void main() {
         'у Петра до вторника',
       );
       await tester.enterText(find.byType(TextField).last, '');
+      await tester.pump(); // "Сохранить" shows once there is an edit.
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
@@ -910,6 +925,7 @@ void main() {
       await openTask(tester, 'Без группы');
 
       expect(find.text('Без категории'), findsOneWidget);
+      await tester.ensureVisible(find.text('Без категории'));
       await tester.tap(find.text('Без категории'));
       await settle(tester);
       await tester.tap(find.text('Документы'));
@@ -921,7 +937,7 @@ void main() {
         )['categoryId'],
         papers,
       );
-      expect(find.text('Категория: Документы'), findsOneWidget);
+      expect(categoryChip('Документы'), findsOneWidget);
     });
 
     testWidgets('a new category made from the picker is picked at once', (
@@ -930,6 +946,7 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Без группы');
 
+      await tester.ensureVisible(find.text('Без категории'));
       await tester.tap(find.text('Без категории'));
       await settle(tester);
       await tester.tap(find.text('Новая категория…'));
@@ -954,7 +971,7 @@ void main() {
         )['categoryId'],
         created['id'],
       );
-      expect(find.text('Категория: Закупки'), findsOneWidget);
+      expect(categoryChip('Закупки'), findsOneWidget);
     });
 
     testWidgets('deleting a category keeps its tasks, ungrouped', (
@@ -989,10 +1006,14 @@ void main() {
       await pumpProject(tester);
       await openDraft(tester);
 
-      // The description is there from the start, not behind a button.
-      expect(find.text('ЗАМЕТКА'), findsOneWidget);
+      // Quick-add opens compact; pulled up, the description is there from
+      // the start, not behind a button.
+      await tester.tap(find.byTooltip('Развернуть'));
+      await settle(tester);
+      expect(find.text('ОПИСАНИЕ'), findsOneWidget);
       await tester.enterText(find.byType(TextField).first, 'Смеситель');
       await tester.enterText(find.byType(TextField).last, 'Хром, не латунь');
+      await tester.ensureVisible(find.text('Без категории'));
       await tester.tap(find.text('Без категории'));
       await settle(tester);
       await tester.tap(find.text('Кухня'));

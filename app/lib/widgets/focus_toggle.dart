@@ -97,6 +97,7 @@ class FocusToggleButton extends ConsumerWidget {
       child: OutlinedButton.icon(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
+          backgroundColor: onDark ? Colors.transparent : null,
           foregroundColor: onDark ? AppColors.voiceBright : AppColors.indigoInk,
           side: BorderSide(
             color: onDark ? AppColors.voiceLevelHigh : AppColors.indigo,

@@ -1051,6 +1051,23 @@ void main() {
       expect(row['status'], 'pending');
     });
 
+    testWidgets('a new task can be created as a blocker, never as done', (
+      tester,
+    ) async {
+      await pumpNew(tester);
+
+      expect(find.text('Открыта'), findsOneWidget);
+      expect(find.text('Сделано'), findsNothing);
+      await tester.enterText(titleField(), 'Жду кабель');
+      await tester.ensureVisible(find.text('Блокер'));
+      await tester.tap(find.text('Блокер'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+
+      expect(server.tasks.single['status'], 'blocked');
+    });
+
     testWidgets('an ambiguous #… offers the projects it could be', (
       tester,
     ) async {
