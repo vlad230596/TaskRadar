@@ -37,7 +37,8 @@ String? _calendarDate(String? value) =>
     value == null || value.length < 10 ? value : value.substring(0, 10);
 
 /// [rows] as they will be once the outbox has been sent: waiting edits
-/// applied, waiting creates appended.
+/// applied, waiting creates appended, waiting moves taken out of the project
+/// they leave and appended to the one they go to.
 ///
 /// ## Why an overlay and not a write into the list
 ///
@@ -54,8 +55,15 @@ List<Task> overlayOutbox(
   Iterable<OutboxEntry> entries,
   String projectId,
 ) {
+  // In order: a move draws its row in the target, and an edit made after the
+  // move (an entry of the target) lands on that row.
   final waiting = entries
-      .where((entry) => entry.isWaiting && entry.projectId == projectId)
+      .where(
+        (entry) =>
+            entry.isWaiting &&
+            (entry.projectId == projectId ||
+                entry.landsInProjectId == projectId),
+      )
       .toList(growable: false);
   if (waiting.isEmpty) return rows;
 
@@ -67,9 +75,32 @@ List<Task> overlayOutbox(
         if (index >= 0) result[index] = _applyEdit(result[index], entry.body);
       case OutboxKind.createTask:
         result.add(_pendingRow(entry, result));
+      case OutboxKind.moveTask:
+        // Gone from the project it left, and appended to the one it went
+        // to -- unless that list already has it: re-read after the server
+        // took the move, a moment before the entry stops waiting.
+        final moved = entry.row;
+        if (entry.targetProjectId != projectId) {
+          result.removeWhere((row) => row.id == entry.taskId);
+        } else if (moved != null &&
+            !result.any((row) => row.id == entry.taskId)) {
+          result.add(_movedRow(moved, projectId, result));
+        }
     }
   }
   return List<Task>.unmodifiable(result);
+}
+
+/// A moved task as the target project will have it: last, no category (the
+/// server drops it, categories are per project), and not current -- which
+/// task is current is the server's call, as for an unsent create.
+Task _movedRow(Map<String, Object?> json, String projectId, List<Task> rows) {
+  return Task.fromJson(Map<String, dynamic>.from(json)).copyWith(
+    projectId: projectId,
+    categoryId: null,
+    position: rows.isEmpty ? 1000 : rows.last.position + 1000,
+    isCurrent: false,
+  );
 }
 
 Task _applyEdit(Task task, Map<String, Object?> body) {

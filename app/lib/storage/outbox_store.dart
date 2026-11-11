@@ -12,6 +12,13 @@ enum OutboxKind {
   /// `PATCH /tasks/:id`, with the values the edit was made against as
   /// `expected`.
   editTask,
+
+  /// `POST /tasks/:id/move`: the task into the project named in the body's
+  /// `projectId`. The entry's own [OutboxEntry.projectId] is the project it
+  /// leaves, and [OutboxEntry.row] is the task as it was drawn when it was
+  /// moved -- the target's list has never seen it, and the overlay draws it
+  /// there from that copy until the move is sent.
+  moveTask,
 }
 
 /// Where an [OutboxEntry] is in its life.
@@ -61,6 +68,7 @@ class OutboxEntry {
     this.conflictFields = const <String>[],
     this.serverTask,
     this.message,
+    this.row,
   });
 
   /// The idempotency key: `createKey` of a create, and the entry's identity
@@ -99,6 +107,18 @@ class OutboxEntry {
   /// For a refused entry: what the server said.
   final String? message;
 
+  /// For a move: the task as the user saw it when it was moved, in the
+  /// server's JSON. Null for every other kind.
+  final Map<String, Object?>? row;
+
+  /// For a move: the project the task goes to.
+  String? get targetProjectId =>
+      kind == OutboxKind.moveTask ? body['projectId'] as String? : null;
+
+  /// The project whose list holds this entry's row once it is sent: the
+  /// target of a move, the entry's own project for everything else.
+  String get landsInProjectId => targetProjectId ?? projectId;
+
   /// The id an unsent create's row carries in the task list. Prefixed like
   /// every client-invented id (`isOptimisticId`), so nothing tries to edit or
   /// move a row the server has never heard of.
@@ -131,6 +151,7 @@ class OutboxEntry {
     conflictFields: conflictFields ?? this.conflictFields,
     serverTask: serverTask ?? this.serverTask,
     message: message ?? this.message,
+    row: row,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -147,6 +168,7 @@ class OutboxEntry {
     'conflictFields': conflictFields,
     'serverTask': ?serverTask,
     'message': ?message,
+    'row': ?row,
   };
 
   static OutboxEntry fromJson(Map<String, dynamic> json) => OutboxEntry(
@@ -171,6 +193,9 @@ class OutboxEntry {
         ? null
         : Map<String, Object?>.from(json['serverTask'] as Map),
     message: json['message'] as String?,
+    row: json['row'] == null
+        ? null
+        : Map<String, Object?>.from(json['row'] as Map),
   );
 
   @override

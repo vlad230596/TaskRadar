@@ -615,6 +615,124 @@ void main() {
     // The 16 px gutter.
     expect(tester.getTopLeft(find.byType(TextField).first).dx, greaterThan(16));
   });
+
+  group('«Перенести в проект…»', () {
+    /// The task screen pushed over a page, as the app opens it, so that
+    /// leaving it after the move can be seen.
+    Future<void> pumpPushed(WidgetTester tester, String taskId) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            apiClientProvider.overrideWithValue(backend.client),
+            boardSnapshotStoreProvider.overrideWithValue(
+              FakeBoardSnapshotStore(),
+            ),
+            deviceTimeZoneNameProvider.overrideWith(
+              (ref) async => 'Europe/Moscow',
+            ),
+          ],
+          child: MaterialApp(
+            theme: buildAppTheme(),
+            home: Builder(
+              builder: (context) => Scaffold(
+                body: Center(
+                  child: TextButton(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) =>
+                            TaskScreen(projectId: projectId, taskId: taskId),
+                      ),
+                    ),
+                    child: const Text('Открыть задачу'),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Открыть задачу'));
+      await settle(tester);
+    }
+
+    testWidgets('the project chip offers the other live projects, and the '
+        'task leaves for the one picked', (tester) async {
+      server.addProject(name: 'Дача', id: 'prj_dacha');
+      server.addProject(
+        name: 'Старое',
+        id: 'prj_old',
+        archivedAt: FakeProjectBackend.archivedAtStamp,
+      );
+      server.addTask(projectId: 'prj_dacha', title: 'Скосить траву');
+      final id = server.addTask(projectId: projectId, title: 'Покрасить забор');
+      await pumpPushed(tester, id);
+
+      await tester.tap(find.byTooltip('Перенести в проект…'));
+      await settle(tester);
+
+      expect(find.text('Перенести в проект'), findsOneWidget);
+      final sheet = find.byType(BottomSheet);
+      expect(
+        find.descendant(of: sheet, matching: find.text('Дача')),
+        findsOneWidget,
+      );
+      // Neither the project it is in, nor the archive.
+      expect(
+        find.descendant(of: sheet, matching: find.text('Дом')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: sheet, matching: find.text('Старое')),
+        findsNothing,
+      );
+
+      await tester.tap(find.descendant(of: sheet, matching: find.text('Дача')));
+      // The sheet closes, the move and both re-reads land, the screen leaves.
+      await settle(tester);
+      await settle(tester);
+
+      final moved = server.tasks.singleWhere((t) => t['id'] == id);
+      expect(moved['projectId'], 'prj_dacha');
+      expect(server.titlesInOrder('prj_dacha'), <String>[
+        'Скосить траву',
+        'Покрасить забор',
+      ]);
+      expect(find.text('Задача перенесена в «Дача».'), findsOneWidget);
+      // Back where it was opened from: this screen addressed a row that now
+      // lives in another project.
+      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.text('Открыть задачу'), findsOneWidget);
+    });
+
+    testWidgets('closing the sheet moves nothing', (tester) async {
+      server.addProject(name: 'Дача', id: 'prj_dacha');
+      final id = server.addTask(projectId: projectId, title: 'Покрасить забор');
+      await pumpPushed(tester, id);
+
+      await tester.tap(find.byTooltip('Перенести в проект…'));
+      await settle(tester);
+      await tester.tapAt(const Offset(187, 40));
+      await settle(tester);
+
+      expect(server.tasks.single['projectId'], projectId);
+      expect(find.byType(TaskScreen), findsOneWidget);
+      expect(backend.requests.where((r) => r.path.endsWith('/move')), isEmpty);
+    });
+
+    testWidgets('with no other project, says how to get one', (tester) async {
+      final id = server.addTask(projectId: projectId, title: 'Покрасить забор');
+      await pumpPushed(tester, id);
+
+      await tester.tap(find.byTooltip('Перенести в проект…'));
+      await settle(tester);
+
+      expect(find.textContaining('Других проектов нет'), findsOneWidget);
+    });
+  });
 }
 
 class _ReadyModel extends VoiceModelInstallation {

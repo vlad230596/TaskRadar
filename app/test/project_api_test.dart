@@ -294,6 +294,45 @@ void main() {
     });
   });
 
+  group('POST /tasks/:id/move', () {
+    test('sends the target project and parses the moved row', () async {
+      final other = server.addProject(name: 'Дом', id: 'prj_2');
+      server.addTask(projectId: other, title: 'Там уже есть');
+      final categoryId = server.addCategory(
+        projectId: projectId,
+        name: 'Грядки',
+      );
+      final id = server.addTask(
+        projectId: projectId,
+        title: 'Полить',
+        categoryId: categoryId,
+      );
+
+      final moved = await api.moveTaskToProject(id, other);
+
+      expect(backend.lastRequest.method, 'POST');
+      expect(backend.lastRequest.path, '/tasks/$id/move');
+      expect(backend.lastRequest.data, <String, dynamic>{'projectId': other});
+      expect(moved.projectId, other);
+      expect(moved.categoryId, isNull);
+      // A raw row, like every task mutation: the caller re-reads the lists.
+      expect(moved.isCurrent, isFalse);
+      expect(server.titlesInOrder(other), <String>['Там уже есть', 'Полить']);
+      expect(server.titlesInOrder(projectId), isEmpty);
+    });
+
+    test('a project that does not exist is a 400', () async {
+      final id = server.addTask(projectId: projectId, title: 'Полить');
+
+      await expectLater(
+        api.moveTaskToProject(id, 'prj_nope'),
+        throwsA(
+          isA<ApiException>().having((e) => e.statusCode, 'statusCode', 400),
+        ),
+      );
+    });
+  });
+
   group('deleting', () {
     test('a task, answered 204 with no body', () async {
       final id = server.addTask(projectId: projectId, title: 'Лишняя');

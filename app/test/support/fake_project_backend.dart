@@ -872,6 +872,27 @@ class FakeProjectBackend {
       return jsonResponse(_inboxItem(itemId), statusCode: 201);
     });
 
+    // `routes/tasks.ts`: last in the other project, without its category; the
+    // same project is the task unchanged; a project that does not exist is a
+    // 400, not a 404 -- the task exists, the request is wrong.
+    backend.on('POST', '/tasks/:id/move', (match) {
+      final task = _task(match.params['id']!);
+      if (task == null) return _notFound('Task');
+
+      final projectId = match.body['projectId'] as String?;
+      if (projectId == null || _project(projectId) == null) {
+        return _error(400, 'Project $projectId was not found');
+      }
+      if (task['projectId'] == projectId) return jsonResponse(task);
+
+      task
+        ..['position'] = _appendPosition(projectId)
+        ..['projectId'] = projectId
+        ..['categoryId'] = null
+        ..['updatedAt'] = '2026-09-16T12:30:00.000Z';
+      return jsonResponse(task);
+    });
+
     backend.on('DELETE', '/tasks/:id', (match) {
       final task = _task(match.params['id']!);
       if (task == null) return _notFound('Task');

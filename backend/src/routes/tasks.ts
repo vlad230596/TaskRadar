@@ -15,6 +15,7 @@ import {
   createTaskSchema,
   updateTaskSchema,
   updateTaskPositionSchema,
+  moveTaskSchema,
   idParamSchema,
   projectIdParamSchema,
 } from "../schemas";
@@ -464,6 +465,82 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       orderBy: { at: "asc" },
     });
     reply.send(events);
+  });
+
+  /*
+   * To another project: `{ projectId }`, one of the same user's projects.
+   *
+   * A route of its own rather than `projectId` in `PATCH /tasks/:id`, for the
+   * reason `/position` and `/unfile` are their own: changing a task's home is
+   * not a field edit. It decides the task's place in a list the client did not
+   * send, drops a category that does not exist over there, and changes two
+   * lists at once -- and the PATCH's `expected` check, built for fields, has
+   * nothing to say about any of it.
+   *
+   * What the move does:
+   *
+   * - **last in the target project**, as a new task would be
+   *   (`computeAppendPosition`). The old place means nothing in a list of other
+   *   tasks, and the end is where a newcomer is looked for;
+   * - **no category**: categories are per project (`TaskCategory`), and the
+   *   task's group stays behind. The client cannot pick one here either -- a
+   *   category of the target is chosen on the task screen afterwards, as for
+   *   any task;
+   * - **`createKey` cleared**: it is unique per project, and a key arriving in
+   *   another project could in principle meet its twin there. Nothing is lost:
+   *   a replay of the create names the *old* project and would not have found
+   *   the task in the new one anyway;
+   * - status, reminder, the working set (which spans projects) and the journal
+   *   stay as they are. The journal records status and focus, not location --
+   *   history reads a task's project from the task -- so a move writes no event.
+   *
+   * The same project is not an error: the answer is the task, unchanged.
+   * That is what makes the offline outbox's replay of a move that already
+   * landed harmless.
+   *
+   * A target the user does not own, or that does not exist, is a 400 rather
+   * than a 404 -- the task exists, the request is what is wrong -- and the same
+   * answer for both, as for a category (`assertCategoryInProject`). An
+   * archived project is accepted, as `POST /projects/:id/tasks` accepts one:
+   * the app offers only the board's projects, and the server does not second-
+   * guess which projects are worth writing to.
+   *
+   * There is no push channel: other devices see the move on their next read
+   * of either list, as they see every other write.
+   */
+  app.post("/tasks/:id/move", async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params);
+    const userId = userIdOf(request);
+    const { projectId } = moveTaskSchema.parse(request.body);
+    const task = await getTaskOrThrow(userId, id);
+
+    const target = await prisma.project.findFirst({
+      where: { id: projectId, scope: { userId } },
+    });
+    if (!target) {
+      throw new ValidationError(`Project ${projectId} was not found`);
+    }
+
+    if (task.projectId === projectId) {
+      reply.send(task);
+      return;
+    }
+
+    const last = await prisma.task.aggregate({
+      where: { projectId },
+      _max: { position: true },
+    });
+
+    const moved = await prisma.task.update({
+      where: { id },
+      data: {
+        projectId,
+        position: computeAppendPosition(last._max.position),
+        categoryId: null,
+        createKey: null,
+      },
+    });
+    reply.send(moved);
   });
 
   /*

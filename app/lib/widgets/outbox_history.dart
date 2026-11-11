@@ -36,8 +36,17 @@ class OutboxHistoryView extends ConsumerWidget {
         )
         .toList();
 
+    // A move names both ends: "Дом → Дача".
+    String? where(OutboxEntry entry) {
+      final ends = <String>{
+        ?names[entry.projectId],
+        ?names[entry.landsInProjectId],
+      };
+      return ends.isEmpty ? null : ends.join(' → ');
+    }
+
     OutboxEntryCard card(OutboxEntry entry) =>
-        OutboxEntryCard(entry: entry, projectName: names[entry.projectId]);
+        OutboxEntryCard(entry: entry, projectName: where(entry));
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
@@ -432,13 +441,14 @@ const Map<String, String> _fieldLabel = <String, String>{
 
 String _kindLabel(OutboxEntry entry) {
   if (entry.kind == OutboxKind.createTask) return 'Новая задача';
+  if (entry.kind == OutboxKind.moveTask) return 'Перенос в другой проект';
   final fields = <String>{for (final key in entry.body.keys) ?_fieldLabel[key]};
   return fields.isEmpty ? 'Правка' : fields.join(', ');
 }
 
 /// "Открыта → Сделано" for a status, the new text for a text field.
 String? _changeLine(OutboxEntry entry) {
-  if (entry.kind == OutboxKind.createTask) return null;
+  if (entry.kind != OutboxKind.editTask) return null;
   final body = entry.body;
   if (body.containsKey('status')) {
     String name(Object? value) => value is String
