@@ -158,6 +158,43 @@ dependencies:
   # one. Local files only -- the audio never goes to the server.
   audioplayers: ^6.7.1
 
+  # ---- Task editor (design/task-editor-spec.md, WP0) ----
+  #
+  # Added in one place for the packages WP4-WP7 build on; the versions are the
+  # newest this SDK (Flutter 3.41.8 / Dart 3.11.5) resolves. Two are held
+  # below their latest on purpose: native_geofence 1.5 and pasteboard 0.6 need
+  # a newer Dart than this SDK has.
+
+  # Links (§5): tap opens the browser (`LaunchMode.externalApplication`). The
+  # `<queries>` entry it needs on Android 11+ is in AndroidManifest.xml.
+  url_launcher: ^6.3.3
+
+  # Pictures (§6): gallery multi-pick on Android, a file dialog on Windows.
+  image_picker: ^1.2.4
+  # Ctrl+V of an image on Windows (and web), where there is no keyboard
+  # `contentInsertionConfiguration` to deliver it. Android needs nothing extra.
+  pasteboard: ^0.5.0
+  # "Поделиться" from another app into a task: the SEND / SEND_MULTIPLE
+  # `image/*` intent filter on MainActivity in AndroidManifest.xml.
+  # share_handler, not receive_sharing_intent: the latter's 1.9.0 Gradle file
+  # uses a `kotlin {}` block this project's Android Gradle Plugin cannot
+  # evaluate, and the APK build fails in it.
+  share_handler: ^0.0.25
+  # Shrinking on the phone before upload (long side <= 3000 px, JPEG/WebP q85,
+  # no EXIF). Android only; Windows sends the picked file as it is and the
+  # server strips metadata either way.
+  flutter_image_compress: ^2.5.1
+
+  # Place reminder (§7): the OSM map with a pin and a radius circle...
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  # ...the current position for "Моё место" and the location permissions...
+  geolocator: ^14.0.1
+  # ...and Android's GeofencingClient, enter transitions only. Its receivers,
+  # service and the location permissions (background included) are declared
+  # in our AndroidManifest.xml -- the plugin's own manifest declares nothing.
+  native_geofence: ^1.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

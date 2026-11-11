@@ -87,6 +87,23 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
 
     <!--
+      ===== Task editor: place reminder (design/task-editor-spec.md §7) =====
+
+      "Напомнить по месту" is an Android geofence (native_geofence over
+      GeofencingClient), enter transitions only. FINE for a radius of 100 m to
+      mean anything, COARSE because Android 12+ lets the user grant only that
+      and the request must name both. BACKGROUND because a geofence registered
+      without it never fires while the app is closed, which is the only time
+      it matters; on Android 11+ it cannot be asked for in a dialog at all, so
+      the settings screen sends the user to the system page for "Allow all the
+      time". Nothing here is asked for until the user turns the feature on.
+      Pictures need no permission: image_picker uses the system photo picker.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+
+    <!--
       The label and cleartext flag are placeholders only so that the emulator
       QA package (`build.gradle.kts`, `qaBuild`) can say "TaskRadar QA" and talk
       plain HTTP to its synthetic API on 10.0.2.2. For every other build they
@@ -117,6 +134,22 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!--
+              Task editor (§6): "Поделиться" a picture from another app into a
+              task. Read by share_handler; singleTop above means a
+              share while the app is open arrives through onNewIntent instead
+              of starting a second copy.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="image/*"/>
             </intent-filter>
         </activity>
         <!--
@@ -155,6 +188,31 @@
             </intent-filter>
         </receiver>
 
+        <!--
+          Task editor (§7): native_geofence's components, which its own manifest
+          does not declare. The event receiver is reached only through the
+          app's own PendingIntent and the reboot receiver only by the system,
+          so neither is exported (the same reasoning as the notification
+          receivers above). The reboot receiver re-registers the zones, which
+          Android forgets on restart. The service is what the plugin promotes a
+          geofence callback to when it needs longer; it is bound by the job
+          scheduler, hence BIND_JOB_SERVICE.
+        -->
+        <receiver
+            android:exported="false"
+            android:name="com.chunkytofustudios.native_geofence.receivers.NativeGeofenceBroadcastReceiver"/>
+        <receiver
+            android:exported="false"
+            android:name="com.chunkytofustudios.native_geofence.receivers.NativeGeofenceRebootBroadcastReceiver">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+            </intent-filter>
+        </receiver>
+        <service
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:name="com.chunkytofustudios.native_geofence.NativeGeofenceForegroundService"/>
+
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data
@@ -170,6 +228,17 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- Task editor (§5): url_launcher has to see a browser to open a link
+             in it; on Android 11+ an app without this entry is told there is
+             none, and canLaunchUrl answers false. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
         </intent>
     </queries>
 </manifest>
