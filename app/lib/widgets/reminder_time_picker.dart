@@ -25,9 +25,24 @@ Future<String?> pickReminderTime(
   WidgetRef ref,
   Task task, {
   String cancelText = 'Без времени',
+}) => pickReminderTimeOf(
+  context,
+  ref,
+  current: task.remindTime,
+  cancelText: cancelText,
+);
+
+/// [pickReminderTime] for a reminder that is not a saved task's yet -- the
+/// task editor's chip, before "Добавить" (`widgets/editor/reminder_sheet.dart`).
+/// [current] is the `HH:MM` to open on, or null for the settings hour.
+Future<String?> pickReminderTimeOf(
+  BuildContext context,
+  WidgetRef ref, {
+  String? current,
+  String cancelText = 'Без времени',
 }) async {
   final initial =
-      reminderTimeFromString(task.remindTime) ??
+      reminderTimeFromString(current) ??
       ref.read(reminderSettingsProvider).value ??
       ReminderTime.defaultMorning;
 

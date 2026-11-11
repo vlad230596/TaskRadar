@@ -43,11 +43,16 @@ class FocusToggleButton extends ConsumerWidget {
   const FocusToggleButton({
     required this.task,
     required this.projectName,
+    this.onDark = false,
     super.key,
   });
 
   final Task task;
   final String projectName;
+
+  /// Drawn on the task editor's dark surface: the outline and the words in
+  /// the editor's light accent instead of the indigo ink.
+  final bool onDark;
 
   static const double height = 48;
 
@@ -92,8 +97,12 @@ class FocusToggleButton extends ConsumerWidget {
       child: OutlinedButton.icon(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.indigoInk,
-          side: const BorderSide(color: AppColors.indigo, width: 1.5),
+          backgroundColor: onDark ? Colors.transparent : null,
+          foregroundColor: onDark ? AppColors.voiceBright : AppColors.indigoInk,
+          side: BorderSide(
+            color: onDark ? AppColors.voiceLevelHigh : AppColors.indigo,
+            width: 1.5,
+          ),
           shape: shape,
           textStyle: label,
         ),

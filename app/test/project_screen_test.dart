@@ -9,7 +9,7 @@ import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/note_editor_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
@@ -61,7 +61,7 @@ void main() {
   ///
   /// Only the notes list has one now: F12 removed the task composer, because a
   /// one-line field was complaint number one. Adding a task opens
-  /// `TaskScreen.draft` instead. The finder stays scoped to a list rather than
+  /// the task editor's quick-add sheet instead. The finder stays scoped to a list rather than
   /// using `find.byType(TextField).first`, because on the desktop both panes
   /// are on screen at once.
   Finder composerIn(Type list) => find
@@ -138,6 +138,20 @@ void main() {
     await tester.tap(find.text(title));
     await settle(tester);
   }
+
+  /// "Удалить задачу" from the editor's ⋯ menu.
+  Future<void> deleteFromMenu(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('Ещё'));
+    await settle(tester);
+    await tester.tap(find.text('Удалить задачу'));
+    await settle(tester);
+  }
+
+  /// The category chip of the task editor, showing [name].
+  Finder categoryChip(String name) => find.descendant(
+    of: find.byTooltip('Категория'),
+    matching: find.text(name),
+  );
 
   /// Opens the blank task screen from the end of the list.
   Future<void> openDraft(WidgetTester tester) async {
@@ -554,10 +568,10 @@ void main() {
       await pumpProject(tester);
 
       await openDraft(tester);
-      // The field this screen exists for: sized to its text, at 16.5 px.
-      expect(find.byType(TaskScreen), findsOneWidget);
+      // The task editor's quick-add sheet: the title sized to its text.
+      expect(find.byType(TaskEditor), findsOneWidget);
       final field = tester.widget<TextField>(find.byType(TextField).first);
-      expect(field.style?.fontSize, 16.5);
+      expect(field.style?.fontSize, 22);
       expect(field.maxLines, isNull);
 
       await tester.enterText(find.byType(TextField).first, 'Позвонить прорабу');
@@ -567,7 +581,7 @@ void main() {
       expect(server.titlesInOrder(projectId), <String>['Позвонить прорабу']);
       // ...and it is back on the list, which is where the next one is added
       // from.
-      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsNothing);
       expect(find.text('Позвонить прорабу'), findsOneWidget);
     });
 
@@ -587,7 +601,7 @@ void main() {
       // ...but on the device, in the outbox, and in the list with a mark that
       // says so -- the words are not lost and not pretended to be saved.
       expect(outbox.entries.single.body['title'], 'Доедет потом');
-      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsNothing);
       expect(find.text('Доедет потом'), findsOneWidget);
       expect(find.text('не отправлено'), findsOneWidget);
     });
@@ -611,7 +625,7 @@ void main() {
         find.textContaining('Не удалось добавить задачу.'),
         findsOneWidget,
       );
-      expect(find.byType(TaskScreen), findsOneWidget);
+      expect(find.byType(TaskEditor), findsOneWidget);
       expect(
         tester.widget<TextField>(find.byType(TextField).first).controller!.text,
         'Не доедет',
@@ -720,6 +734,7 @@ void main() {
 
       await openTask(tester, 'Старое');
       await tester.enterText(find.byType(TextField).first, 'Новое');
+      await tester.pump(); // "Сохранить" shows once there is an edit.
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
@@ -735,8 +750,7 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Лишняя');
 
-      await tester.tap(find.byTooltip('Удалить задачу'));
-      await settle(tester);
+      await deleteFromMenu(tester);
       expect(find.text('Удалить задачу?'), findsOneWidget);
 
       // Cancelling really cancels.
@@ -744,15 +758,14 @@ void main() {
       await settle(tester);
       expect(server.tasks, hasLength(1));
 
-      await tester.tap(find.byTooltip('Удалить задачу'));
-      await settle(tester);
+      await deleteFromMenu(tester);
       await tester.tap(find.widgetWithText(FilledButton, 'Удалить'));
       await settle(tester);
 
       expect(server.tasks, isEmpty);
       // ...and the screen the task was on is gone with it, rather than sitting
       // there addressing a row that no longer exists.
-      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsNothing);
       expect(find.text('Лишняя'), findsNothing);
     });
 
@@ -765,12 +778,13 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Вентилятор в туалете');
 
-      await tester.tap(find.text('Заметка к задаче'));
+      await tester.tap(find.text('+ Описание'));
       await settle(tester);
       await tester.enterText(
         find.byType(TextField).last,
         'у Петра до вторника',
       );
+      await tester.pump(); // "Сохранить" shows once there is an edit.
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
@@ -784,6 +798,7 @@ void main() {
         'у Петра до вторника',
       );
       await tester.enterText(find.byType(TextField).last, '');
+      await tester.pump(); // "Сохранить" shows once there is an edit.
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
 
@@ -910,6 +925,7 @@ void main() {
       await openTask(tester, 'Без группы');
 
       expect(find.text('Без категории'), findsOneWidget);
+      await tester.ensureVisible(find.text('Без категории'));
       await tester.tap(find.text('Без категории'));
       await settle(tester);
       await tester.tap(find.text('Документы'));
@@ -921,7 +937,7 @@ void main() {
         )['categoryId'],
         papers,
       );
-      expect(find.text('Категория: Документы'), findsOneWidget);
+      expect(categoryChip('Документы'), findsOneWidget);
     });
 
     testWidgets('a new category made from the picker is picked at once', (
@@ -930,6 +946,7 @@ void main() {
       await pumpProject(tester);
       await openTask(tester, 'Без группы');
 
+      await tester.ensureVisible(find.text('Без категории'));
       await tester.tap(find.text('Без категории'));
       await settle(tester);
       await tester.tap(find.text('Новая категория…'));
@@ -954,7 +971,7 @@ void main() {
         )['categoryId'],
         created['id'],
       );
-      expect(find.text('Категория: Закупки'), findsOneWidget);
+      expect(categoryChip('Закупки'), findsOneWidget);
     });
 
     testWidgets('deleting a category keeps its tasks, ungrouped', (
@@ -989,10 +1006,14 @@ void main() {
       await pumpProject(tester);
       await openDraft(tester);
 
-      // The description is there from the start, not behind a button.
-      expect(find.text('ЗАМЕТКА'), findsOneWidget);
+      // Quick-add opens compact; pulled up, the description is there from
+      // the start, not behind a button.
+      await tester.tap(find.byTooltip('Развернуть'));
+      await settle(tester);
+      expect(find.text('ОПИСАНИЕ'), findsOneWidget);
       await tester.enterText(find.byType(TextField).first, 'Смеситель');
       await tester.enterText(find.byType(TextField).last, 'Хром, не латунь');
+      await tester.ensureVisible(find.text('Без категории'));
       await tester.tap(find.text('Без категории'));
       await settle(tester);
       await tester.tap(find.text('Кухня'));

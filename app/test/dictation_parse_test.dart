@@ -9,6 +9,7 @@ import 'package:taskradar/providers/project_providers.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/dictation_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/widgets/ai_tidy.dart';
@@ -268,10 +269,10 @@ void main() {
 
       await dictate(tester);
       await tidy(tester);
-      expect(
-        find.text('Напомнить 25.09 в 10:00 · задача будет ждать'),
-        findsOneWidget,
-      );
+      expect(find.text('Напомнить 25.09 в 10:00'), findsOneWidget);
+      // A reminder does not change the status, so the old "задача будет
+      // ждать" was a promise nothing kept.
+      expect(find.textContaining('будет ждать'), findsNothing);
       await save(tester);
 
       expect(server.tasks.single['status'], 'pending');
@@ -282,6 +283,86 @@ void main() {
         find.text('Задача добавлена в «Дом», напомню 25.09 в 10:00.'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('«Дополнить…» opens the task editor on the proposal, and '
+        'nothing is created until «Добавить»', (tester) async {
+      modelAnswers(<String, dynamic>{
+        'title': 'Купить кабель',
+        'description': 'Два метра',
+        'remindDate': '2030-01-15',
+        'remindTime': '10:00',
+        'parseId': 'dp-41',
+      });
+
+      await dictate(tester);
+      await tidy(tester);
+      await tester.tap(find.text('Дополнить…'));
+      await settle(tester);
+
+      expect(find.byType(DictationScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsOneWidget);
+      expect(find.text('Новая задача'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        'Купить кабель',
+      );
+      expect(find.text('15.01, 10:00'), findsOneWidget);
+      expect(server.tasks, isEmpty);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+
+      expect(server.tasks.single['title'], 'Купить кабель');
+      expect(server.tasks.single['description'], 'Два метра');
+      expect(server.tasks.single['remindAt'], '2030-01-15');
+      expect(server.tasks.single['remindTime'], '10:00');
+      expect(createBody()['dictationParseId'], 'dp-41');
+      expect(find.byType(TaskEditor), findsNothing);
+    });
+
+    testWidgets('«Дополнить…» without «Разобрать»: the words as the title', (
+      tester,
+    ) async {
+      await dictate(tester);
+      await tester.tap(find.text('Дополнить…'));
+      await settle(tester);
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField).first).controller!.text,
+        'Купить кабель',
+      );
+    });
+
+    testWidgets('a new task field: the reminder comes back with the text', (
+      tester,
+    ) async {
+      modelAnswers(<String, dynamic>{
+        'title': 'Купить кабель',
+        'description': null,
+        'remindDate': '2030-01-15',
+        'remindTime': '10:00',
+        'parseId': 'dp-42',
+      });
+
+      await dictate(
+        tester,
+        destination: const FieldDestination(
+          'в новую задачу',
+          kind: ParseKind.task,
+        ),
+      );
+      // A field gets text back: no «Дополнить…» here.
+      expect(find.text('Дополнить…'), findsNothing);
+      await tidy(tester);
+      expect(parseBodies.single['kind'], 'task');
+      await save(tester);
+
+      final task = popped! as FieldTaskText;
+      expect(task.title, 'Купить кабель');
+      expect(task.remindAt, '2030-01-15');
+      expect(task.remindTime, '10:00');
+      expect(task.parseId, 'dp-42');
     });
 
     testWidgets('the reminder can be taken off and the rest kept', (

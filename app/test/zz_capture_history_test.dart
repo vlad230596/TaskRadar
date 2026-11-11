@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/screens/shell_screen.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 
 import 'support/acceptance_fonts.dart';
@@ -148,7 +148,7 @@ void main() {
   });
 
   testWidgets('Edit — задача с настоящей «жизнью задачи»', (tester) async {
-    await pump(tester, TaskScreen(projectId: 'prj_dom', taskId: taskId));
+    await pump(tester, TaskEditor(projectId: 'prj_dom', taskId: taskId));
     await shot(tester, 'Edit-life');
   });
 
