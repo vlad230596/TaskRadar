@@ -1,10 +1,12 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/checklist_item.dart';
 import '../../models/task.dart';
 import '../../models/task_location.dart';
 import '../../providers/project_providers.dart';
+import 'attribute_bar.dart';
+import 'checklist_section.dart';
 
 /// The places in the task editor where the checklist (WP5), the pictures
 /// (WP6) and the place (WP7) plug in (task-editor spec, section 11).
@@ -113,7 +115,16 @@ class EditorExtras extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get checklistChanged => !listEquals(_checklist, _savedChecklist);
+  /// The list as it is sent: trimmed, blank items dropped; null when empty.
+  List<ChecklistItem>? get checklistForSave {
+    final items = ChecklistSection.forSave(_checklist ?? const []);
+    return items.isEmpty ? null : items;
+  }
+
+  /// Text, order or membership changed. Ticks do not count: on an existing
+  /// task a tick is written at once by the section.
+  bool get checklistChanged =>
+      ChecklistSection.differsInContent(_checklist ?? const [], _savedChecklist);
   bool get locationChanged => _location != _savedLocation;
 
   /// Something here differs from the saved task (a new task: anything set at
@@ -166,12 +177,30 @@ abstract final class EditorSlots {
   static List<Widget> chips(
     EditorSectionScope scope, {
     required VoidCallback onOpen,
-  }) => const <Widget>[];
+  }) => <Widget>[
+    if (scope.extras.checklist == null && !scope.extras.checklistOpen)
+      AttributeChip(
+        icon: Icons.checklist_rounded,
+        label: 'Список',
+        tooltip: 'Добавить чек-лист',
+        onTap: () {
+          scope.extras.checklist = ChecklistSection.withNewItem(
+            scope.extras.checklist ?? const [],
+          );
+          scope.extras.openChecklist();
+          onOpen();
+        },
+      ),
+  ];
 
   /// WP5: `ChecklistSection(items: scope.extras.checklist ?? [], onChanged:
   /// (items) => scope.extras.checklist = items, onToggle: …)` when
   /// `checklist != null || checklistOpen`.
-  static Widget checklist(EditorSectionScope scope) => const SizedBox.shrink();
+  static Widget checklist(EditorSectionScope scope) =>
+      (!scope.expanded ||
+          (scope.extras.checklist == null && !scope.extras.checklistOpen))
+      ? const SizedBox.shrink()
+      : _ChecklistSlot(scope: scope);
 
   /// WP6: `AttachmentStrip(taskIdOrLocal, attachments: scope.task?.attachments,
   /// pending, onAdd, onDelete)`; for a new task, register the upload of the
@@ -182,4 +211,26 @@ abstract final class EditorSlots {
   /// WP7: `LocationTile(value: scope.extras.location, onChanged: (v) =>
   /// scope.extras.location = v)` when `location != null || locationOpen`.
   static Widget location(EditorSectionScope scope) => const SizedBox.shrink();
+}
+
+/// WP5 in its slot: the section edits [EditorExtras.checklist]; on an
+/// existing task a tick is written at once.
+class _ChecklistSlot extends ConsumerWidget {
+  const _ChecklistSlot({required this.scope});
+
+  final EditorSectionScope scope;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final task = scope.task;
+    return ChecklistSection(
+      items: scope.extras.checklist ?? const [],
+      onChanged: (items) => scope.extras.checklist = items,
+      onToggle: task == null
+          ? null
+          : (id) => ref
+                .read(projectTasksProvider(scope.projectId).notifier)
+                .toggleChecklistItem(task, id),
+    );
+  }
 }

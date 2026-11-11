@@ -550,7 +550,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
             status: status,
             remindAt: reminder?.date,
             remindTime: reminder?.time,
-            checklist: _extras.checklist,
+            checklist: _extras.checklistForSave,
             location: _extras.location,
             dictationParseId: dictationParseId,
           );
@@ -650,7 +650,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     // answer was right as it came" is the most useful label there is.
     final parseId = _tidyParseId;
     final checklist = _extras.checklistChanged
-        ? PatchField<List<ChecklistItem>>.toOrClear(_extras.checklist)
+        ? PatchField<List<ChecklistItem>>.toOrClear(_extras.checklistForSave)
         : const PatchField<List<ChecklistItem>>.keep();
     final location = _extras.locationChanged
         ? PatchField<TaskLocation>.toOrClear(_extras.location)

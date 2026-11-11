@@ -12,6 +12,7 @@ import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/voice/voice_model.dart';
 import 'package:taskradar/widgets/ai_tidy.dart';
+import 'package:taskradar/widgets/editor/checklist_section.dart';
 import 'package:taskradar/widgets/editor/editor_theme.dart';
 import 'package:taskradar/widgets/editor/smart_text_controller.dart';
 import 'package:taskradar/widgets/editor/task_draft.dart';
@@ -1049,6 +1050,44 @@ void main() {
       expect(row['remindTime'], '09:00');
       expect(row['categoryId'], kitchen);
       expect(row['status'], 'pending');
+    });
+
+    testWidgets('«Список» opens a checklist that goes with the create', (
+      tester,
+    ) async {
+      await pumpNew(tester);
+      await tester.enterText(titleField(), 'Купить к ужину');
+
+      await tester.ensureVisible(find.text('Список'));
+      await tester.tap(find.text('Список'));
+      await settle(tester);
+      expect(find.text('Список'), findsNothing);
+
+      final item = find.descendant(
+        of: find.byType(ChecklistSection),
+        matching: find.byType(TextField),
+      );
+      await tester.enterText(item.first, 'Хлеб');
+      await tester.pump();
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+
+      final checklist = server.tasks.single['checklist'] as List<dynamic>;
+      expect(checklist.map((i) => (i as Map)['text']), <String>['Хлеб']);
+    });
+
+    testWidgets('an empty checklist item is not sent', (tester) async {
+      await pumpNew(tester);
+      await tester.enterText(titleField(), 'Без списка');
+      await tester.ensureVisible(find.text('Список'));
+      await tester.tap(find.text('Список'));
+      await settle(tester);
+
+      await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
+      await settle(tester);
+
+      expect(server.tasks.single['checklist'], isNull);
     });
 
     testWidgets('a new task can be created as a blocker, never as done', (
