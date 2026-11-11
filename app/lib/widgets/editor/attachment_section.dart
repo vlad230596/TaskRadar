@@ -34,6 +34,8 @@ class PictureDrafts extends ChangeNotifier {
     if (existing != null) return existing;
     final drafts = PictureDrafts._();
     _byExtras[extras] = drafts;
+    // Drafts are unsaved work: closing the editor asks first.
+    extras.holdDrafts(drafts, () => !drafts.isEmpty);
     extras.createHooks.add((projectId, outcome) async {
       if (drafts.isEmpty) return;
       await drafts.queueFor(projectId, outcome, queue);

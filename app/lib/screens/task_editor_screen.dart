@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error_message.dart';
 import '../api/dictation_api.dart';
 import '../api/patch_field.dart';
+import '../attachments/clipboard_image.dart';
 import '../domain/ai_mark.dart';
 import '../domain/smart_tokens.dart';
 import '../domain/task_age.dart';
@@ -29,6 +31,7 @@ import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/category_sheets.dart';
 import '../widgets/dictation.dart';
+import '../widgets/editor/attachment_section.dart';
 import '../widgets/editor/attribute_bar.dart';
 import '../widgets/editor/editor_theme.dart';
 import '../widgets/editor/link_cards.dart';
@@ -564,7 +567,23 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     if (_creating) return;
     final title = _title.strippedText;
     if (title.isEmpty) {
-      if (!more) Navigator.of(context).pop();
+      // The server needs a title. With nothing else typed or added an empty
+      // «Добавить» just closes; with pictures, a list or a place it would
+      // throw them away without a word -- so it asks for the title instead.
+      if (_dirtyDraft()) {
+        ScaffoldMessenger.of(context)
+          ..clearSnackBars()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Напишите, что надо сделать, — без этого задачу не создать.',
+              ),
+            ),
+          );
+        _titleFocus.requestFocus();
+      } else if (!more) {
+        Navigator.of(context).pop();
+      }
       return;
     }
 
@@ -1263,6 +1282,30 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     });
   }
 
+  // -- Pictures ---------------------------------------------------------------
+
+  bool get _full =>
+      widget.presentation != EditorPresentation.sheet || _expanded;
+
+  EditorSectionScope _scopeFor(Task? task) => EditorSectionScope(
+    projectId: _targetProject,
+    task: task,
+    extras: _extras,
+    expanded: _full,
+  );
+
+  /// Where a pasted picture goes (Ctrl+V, the Android keyboard): the
+  /// section's own adder -- the outbox for an existing task, the drafts for
+  /// a new one. A compact sheet expands first, so the picture is in view.
+  Future<void> Function(List<XFile>) _pictureAdder(Task? task) {
+    final add = editorPictureAdder(ref, _scopeFor(task));
+    return (files) async {
+      if (files.isEmpty) return;
+      if (mounted && !_full) setState(() => _expanded = true);
+      await add(files);
+    };
+  }
+
   // -- Build ------------------------------------------------------------------
 
   @override
@@ -1378,17 +1421,22 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     final header = _header(task);
     final body = _body(task, pinBar: pinBar);
     final bottom = _bottom(task, keyboard: keyboard, pinBar: pinBar);
-    final content = switch (widget.presentation) {
-      EditorPresentation.sheet => _sheetFrame(header, body, bottom),
-      _ => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          header,
-          Expanded(child: body),
-          bottom,
-        ],
-      ),
-    };
+    // Ctrl+V of a picture anywhere in the editor adds it (Windows, web);
+    // text still pastes into the focused field.
+    final content = PictureClipboardPaste(
+      onAdd: _pictureAdder(task),
+      child: switch (widget.presentation) {
+        EditorPresentation.sheet => _sheetFrame(header, body, bottom),
+        _ => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            header,
+            Expanded(child: body),
+            bottom,
+          ],
+        ),
+      },
+    );
 
     return _themed(switch (widget.presentation) {
       EditorPresentation.page => Scaffold(
@@ -1534,13 +1582,8 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
   }
 
   Widget _body(Task? task, {required bool pinBar}) {
-    final full = widget.presentation != EditorPresentation.sheet || _expanded;
-    final scope = EditorSectionScope(
-      projectId: _targetProject,
-      task: task,
-      extras: _extras,
-      expanded: full,
-    );
+    final full = _full;
+    final scope = _scopeFor(task);
     final links = <LinkSpan>[..._title.links, ..._note.links];
     final ambiguous = _title.tokens
         .where((token) => !token.isResolved)
@@ -1564,7 +1607,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
           ],
           if (full) ...<Widget>[
             const SizedBox(height: 14),
-            _descriptionSection(),
+            _descriptionSection(task),
             if (links.isNotEmpty) ...<Widget>[
               const SizedBox(height: 10),
               LinkCards(links: links),
@@ -1647,6 +1690,11 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
                 style: EditorText.title,
                 cursorColor: EditorColors.bright,
                 onTap: _onTitleTap,
+                // A picture from the Android keyboard (a screenshot).
+                contentInsertionConfiguration: pictureContentInsertion(
+                  ref,
+                  _pictureAdder(task),
+                ),
                 decoration: InputDecoration(
                   filled: false,
                   isCollapsed: true,
@@ -1790,7 +1838,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
   /// The description: open from the start on a new task, folded away on an
   /// existing one until it has text or is asked for -- the screen that
   /// matters is the text and what to do with it.
-  Widget _descriptionSection() {
+  Widget _descriptionSection(Task? task) {
     if (!_noteOpen) {
       return Align(
         alignment: Alignment.centerLeft,
@@ -1847,6 +1895,10 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
             style: EditorText.body,
             cursorColor: EditorColors.bright,
             onTap: _onNoteTap,
+            contentInsertionConfiguration: pictureContentInsertion(
+              ref,
+              _pictureAdder(task),
+            ),
             decoration: InputDecoration(
               filled: false,
               isCollapsed: true,
@@ -1901,12 +1953,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
   }
 
   Widget _bottom(Task? task, {required bool keyboard, required bool pinBar}) {
-    final scope = EditorSectionScope(
-      projectId: _targetProject,
-      task: task,
-      extras: _extras,
-      expanded: widget.presentation != EditorPresentation.sheet || _expanded,
-    );
+    final scope = _scopeFor(task);
     final Widget? button;
     if (task == null) {
       button = Row(
