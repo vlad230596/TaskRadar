@@ -8,6 +8,8 @@ build/
 .DS_Store
 Thumbs.db
 coverage/
+# Task pictures of a local backend run (ATTACHMENTS_DIR unset).
+attachments-data/
 .vite/
 .claude/
 CREDENTIALS.local.md

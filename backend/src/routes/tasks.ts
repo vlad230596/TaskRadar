@@ -23,6 +23,15 @@ import { linkDictationParse } from "../domain/dictationLink";
 import { aiClearData, aiMarkFields } from "../domain/aiMark";
 import { getProjectOrThrow } from "./projects";
 import { isUniqueConstraintViolation } from "../lib/prismaErrors";
+import {
+  checklistColumn,
+  checklistOf,
+  locationColumns,
+  sameChecklist,
+  sameLocation,
+  taskInclude,
+  taskView,
+} from "../domain/taskView";
 
 export async function getTaskOrThrow(userId: string, id: string) {
   // A task belongs to whoever owns its project's scope.
@@ -65,6 +74,9 @@ const CHECKED_FIELDS = [
   "status",
   "remindAt",
   "remindTime",
+  // Task editor (design/task-editor-spec.md §10): compared whole, see sameValue.
+  "checklist",
+  "location",
 ] as const;
 type CheckedField = (typeof CHECKED_FIELDS)[number];
 
@@ -84,6 +96,9 @@ function sameValue(field: CheckedField, a: unknown, b: unknown): boolean {
     return day(a) === day(b);
   }
   if (field === "description") return (a || null) === (b || null);
+  // The whole list, item by item, in order; `[]` and null are both "no list".
+  if (field === "checklist") return sameChecklist(a, b);
+  if (field === "location") return sameLocation(a, b);
   return (a ?? null) === (b ?? null);
 }
 
@@ -103,9 +118,11 @@ function sameValue(field: CheckedField, a: unknown, b: unknown): boolean {
 function conflictingFields(before: Task, body: TaskPatch): CheckedField[] {
   const expected = body.expected;
   if (expected === undefined) return [];
+  // The task as the API shows it: `location` is one value there, four columns in the row.
+  const shown = taskView(before);
   return CHECKED_FIELDS.filter((field) => {
     if (body[field] === undefined || expected[field] === undefined) return false;
-    const current = before[field];
+    const current = shown[field];
     if (sameValue(field, current, body[field])) return false;
     return !sameValue(field, current, expected[field]);
   });
@@ -139,9 +156,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     if (createKey !== undefined) {
       const known = await prisma.task.findUnique({
         where: { projectId_createKey: { projectId, createKey } },
+        include: taskInclude,
       });
       if (known) {
-        reply.status(200).send(known);
+        reply.status(200).send(taskView(known));
         return;
       }
     }
@@ -193,7 +211,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
             remindTime: body.remindAt ? (body.remindTime ?? null) : null,
             position,
             ...(createKey !== undefined ? { createKey } : {}),
+            ...checklistColumn(body.checklist),
+            ...locationColumns(body.location),
           },
+          include: taskInclude,
         });
 
         await tx.taskEvent.create({
@@ -227,7 +248,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       });
 
     try {
-      reply.status(201).send(await create());
+      reply.status(201).send(taskView(await create()));
     } catch (error) {
       // Two copies of the same retry in flight at once: both found no task
       // above, and the unique index caught the loser inside its transaction,
@@ -236,9 +257,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       if (createKey === undefined || !isUniqueConstraintViolation(error)) throw error;
       const raced = await prisma.task.findUnique({
         where: { projectId_createKey: { projectId, createKey } },
+        include: taskInclude,
       });
       if (!raced) throw error;
-      reply.status(200).send(raced);
+      reply.status(200).send(taskView(raced));
     }
   });
 
@@ -249,8 +271,9 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     const tasks = await prisma.task.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
+      include: taskInclude,
     });
-    reply.send(annotateIsCurrent(tasks));
+    reply.send(annotateIsCurrent(tasks.map(taskView)));
   });
 
   app.patch("/tasks/:id", async (request, reply) => {
@@ -277,7 +300,13 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
      */
     const conflicts = conflictingFields(before, body);
     if (conflicts.length > 0) {
-      reply.status(409).send({ error: "conflict", fields: conflicts, task: before });
+      const attachments = await prisma.taskAttachment.findMany({
+        where: { taskId: id },
+        ...taskInclude.attachments,
+      });
+      reply
+        .status(409)
+        .send({ error: "conflict", fields: conflicts, task: taskView({ ...before, attachments }) });
       return;
     }
 
@@ -351,7 +380,16 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
               description: data.description !== undefined ? data.description : before.description,
             },
           );
-      const updated = await tx.task.update({ where: { id }, data: { ...data, ...ai } });
+      const updated = await tx.task.update({
+        where: { id },
+        data: {
+          ...data,
+          ...ai,
+          ...checklistColumn(body.checklist),
+          ...locationColumns(body.location),
+        },
+        include: taskInclude,
+      });
 
       for (const event of movement.events) {
         await tx.taskEvent.create({ data: { taskId: id, ...event } });
@@ -379,7 +417,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       return updated;
     });
 
-    reply.send(task);
+    reply.send(taskView(task));
   });
 
   app.patch("/tasks/:id/position", async (request, reply) => {
@@ -435,8 +473,12 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       newPosition = computePositionBetween(beforePosition, afterPosition);
     }
 
-    const updated = await prisma.task.update({ where: { id }, data: { position: newPosition } });
-    reply.send(updated);
+    const updated = await prisma.task.update({
+      where: { id },
+      data: { position: newPosition },
+      include: taskInclude,
+    });
+    reply.send(taskView(updated));
   });
 
   /*
@@ -569,9 +611,22 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     const userId = userIdOf(request);
     const task = await getTaskOrThrow(userId, id);
 
-    const text = task.description?.trim()
+    const lines = task.description?.trim()
       ? `${task.title}\n${task.description.trim()}`
       : task.title;
+    /*
+     * Task editor (design/task-editor-spec.md §10): a checklist survives as
+     * `- ` lines under the text -- the sandbox has no list, but the words are
+     * the user's. The place does not survive (an inbox line has no place), and
+     * the pictures go with the task's rows; their files are swept later
+     * (src/scripts/sweepAttachments.ts). The client asks first when there are
+     * any.
+     */
+    const items = checklistOf(task) ?? [];
+    const text =
+      items.length > 0
+        ? `${lines}\n${items.map((item) => `- ${item.text.replace(/\s*\n\s*/g, " ")}`).join("\n")}`
+        : lines;
 
     const item = await prisma.$transaction(async (tx) => {
       const created = await tx.inboxItem.create({ data: { userId, text } });

@@ -506,6 +506,16 @@ model LinkPreview {
 `ProjectTasks.create(title, {description, categoryId, status, remindAt, remindTime, checklist, location, dictationParseId}) → WriteOutcome(createKey)`;
 `AttachmentQueue.add(taskIdOrLocal, XFile)`; `attachmentBytesProvider((id, thumb))`.
 
+**Отклонения WP1 от п. 10 (реализовано, 9a1d52e):** лишняя таблица
+`link_preview_usage` (лимит 100/день, `LINK_PREVIEW_DAILY_LIMIT`; 429);
+`location.label` всегда строка (пусто → «Место»); id вложений — 32 hex UUID;
+перекодируется только JPEG, у PNG/WebP снимаются метаданные; доп. статусы
+400 (нет `uploadKey`/файла), 415 (не multipart), лимит `ATTACHMENT_MAX_PIXELS`;
+сироты чистит экспортёр бэкапа картинок раз в сутки (6 ч отсрочки);
+`POST`/`DELETE /tasks/:id/focus` отдают сырую строку задачи; пакеты —
+`share_handler` вместо `receive_sharing_intent`, `pasteboard` 0.5, `native_geofence` 1.4
+(его foreground-сервис без типа — на Android 14+ не повышать колбэк до foreground).
+
 **WP3 — разбор токенов (параллельно с самого начала).**
 `app/lib/domain/smart_tokens.dart` (`parseSmartTokens`, `findLinks`,
 `stripTokens`), `app/test/smart_tokens_test.dart`. Чистый Dart, без
