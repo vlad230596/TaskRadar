@@ -512,6 +512,28 @@ model LinkPreview {
 Flutter. Контракт:
 `SmartToken { TokenKind kind; int start, end; String? remindAt, remindTime, projectId, categoryId; bool past; }`.
 
+Реализовано (dbb4ed1) — фактический интерфейс:
+```
+enum TokenKind { date, project, category }
+SmartToken { TokenKind kind; int start, end; String? remindAt, remindTime, projectId, categoryId; bool past;
+             List<String> candidates; SmartRange get range; bool get isResolved; }
+SmartRange(int start, int end)            // отклонённые куски; overlaps()
+LinkSpan { int start, end; String url }   // www. получает https://
+SmartProject({id, name, List<SmartCategory>? categories}); SmartCategory({id, name})
+SmartContext({List<SmartProject> projects = [], List<SmartCategory> categories = [], List<SmartRange> dismissed = []})
+List<SmartToken> parseSmartTokens(String text, {required DateTime now, required SmartContext ctx})
+List<SmartRange> findAllTokenRanges(String text, {required DateTime now, required SmartContext ctx})
+List<LinkSpan>   findLinks(String text)
+String           stripTokens(String text, Iterable<SmartToken> tokens)
+List<SmartRange> shiftRangesForEdit(List<SmartRange> ranges, String before, String after)
+```
+- Не больше одного токена каждого вида; смещения — UTF-16 по исходному тексту.
+- Несколько совпадений `#`/`/` → id null, варианты в `candidates` (для попапа);
+  точное совпадение имени выигрывает. Для существующей задачи `projects` пустой.
+- Открытие существующей задачи: всё из `findAllTokenRanges` передать в `dismissed`.
+- После каждой правки — `shiftRangesForEdit`; при сохранении `stripTokens` только
+  с активными токенами (сам убирает висящие предлоги; если остаётся пусто — текст не трогает).
+
 **WP4 — редактор.** Новые `screens/task_editor_screen.dart`,
 `widgets/editor/smart_text_controller.dart`,
 `widgets/editor/attribute_bar.dart`, `widgets/editor/editor_theme.dart`,
