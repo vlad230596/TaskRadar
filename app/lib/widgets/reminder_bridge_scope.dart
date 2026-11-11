@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/board_providers.dart';
+import '../providers/geofence_providers.dart';
 
 /// Keeps `boardReminderBridge` -- and through it `reminderSync` -- subscribed
 /// for as long as the signed-in half of the app exists, whatever is on screen.
@@ -35,18 +36,37 @@ class ReminderBridgeScope extends StatefulWidget {
 class _ReminderBridgeScopeState extends State<ReminderBridgeScope> {
   ProviderSubscription<void>? _bridge;
 
+  /// The same for place reminders (`boardGeofenceBridgeProvider`): the board
+  /// that arms alarms also plans the geofences.
+  ProviderSubscription<void>? _geofences;
+
+  /// Zones survive in the OS on their own, but the *access* behind them does
+  /// not: the user may have granted «Разрешать всегда» in system settings, or
+  /// taken it away. A resume is when that becomes visible, so the zone sync
+  /// re-checks then (a diff, so it costs nothing when nothing changed).
+  AppLifecycleListener? _lifecycle;
+
   @override
   void initState() {
     super.initState();
-    _bridge = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).listen<void>(boardReminderBridgeProvider, (_, _) {});
+    final container = ProviderScope.containerOf(context, listen: false);
+    _bridge = container.listen<void>(boardReminderBridgeProvider, (_, _) {});
+    if (container.read(geofenceGatewayProvider).supported) {
+      _geofences = container.listen<void>(
+        boardGeofenceBridgeProvider,
+        (_, _) {},
+      );
+      _lifecycle = AppLifecycleListener(
+        onResume: () => resyncGeofences(container),
+      );
+    }
   }
 
   @override
   void dispose() {
     _bridge?.close();
+    _geofences?.close();
+    _lifecycle?.dispose();
     super.dispose();
   }
 

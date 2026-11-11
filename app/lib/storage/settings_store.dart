@@ -92,6 +92,13 @@ abstract interface class SettingsStore {
   Future<bool?> readAiMulti();
 
   Future<void> writeAiMulti(bool multi);
+
+  /// «Напоминания по месту» (`design/task-editor-spec.md` §7): whether zones
+  /// are registered at all. Null when never chosen, which reads as off -- the
+  /// feature needs «Разрешать всегда», and nobody gets that by default.
+  Future<bool?> readPlaceReminders();
+
+  Future<void> writePlaceReminders(bool enabled);
 }
 
 /// [SettingsStore] on top of `shared_preferences`.
@@ -126,6 +133,7 @@ class PreferencesSettingsStore implements SettingsStore {
   static const String planLayoutKey = 'plan.layout';
   static const String aiLevelKey = 'ai.level';
   static const String aiMultiKey = 'ai.multi';
+  static const String placeRemindersKey = 'places.enabled';
 
   final Future<SharedPreferences> Function() _preferences;
 
@@ -255,5 +263,22 @@ class PreferencesSettingsStore implements SettingsStore {
   Future<void> writeAiMulti(bool multi) async {
     final preferences = await _preferences();
     await preferences.setBool(aiMultiKey, multi);
+  }
+
+  @override
+  Future<bool?> readPlaceReminders() async {
+    try {
+      final preferences = await _preferences();
+      return preferences.getBool(placeRemindersKey);
+    } catch (error) {
+      debugPrint('Could not read $placeRemindersKey: $error');
+      return null;
+    }
+  }
+
+  @override
+  Future<void> writePlaceReminders(bool enabled) async {
+    final preferences = await _preferences();
+    await preferences.setBool(placeRemindersKey, enabled);
   }
 }
