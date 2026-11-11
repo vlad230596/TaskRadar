@@ -113,9 +113,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('"Причесать" is always there, beside the microphone', (
-    tester,
-  ) async {
+  testWidgets('"Причесать" stands beside the microphone', (tester) async {
     final id = server.addTask(projectId: projectId, title: 'купить кабель');
     await pumpTask(tester, id);
 
@@ -124,6 +122,43 @@ void main() {
     // "Сохранить" now.
     expect(find.byTooltip('Дописать голосом'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Сохранить'), findsOneWidget);
+  });
+
+  testWidgets('"Причесать" is offered only while there is text', (
+    tester,
+  ) async {
+    final id = server.addTask(projectId: projectId, title: 'купить кабель');
+    await pumpTask(tester, id);
+
+    // The title emptied: nothing to tidy, the chip goes; the microphone stays.
+    await tester.enterText(titleField(), '   ');
+    await tester.pump();
+    expect(find.text('Причесать'), findsNothing);
+    expect(find.byTooltip('Дописать голосом'), findsOneWidget);
+
+    // The note opened, still empty: neither its chip nor the title's.
+    await tester.tap(find.text('Заметка к задаче'));
+    await tester.pump();
+    expect(find.text('Причесать'), findsNothing);
+
+    // Text in the note alone: the note's chip, and the title's -- which
+    // tidies the title and the note together.
+    final noteField = find.widgetWithText(
+      TextField,
+      'Кто, что, к какому сроку…',
+    );
+    await tester.enterText(noteField, 'два метра');
+    await tester.pump();
+    expect(find.text('Причесать'), findsNWidgets(2));
+
+    await tester.enterText(noteField, '');
+    await tester.pump();
+    expect(find.text('Причесать'), findsNothing);
+
+    // Typed into the title again: back, as it is typed.
+    await tester.enterText(titleField(), 'к');
+    await tester.pump();
+    expect(find.text('Причесать'), findsOneWidget);
   });
 
   testWidgets('"Причесать" rewrites the title and the note through the hook', (

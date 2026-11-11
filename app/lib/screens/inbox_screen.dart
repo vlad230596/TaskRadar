@@ -590,12 +590,20 @@ class _OpenLineState extends ConsumerState<_OpenLine> {
                   ),
                   const SizedBox(width: 8),
                 ],
-                _SquareAction(
-                  icon: Icons.auto_awesome_outlined,
-                  tooltip: 'Причесать',
-                  onTap: () => unawaited(_tidyLine()),
+                // Only with text to tidy, appearing and going as it is typed.
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: _text,
+                  builder: (context, value, _) => value.text.trim().isEmpty
+                      ? const SizedBox.shrink()
+                      : Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _SquareAction(
+                            icon: Icons.auto_awesome_outlined,
+                            tooltip: 'Причесать',
+                            onTap: () => unawaited(_tidyLine()),
+                          ),
+                        ),
                 ),
-                const SizedBox(width: 8),
                 _SquareAction(
                   icon: Icons.mic_none,
                   tooltip: 'Договорить голосом',

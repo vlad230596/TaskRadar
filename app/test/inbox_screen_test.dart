@@ -341,6 +341,22 @@ void main() {
   });
 
   group('"Причесать" on the line', () {
+    testWidgets('is offered only while the line has text', (tester) async {
+      server.addInboxItem(text: 'Спросить про кабель');
+      await pump(tester);
+      expect(find.byTooltip('Причесать'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '  ');
+      await tester.pump();
+      expect(find.byTooltip('Причесать'), findsNothing);
+      // The other actions stay where they were.
+      expect(find.byTooltip('Договорить голосом'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'кабель');
+      await tester.pump();
+      expect(find.byTooltip('Причесать'), findsOneWidget);
+    });
+
     testWidgets('tidies it and files it into the suggested project, one tap', (
       tester,
     ) async {

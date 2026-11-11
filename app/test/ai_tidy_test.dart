@@ -586,7 +586,9 @@ void main() {
       });
     });
 
-    testWidgets('an empty body has nothing to tidy', (tester) async {
+    testWidgets('"Причесать" is offered only while the body has text', (
+      tester,
+    ) async {
       await pumpHost(
         tester,
         NoteEditorScreen(
@@ -594,13 +596,20 @@ void main() {
           note: note(content: ''),
         ),
       );
-      final button = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byIcon(Icons.auto_awesome_outlined),
-          matching: find.byType(IconButton),
-        ),
-      );
-      expect(button.onPressed, isNull);
+      expect(find.byTooltip('Причесать'), findsNothing);
+
+      final body = find.widgetWithText(TextField, 'Markdown…');
+      await tester.enterText(body, '   \n ');
+      await tester.pump();
+      expect(find.byTooltip('Причесать'), findsNothing);
+
+      await tester.enterText(body, 'гвозди');
+      await tester.pump();
+      expect(find.byTooltip('Причесать'), findsOneWidget);
+
+      await tester.enterText(body, '');
+      await tester.pump();
+      expect(find.byTooltip('Причесать'), findsNothing);
     });
   });
 

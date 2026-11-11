@@ -1027,21 +1027,26 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                           : Text(note, style: AppText.voiceNote),
                     ),
                     if (canTidy)
+                      // Only with text to work from, appearing as it is typed.
                       ValueListenableBuilder<TextEditingValue>(
                         valueListenable: _text,
-                        builder: (context, value, _) => TextButton.icon(
-                          style: TextButton.styleFrom(
-                            foregroundColor: AppColors.voiceBright,
-                            disabledForegroundColor: AppColors.voiceLine,
-                            minimumSize: const Size(0, Targets.minimum),
-                          ),
-                          onPressed: value.text.trim().isEmpty ? null : _tidy,
-                          icon: const Icon(
-                            Icons.auto_awesome_outlined,
-                            size: 18,
-                          ),
-                          label: const Text('Разобрать'),
-                        ),
+                        builder: (context, value, _) =>
+                            value.text.trim().isEmpty
+                            // The button's height kept, so the row under the
+                            // text does not jump when it appears.
+                            ? const SizedBox(height: Targets.minimum)
+                            : TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppColors.voiceBright,
+                                  minimumSize: const Size(0, Targets.minimum),
+                                ),
+                                onPressed: _tidy,
+                                icon: const Icon(
+                                  Icons.auto_awesome_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Разобрать'),
+                              ),
                       ),
                   ],
                 ),

@@ -939,12 +939,22 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
                   onOpen: () => unawaited(_openAiMark(task)),
                 ),
               const Spacer(),
-              _FieldChip(
-                icon: Icons.auto_awesome,
-                label: 'Причесать',
-                onTap: () => unawaited(_tidy()),
+              // Only with text to tidy -- the title or the note -- appearing
+              // and going as it is typed.
+              ListenableBuilder(
+                listenable: Listenable.merge(<Listenable>[_title, _note]),
+                builder: (context, _) =>
+                    _title.text.trim().isEmpty && _note.text.trim().isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: _FieldChip(
+                          icon: Icons.auto_awesome,
+                          label: 'Причесать',
+                          onTap: () => unawaited(_tidy()),
+                        ),
+                      ),
               ),
-              const SizedBox(width: 4),
               _FieldChip(
                 icon: Icons.mic_none,
                 tooltip: dictateTooltip,
@@ -1169,12 +1179,19 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: <Widget>[
-              _FieldChip(
-                icon: Icons.auto_awesome,
-                label: 'Причесать',
-                onTap: () => unawaited(_tidyNote()),
+              ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _note,
+                builder: (context, value, _) => value.text.trim().isEmpty
+                    ? const SizedBox.shrink()
+                    : Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: _FieldChip(
+                          icon: Icons.auto_awesome,
+                          label: 'Причесать',
+                          onTap: () => unawaited(_tidyNote()),
+                        ),
+                      ),
               ),
-              const SizedBox(width: 4),
               _FieldChip(
                 icon: Icons.mic_none,
                 tooltip: 'Дописать в заметку голосом',
