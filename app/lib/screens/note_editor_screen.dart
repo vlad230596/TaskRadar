@@ -218,11 +218,14 @@ class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
                 )
               : null,
           actions: [
-            IconButton(
-              tooltip: 'Причесать',
-              onPressed: _content.text.trim().isEmpty || _saving ? null : _tidy,
-              icon: const Icon(Icons.auto_awesome_outlined),
-            ),
+            // Offered only with something to tidy: on an empty body there is
+            // nothing for the model to work from.
+            if (_content.text.trim().isNotEmpty)
+              IconButton(
+                tooltip: 'Причесать',
+                onPressed: _saving ? null : _tidy,
+                icon: const Icon(Icons.auto_awesome_outlined),
+              ),
             IconButton(
               tooltip: _preview ? 'Редактировать' : 'Просмотр',
               onPressed: () => setState(() => _preview = !_preview),

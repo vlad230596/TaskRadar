@@ -181,6 +181,20 @@ void main() {
   }
 
   group('"Разобрать"', () {
+    testWidgets('is offered only while there is text', (tester) async {
+      await dictate(tester);
+      expect(find.text('Разобрать'), findsOneWidget);
+
+      final field = find.byType(TextField).first;
+      await tester.enterText(field, ' \n ');
+      await tester.pump();
+      expect(find.text('Разобрать'), findsNothing);
+
+      await tester.enterText(field, 'купить кабель');
+      await tester.pump();
+      expect(find.text('Разобрать'), findsOneWidget);
+    });
+
     testWidgets('nothing goes to the model unless it is pressed', (
       tester,
     ) async {

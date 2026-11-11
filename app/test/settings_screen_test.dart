@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:taskradar/domain/reminder_schedule.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
 import 'package:taskradar/providers/dependencies.dart';
@@ -440,5 +441,67 @@ void main() {
         findsOneWidget,
       );
     });
+  });
+
+  group('the app version', () {
+    void buildWith(String version, String buildNumber) =>
+        PackageInfo.setMockInitialValues(
+          appName: 'TaskRadar',
+          packageName: 'app.taskradar',
+          version: version,
+          buildNumber: buildNumber,
+          buildSignature: '',
+        );
+
+    testWidgets('a release build shows its tag and run, selectable', (
+      tester,
+    ) async {
+      buildWith('0.9.0', '123');
+      await pumpSettings(tester);
+      await tester.scrollUntilVisible(
+        find.text('Версия 0.9.0 (123)'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      expect(
+        find.widgetWithText(SelectableText, 'Версия 0.9.0 (123)'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a build without a version says so', (tester) async {
+      buildWith('1.0.0', '1');
+      await pumpSettings(tester);
+      await tester.scrollUntilVisible(
+        find.textContaining('Сборка без номера версии'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      expect(
+        find.text('Сборка без номера версии (1.0.0+1 из pubspec)'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Версия 1.0.0'), findsNothing);
+    });
+  });
+
+  test('describeAppVersion', () {
+    expect(
+      describeAppVersion(version: '0.14.0', build: '57'),
+      'Версия 0.14.0 (57)',
+    );
+    expect(describeAppVersion(version: '0.14.0', build: ''), 'Версия 0.14.0');
+    expect(
+      describeAppVersion(version: '1.0.0', build: '1'),
+      'Сборка без номера версии (1.0.0+1 из pubspec)',
+    );
+    // A real 1.0.0 release has a run number of its own.
+    expect(
+      describeAppVersion(version: '1.0.0', build: '412'),
+      'Версия 1.0.0 (412)',
+    );
+    expect(describeAppVersion(version: '', build: ''), 'Версия неизвестна');
   });
 }

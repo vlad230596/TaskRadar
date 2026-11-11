@@ -158,6 +158,11 @@ dependencies:
   # one. Local files only -- the audio never goes to the server.
   audioplayers: ^6.7.1
 
+  # The version at the bottom of Settings: release builds get `--build-name`
+  # and `--build-number` from `app-release.yml`, and this reads them back at
+  # runtime (Android, Windows, web).
+  package_info_plus: ^10.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

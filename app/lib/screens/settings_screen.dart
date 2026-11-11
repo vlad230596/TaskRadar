@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../api/api_exception.dart';
 import '../api/dictation_api.dart';
@@ -96,6 +97,7 @@ class SettingsScreen extends ConsumerWidget {
                           if (!kIsWeb) _DictationArchiveTile(),
                         ],
                       ),
+                      _AppVersion(),
                     ],
                   ),
                 ),
@@ -448,6 +450,67 @@ class _PermissionsTile extends ConsumerWidget {
         (true, _) => 'Уведомления и точные будильники разрешены.',
       },
       onTap: () => ref.read(notificationPermissionsProvider.notifier).request(),
+    );
+  }
+}
+
+/// What [PackageInfo] reports when nobody set the version at build time: the
+/// `version:` line of `pubspec.yaml`, which is never bumped by hand.
+const String _unsetVersion = '1.0.0';
+const String _unsetBuild = '1';
+
+/// The line at the bottom of Settings: «Версия 0.9.0 (123)».
+///
+/// Release builds get `--build-name <tag>` and `--build-number <run>` from
+/// `app-release.yml`; anything built without them (a local run, a debug
+/// build) reports the pubspec's `1.0.0+1`, which is not a release and must not
+/// read as one -- so it says so instead.
+String describeAppVersion({required String version, required String build}) {
+  if (version.isEmpty) return 'Версия неизвестна';
+  if (version == _unsetVersion && (build.isEmpty || build == _unsetBuild)) {
+    return 'Сборка без номера версии ($version+${build.isEmpty ? '?' : build} '
+        'из pubspec)';
+  }
+  return build.isEmpty ? 'Версия $version' : 'Версия $version ($build)';
+}
+
+/// The app's version, selectable so it can be copied into a bug report.
+class _AppVersion extends StatefulWidget {
+  const _AppVersion();
+
+  @override
+  State<_AppVersion> createState() => _AppVersionState();
+}
+
+class _AppVersionState extends State<_AppVersion> {
+  late final Future<PackageInfo> _info = PackageInfo.fromPlatform();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: _info,
+      builder: (context, snapshot) {
+        final info = snapshot.data;
+        final String text;
+        if (info != null) {
+          text = describeAppVersion(
+            version: info.version,
+            build: info.buildNumber,
+          );
+        } else if (snapshot.hasError) {
+          text = 'Версия неизвестна';
+        } else {
+          return const SizedBox(height: 48);
+        }
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(4, 24, 4, 0),
+          child: SelectableText(
+            text,
+            textAlign: TextAlign.center,
+            style: AppText.caption,
+          ),
+        );
+      },
     );
   }
 }
