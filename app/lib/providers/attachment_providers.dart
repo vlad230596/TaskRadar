@@ -108,16 +108,12 @@ class AttachmentQueue {
       }
       return;
     }
-    await _outbox.queueDeleteAttachment(
-      task: task,
-      attachmentId: attachmentId,
-    );
+    await _outbox.queueDeleteAttachment(task: task, attachmentId: attachmentId);
     unawaited(_outbox.flush());
   }
 
   /// A refused picture, sent again («Повторить»).
-  Future<void> retry(PendingAttachment pending) =>
-      _outbox.retry(pending.entry);
+  Future<void> retry(PendingAttachment pending) => _outbox.retry(pending.entry);
 
   /// A waiting or refused picture, thrown away with its local copy
   /// («Убрать»).

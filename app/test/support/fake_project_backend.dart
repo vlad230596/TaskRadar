@@ -1002,8 +1002,11 @@ class FakeProjectBackend {
         return _error(409, 'A task holds at most 30 pictures');
       }
       final mime = file.value.contentType?.mimeType ?? 'image/png';
-      if (!const <String>['image/png', 'image/jpeg', 'image/webp']
-          .contains(mime)) {
+      if (!const <String>[
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+      ].contains(mime)) {
         return _error(415, 'Only PNG, JPEG or WebP');
       }
 
@@ -1242,11 +1245,8 @@ class FakeProjectBackend {
     if (raw == null) return Uint8List(0);
     final text = latin1.decode(raw);
     final part = text.indexOf('name="file"');
-    final start = text.indexOf('
-
-', part) + 4;
-    final end = text.indexOf('
---$boundary', start);
+    final start = text.indexOf('\r\n\r\n', part) + 4;
+    final end = text.indexOf('\r\n--$boundary', start);
     return Uint8List.sublistView(raw, start, end);
   }
 

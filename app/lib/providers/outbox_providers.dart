@@ -211,11 +211,13 @@ class Outbox extends _$Outbox {
   /// A refused entry, thrown away -- and a picture's local copy with it.
   /// Also takes a picture still waiting («Убрать» on its thumbnail).
   Future<void> discard(OutboxEntry entry) async {
-    final next = (await future)
-        .where((row) => row.key != entry.key)
-        .toList(growable: false);
-    await _store.write(next);
-    _publish(next);
+    await _serial(() async {
+      final next = (await future)
+          .where((row) => row.key != entry.key)
+          .toList(growable: false);
+      await _store.write(next);
+      _publish(next);
+    });
     final path = entry.localPath;
     if (path != null) await ref.read(outboxFileStoreProvider).delete(path);
   }
@@ -423,19 +425,24 @@ class Outbox extends _$Outbox {
 
     // Reconciled against the outbox as it is now, not as this pass found it:
     // an edit can be queued while a request is in flight.
-    final live = <OutboxEntry>[
-      for (final row in await future)
-        if (!dropped.contains(row.key)) settled[row.key] ?? row,
-    ];
-    try {
-      await _store.write(live);
-    } catch (error) {
-      // The writes *are* on the server. The file still has them as waiting;
-      // the next pass sends them again, which the create key and `expected`
-      // (a field that already holds the value is not a conflict) both absorb.
-      debugPrint('Could not record the sent outbox entries: $error');
-    }
-    _publish(live);
+    // Under [_serial], so a picture thrown away or an edit queued meanwhile
+    // is neither lost nor brought back by this write.
+    await _serial(() async {
+      final live = <OutboxEntry>[
+        for (final row in await future)
+          if (!dropped.contains(row.key)) settled[row.key] ?? row,
+      ];
+      try {
+        await _store.write(live);
+      } catch (error) {
+        // The writes *are* on the server. The file still has them as
+        // waiting; the next pass sends them again, which the create key,
+        // the upload key and `expected` (a field that already holds the
+        // value is not a conflict) all absorb.
+        debugPrint('Could not record the sent outbox entries: $error');
+      }
+      _publish(live);
+    });
 
     final files = ref.read(outboxFileStoreProvider);
     for (final path in sentFiles) {
@@ -526,25 +533,44 @@ class Outbox extends _$Outbox {
     }
   }
 
-  Future<OutboxEntry> _append(OutboxEntry entry) async {
+  Future<OutboxEntry> _append(OutboxEntry entry) => _serial(() async {
     final next = <OutboxEntry>[...await future, entry];
     await _store.write(next);
     _publish(next);
     return entry;
-  }
+  });
 
   Future<void> _replace(
     String key,
     OutboxEntry Function(OutboxEntry row) change,
   ) async {
-    final next = <OutboxEntry>[
-      for (final row in await future) row.key == key ? change(row) : row,
-    ];
-    await _store.write(next);
-    _publish(next);
+    final next = await _serial(() async {
+      final next = <OutboxEntry>[
+        for (final row in await future) row.key == key ? change(row) : row,
+      ];
+      await _store.write(next);
+      _publish(next);
+      return next;
+    });
     if (next.any((row) => row.key == key && row.isWaiting)) {
       unawaited(flush());
     }
+  }
+
+  /// The tail of the read-modify-write steps on the list.
+  Future<void> _changing = Future<void>.value();
+
+  /// Runs one read-modify-write of the list after the one before it.
+  ///
+  /// Each step reads the list, writes the file and publishes, with awaits in
+  /// between; two of them interleaved -- a flush settling while a picture is
+  /// thrown away, say -- would let the later publish undo the earlier one,
+  /// and an upload already sent (its copy deleted) would come back as
+  /// waiting with no file to send.
+  Future<T> _serial<T>(Future<T> Function() step) {
+    final run = _changing.then((_) => step());
+    _changing = run.then<void>((_) {}, onError: (Object _) {});
+    return run;
   }
 
   void _publish(List<OutboxEntry> entries) {

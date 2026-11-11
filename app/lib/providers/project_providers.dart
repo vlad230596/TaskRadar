@@ -604,8 +604,7 @@ class ProjectTasks extends _$ProjectTasks {
             predicted.copyWith(
               // The one weakening `isCurrent` allows: see [setStatus].
               isCurrent:
-                  predicted.isCurrent &&
-                  predicted.status == TaskStatus.pending,
+                  predicted.isCurrent && predicted.status == TaskStatus.pending,
             ),
           ),
           send: () async {

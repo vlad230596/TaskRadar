@@ -49,12 +49,14 @@ class LinkPreviewApi {
   /// The preview, or null when the server has none (204: not http(s), a
   /// private address, a timeout, no title).
   Future<LinkPreview?> fetch(String url) async {
-    final json = await _client.get<Map<String, dynamic>?>(
+    // `dynamic`: a 204 arrives as null or as an empty string, depending on
+    // the headers it came with.
+    final json = await _client.get<dynamic>(
       '/link-preview',
       queryParameters: <String, dynamic>{'url': url},
     );
-    if (json == null) return null;
-    final preview = LinkPreview.fromJson(json);
+    if (json is! Map) return null;
+    final preview = LinkPreview.fromJson(Map<String, dynamic>.from(json));
     if (preview.title == null && preview.siteName == null) return null;
     return preview;
   }

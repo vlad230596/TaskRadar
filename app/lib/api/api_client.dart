@@ -57,7 +57,8 @@ class ApiClient {
           // which statuses are "errors". [_mapError] then produces one of the
           // three exception types from api_exception.dart, so the error surface
           // of this class does not depend on dio's defaults.
-          validateStatus: (status) => status != null && status >= 200 && status < 300,
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 300,
         ),
       ),
     );
@@ -67,7 +68,8 @@ class ApiClient {
   /// 401 handler. Using `extra` (rather than a parameter threaded through the
   /// interceptor) is what lets the handler stay a single interceptor while
   /// individual calls can still exempt themselves.
-  static const String _skipUnauthorizedHandlerKey = 'taskradar.skipUnauthorizedHandler';
+  static const String _skipUnauthorizedHandlerKey =
+      'taskradar.skipUnauthorizedHandler';
 
   final Dio dio;
 
@@ -138,7 +140,8 @@ class ApiClient {
 
   void _onError(DioException error, ErrorInterceptorHandler handler) {
     final isUnauthorized = error.response?.statusCode == 401;
-    final skip = error.requestOptions.extra[_skipUnauthorizedHandlerKey] == true;
+    final skip =
+        error.requestOptions.extra[_skipUnauthorizedHandlerKey] == true;
 
     if (isUnauthorized && !skip) {
       _onUnauthorized?.call();
@@ -310,7 +313,10 @@ class ApiClient {
       );
       final data = response.data;
       if (data == null) {
-        throw ApiException(response.statusCode, 'Empty body where bytes were expected');
+        throw ApiException(
+          response.statusCode,
+          'Empty body where bytes were expected',
+        );
       }
       return data is Uint8List ? data : Uint8List.fromList(data);
     } on DioException catch (error) {
