@@ -30,6 +30,23 @@ export const PUBLIC_ROUTES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Routes the session guard leaves alone because they check a *different*
+ * credential themselves: the MCP endpoint, which takes a personal agent token
+ * (../lib/agentTokens.ts) and answers 401 on its own when there is none.
+ *
+ * Not in {@link PUBLIC_ROUTES} on purpose: nothing here is reachable without
+ * credentials, and a reader of that list should be able to trust it means
+ * "no credentials at all". GET and DELETE only ever answer 405 (the endpoint
+ * is stateless, see ../routes/mcp.ts); they are listed so a client probing
+ * for a stream hears that, not a 401 that would send it looking for OAuth.
+ */
+export const SELF_AUTHENTICATED_ROUTES: ReadonlySet<string> = new Set([
+  "POST /mcp",
+  "GET /mcp",
+  "DELETE /mcp",
+]);
+
+/**
  * Decides whether a request targets a public route.
  *
  * Matches on the route *pattern* that Fastify actually resolved
@@ -88,6 +105,12 @@ export function sessionCookieOptions(config: AuthConfig): CookieSerializeOptions
 export function createAuthGuard(users: UserStore): onRequestHookHandler {
   return async function authGuard(request, reply) {
     if (isPublicRoute(request.method, request.routeOptions.url)) {
+      return;
+    }
+    if (
+      request.routeOptions.url !== undefined &&
+      SELF_AUTHENTICATED_ROUTES.has(`${request.method} ${request.routeOptions.url}`)
+    ) {
       return;
     }
 

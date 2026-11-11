@@ -146,11 +146,17 @@ jobs:
         # prefix looked like in production: both answered 404 from the edge for
         # a whole release.
         run: |
-          for path in /board /projects /scopes /inbox /auth/me; do
+          for path in /board /projects /scopes /inbox /auth/me /agent-tokens; do
             status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL$path")"
             echo "$path -> $status"
             test "$status" = '401'
           done
+          # The MCP endpoint checks its own (agent) token; a missing one is a
+          # 401 from the backend too. A 404 here would be the edge again.
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header 'Content-Type: application/json' --data '{}' "$BASE_URL/mcp")"
+          echo "POST /mcp -> $status"
+          test "$status" = '401'
 
       - name: The root serves the web client, not the API
         # The half of the origin the browser talks to (F10). `/` has to reach
@@ -226,6 +232,34 @@ jobs:
           # migrated database; what matters is that the query ran at all instead
           # of failing on a missing table.
           node -e "if (!Array.isArray(JSON.parse(process.argv[1]))) { throw new Error('unexpected board shape'); }" "$board"
+
+      - name: An agent token reaches the MCP endpoint through the edge
+        # The whole agent path (docs/mcp.md): a token made with the session,
+        # then one MCP request with it -- through Caddy, against the migrated
+        # agent_tokens table.
+        run: |
+          login="$(curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data "{\"email\":\"$CI_EMAIL\",\"password\":\"$CI_PASSWORD\"}" \
+            "$BASE_URL/auth/login")"
+          session="$(node -p "JSON.parse(process.argv[1]).token" "$login")"
+          created="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $session" \
+            --header 'Content-Type: application/json' --data '{"name":"ci"}' \
+            "$BASE_URL/agent-tokens")"
+          agent="$(node -p "JSON.parse(process.argv[1]).token" "$created")"
+          tools="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer $agent" \
+            --header 'Content-Type: application/json' \
+            --header 'Accept: application/json, text/event-stream' \
+            --data '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+            "$BASE_URL/mcp")"
+          echo "$tools" | grep -q '"list_tasks"'
+          # The agent token opens nothing but /mcp.
+          status="$(curl --silent --output /dev/null --write-out '%{http_code}' \
+            --header "Authorization: Bearer $agent" "$BASE_URL/board")"
+          echo "agent token on /board -> $status"
+          test "$status" = '401'
 
       - name: Container logs on failure
         if: failure()
