@@ -304,6 +304,103 @@ final class OutboxStoreProvider
 
 String _$outboxStoreHash() => r'c8c14c8f300b73317c79b2d01bcfc3f7fbf55000';
 
+/// The copies of pictures waiting in the outbox (`OutboxKind.uploadAttachment`).
+/// In memory on web, which has no file system to copy into.
+
+@ProviderFor(outboxFileStore)
+final outboxFileStoreProvider = OutboxFileStoreProvider._();
+
+/// The copies of pictures waiting in the outbox (`OutboxKind.uploadAttachment`).
+/// In memory on web, which has no file system to copy into.
+
+final class OutboxFileStoreProvider
+    extends
+        $FunctionalProvider<OutboxFileStore, OutboxFileStore, OutboxFileStore>
+    with $Provider<OutboxFileStore> {
+  /// The copies of pictures waiting in the outbox (`OutboxKind.uploadAttachment`).
+  /// In memory on web, which has no file system to copy into.
+  OutboxFileStoreProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'outboxFileStoreProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$outboxFileStoreHash();
+
+  @$internal
+  @override
+  $ProviderElement<OutboxFileStore> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  OutboxFileStore create(Ref ref) {
+    return outboxFileStore(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(OutboxFileStore value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<OutboxFileStore>(value),
+    );
+  }
+}
+
+String _$outboxFileStoreHash() => r'e49fdc02077e018054b8f2808e6ff7f1f89a338e';
+
+/// Pictures already fetched, by attachment id (`attachmentBytesProvider`).
+
+@ProviderFor(attachmentCache)
+final attachmentCacheProvider = AttachmentCacheProvider._();
+
+/// Pictures already fetched, by attachment id (`attachmentBytesProvider`).
+
+final class AttachmentCacheProvider
+    extends
+        $FunctionalProvider<AttachmentCache, AttachmentCache, AttachmentCache>
+    with $Provider<AttachmentCache> {
+  /// Pictures already fetched, by attachment id (`attachmentBytesProvider`).
+  AttachmentCacheProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'attachmentCacheProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$attachmentCacheHash();
+
+  @$internal
+  @override
+  $ProviderElement<AttachmentCache> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  AttachmentCache create(Ref ref) {
+    return attachmentCache(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(AttachmentCache value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AttachmentCache>(value),
+    );
+  }
+}
+
+String _$attachmentCacheHash() => r'2d7233f3af372b4209abba6b0466e4e99cb2e1e9';
+
 /// Persisted user preferences (F4): currently the reminder hour.
 ///
 /// Here rather than in `reminder_providers.dart` for the same reason as
@@ -686,3 +783,95 @@ final class DictationApiProvider
 }
 
 String _$dictationApiHash() => r'cc4ec7e22eae2e4c61cc511585b99940249b4973';
+
+/// A task's pictures (task editor). Same shape and reasoning as [projectApi].
+
+@ProviderFor(attachmentApi)
+final attachmentApiProvider = AttachmentApiProvider._();
+
+/// A task's pictures (task editor). Same shape and reasoning as [projectApi].
+
+final class AttachmentApiProvider
+    extends $FunctionalProvider<AttachmentApi, AttachmentApi, AttachmentApi>
+    with $Provider<AttachmentApi> {
+  /// A task's pictures (task editor). Same shape and reasoning as [projectApi].
+  AttachmentApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'attachmentApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$attachmentApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<AttachmentApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  AttachmentApi create(Ref ref) {
+    return attachmentApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(AttachmentApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AttachmentApi>(value),
+    );
+  }
+}
+
+String _$attachmentApiHash() => r'7f54609592f6d43369ca7d7f2632011441a1edf1';
+
+/// Link titles for the editor's link cards. Same shape as [projectApi].
+
+@ProviderFor(linkPreviewApi)
+final linkPreviewApiProvider = LinkPreviewApiProvider._();
+
+/// Link titles for the editor's link cards. Same shape as [projectApi].
+
+final class LinkPreviewApiProvider
+    extends $FunctionalProvider<LinkPreviewApi, LinkPreviewApi, LinkPreviewApi>
+    with $Provider<LinkPreviewApi> {
+  /// Link titles for the editor's link cards. Same shape as [projectApi].
+  LinkPreviewApiProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'linkPreviewApiProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$linkPreviewApiHash();
+
+  @$internal
+  @override
+  $ProviderElement<LinkPreviewApi> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  LinkPreviewApi create(Ref ref) {
+    return linkPreviewApi(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(LinkPreviewApi value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<LinkPreviewApi>(value),
+    );
+  }
+}
+
+String _$linkPreviewApiHash() => r'96c21e3554057cc30deb5def2221db22be0a046d';

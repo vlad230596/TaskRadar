@@ -200,6 +200,11 @@ dependencies:
   # in our AndroidManifest.xml -- the plugin's own manifest declares nothing.
   native_geofence: ^1.4.0
 
+  # `XFile`, the picture handed to `AttachmentQueue.add` (WP2). Already in
+  # the tree through image_picker; named here because the data layer imports
+  # it directly and must not depend on the picker for one type.
+  cross_file: ^0.3.4
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

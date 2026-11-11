@@ -7,17 +7,21 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/api_exception.dart';
 import '../api/patch_field.dart';
 import '../api/project_api.dart';
+import '../api/task_wire.dart';
 import '../domain/not_loaded.dart';
 import '../domain/outbox_overlay.dart';
 import '../domain/reminders.dart';
 import '../domain/task_reorder.dart';
 import '../models/board_project.dart';
+import '../models/checklist_item.dart';
 import '../models/inbox_item.dart';
 import '../models/note.dart';
 import '../models/project.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
+import '../models/task_location.dart';
 import '../models/task_status.dart';
+import '../storage/capture_queue_store.dart' show PendingCapture;
 import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
@@ -175,29 +179,47 @@ class ProjectTasks extends _$ProjectTasks {
   ///
   /// With no network the task goes to the outbox and the answer is
   /// [WriteOutcome.queued]: it is on this device, and drawn in the list.
+  ///
+  /// [status], [checklist] and [location] come from the task editor
+  /// (`design/task-editor-spec.md` §10) and ride in the same create, online
+  /// and offline alike. Every create carries a fresh `createKey`, and the
+  /// answer names the task either way -- [WriteOutcome.taskId] is the
+  /// server's id once sent, or the `local:outbox:<createKey>` of the queued
+  /// create -- which is what `AttachmentQueue.add` takes for the pictures
+  /// the editor held until the task existed.
   Future<WriteOutcome> create(
     String title, {
     String? description,
     String? categoryId,
+    TaskStatus? status,
     String? remindAt,
     String? remindTime,
+    List<ChecklistItem>? checklist,
+    TaskLocation? location,
     String? dictationParseId,
   }) {
     final trimmed = title.trim();
     if (trimmed.isEmpty) return Future<WriteOutcome>.value(WriteOutcome.sent);
 
     final time = remindAt == null ? null : remindTime;
+    final items = (checklist == null || checklist.isEmpty) ? null : checklist;
+    final createKey = PendingCapture.newKey();
+    String? createdId;
     return _mutate(
       offline: () => ref
           .read(outboxProvider.notifier)
           .queueCreate(
             projectId: projectId,
+            key: createKey,
             body: <String, Object?>{
               'title': trimmed,
               'description': ?description,
               'categoryId': ?categoryId,
+              'status': ?status?.name,
               'remindAt': ?remindAt,
               'remindTime': ?time,
+              TaskWire.checklistKey: ?TaskWire.checklist(items),
+              TaskWire.locationKey: ?TaskWire.location(location),
               'dictationParseId': ?dictationParseId,
             },
           ),
@@ -210,24 +232,36 @@ class ProjectTasks extends _$ProjectTasks {
               rows,
               description: description,
               categoryId: categoryId,
+              status: status,
               remindAt: remindAt,
-              remindTime: remindAt == null ? null : remindTime,
+              remindTime: time,
+              checklist: items,
+              location: location,
             ),
           ],
           send: () async {
-            await _api.createTask(
+            final created = await _api.createTask(
               projectId: projectId,
               title: trimmed,
               description: description,
               categoryId: categoryId,
+              status: status,
               remindAt: remindAt,
-              remindTime: remindAt == null ? null : remindTime,
+              remindTime: time,
+              checklist: items,
+              location: location,
               dictationParseId: dictationParseId,
+              createKey: createKey,
             );
+            createdId = created.id;
             return null; // reconcile: the new row may be the current one now
           },
         );
       },
+    ).then(
+      (outcome) => outcome.isQueued
+          ? WriteOutcome.queuedAs('local:outbox:$createKey', createKey)
+          : WriteOutcome.sentAs(createdId, createKey),
     );
   }
 
@@ -444,6 +478,148 @@ class ProjectTasks extends _$ProjectTasks {
         'description': next,
         'dictationParseId': ?dictationParseId,
         if (aiClear) 'aiClear': true,
+      },
+    );
+  }
+
+  /// Saves the task editor's changes in one `PATCH /tasks/:id`
+  /// (`design/task-editor-spec.md` §1, «Сохранить»).
+  ///
+  /// Every field is "leave it" unless given: [title] and [status] by null
+  /// (the server cannot clear them), the rest by [PatchField.keep] -- the
+  /// same three states, for the same reason, as `ProjectApi.updateTask`. An
+  /// empty checklist is a clear. Nothing to change is a no-op.
+  ///
+  /// A status change re-reads the list (the current task may move); anything
+  /// else merges the server's row, like [editTitle]. Moving to `done` drops
+  /// the reminder date, as [setStatus] does, unless [remindAt] says what to
+  /// do with it.
+  ///
+  /// With no network the PATCH goes to the outbox with every changed field in
+  /// `expected` -- the checklist as a whole: an item ticked on the laptop
+  /// meanwhile makes this edit "пропущено", never a silent merge.
+  Future<WriteOutcome> edit(
+    Task task, {
+    String? title,
+    PatchField<String> description = const PatchField<String>.keep(),
+    PatchField<String> categoryId = const PatchField<String>.keep(),
+    TaskStatus? status,
+    PatchField<String> remindAt = const PatchField<String>.keep(),
+    PatchField<String> remindTime = const PatchField<String>.keep(),
+    PatchField<List<ChecklistItem>> checklist =
+        const PatchField<List<ChecklistItem>>.keep(),
+    PatchField<TaskLocation> location = const PatchField<TaskLocation>.keep(),
+    String? dictationParseId,
+  }) {
+    final body = <String, Object?>{};
+    final nextTitle = title?.trim();
+    if (nextTitle != null && nextTitle.isNotEmpty && nextTitle != task.title) {
+      body['title'] = nextTitle;
+    }
+    description.writeTo(body, 'description');
+    categoryId.writeTo(body, 'categoryId');
+    if (status != null && status != task.status) body['status'] = status.name;
+    remindAt.writeTo(body, 'remindAt');
+    remindTime.writeTo(body, 'remindTime');
+    if (status == TaskStatus.done &&
+        status != task.status &&
+        task.remindAt != null &&
+        remindAt.isKeep) {
+      body['remindAt'] = null;
+    }
+    if (body.containsKey('remindAt') && body['remindAt'] == null) {
+      // The server drops the time with the date.
+      body.remove('remindTime');
+    }
+    switch (checklist) {
+      case PatchSet(:final value):
+        body[TaskWire.checklistKey] = TaskWire.checklist(value);
+      case PatchClear():
+        body[TaskWire.checklistKey] = null;
+      case PatchKeep():
+        break;
+    }
+    switch (location) {
+      case PatchSet(:final value):
+        body[TaskWire.locationKey] = TaskWire.location(value);
+      case PatchClear():
+        body[TaskWire.locationKey] = null;
+      case PatchKeep():
+        break;
+    }
+
+    // Values equal to what the row holds are not changes: they would only
+    // widen `expected` and invite a conflict over a field nobody touched.
+    final current = taskWireValues(task);
+    body.removeWhere(
+      (field, value) =>
+          current.containsKey(field) && _sameWire(current[field], value),
+    );
+    if (body.isEmpty) return Future<WriteOutcome>.value(WriteOutcome.sent);
+    if (dictationParseId != null) body['dictationParseId'] = dictationParseId;
+
+    final reconciles = body.containsKey('status');
+    return _patch(task, body, reconciles: reconciles);
+  }
+
+  /// Ticks or unticks one checklist item, and saves it at once -- a tick is
+  /// an action, not an edit of the text (§6). The whole list goes, checked
+  /// against the whole list as it was.
+  Future<WriteOutcome> toggleChecklistItem(Task task, String itemId) {
+    final items = task.checklist;
+    if (items == null || !items.any((item) => item.id == itemId)) {
+      return Future<WriteOutcome>.value(WriteOutcome.sent);
+    }
+    final next = <ChecklistItem>[
+      for (final item in items)
+        item.id == itemId ? item.copyWith(done: !item.done) : item,
+    ];
+    return _patch(task, <String, Object?>{
+      TaskWire.checklistKey: TaskWire.checklist(next),
+    }, reconciles: false);
+  }
+
+  /// One wire PATCH: the optimistic row is the body applied as the server
+  /// would ([applyTaskPatch]), the online path sends the body as it is, and
+  /// the offline path queues the same body.
+  Future<WriteOutcome> _patch(
+    Task task,
+    Map<String, Object?> body, {
+    required bool reconciles,
+  }) {
+    final changes = <String, Object?>{...body}..remove('dictationParseId');
+    return _mutate(
+      offline: () => ref
+          .read(outboxProvider.notifier)
+          .queueEdit(base: task, body: body, checked: changes.keys.toSet()),
+      (rows) {
+        final index = rows.indexWhere((row) => row.id == task.id);
+        if (index < 0) return null;
+
+        final predicted = applyTaskPatch(rows[index], body);
+        return _MutationPlan(
+          optimistic: _replaceAt(
+            rows,
+            index,
+            predicted.copyWith(
+              // The one weakening `isCurrent` allows: see [setStatus].
+              isCurrent:
+                  predicted.isCurrent && predicted.status == TaskStatus.pending,
+            ),
+          ),
+          send: () async {
+            final saved = await _api.replayTaskPatch(task.id, body);
+            if (reconciles) return null;
+            final current = state.value ?? rows;
+            final at = current.indexWhere((row) => row.id == task.id);
+            if (at < 0) return current;
+            return _replaceAt(
+              current,
+              at,
+              mergeMutatedTask(current[at], saved),
+            );
+          },
+        );
       },
     );
   }
@@ -816,6 +992,8 @@ class ProjectTasks extends _$ProjectTasks {
     TaskStatus? status,
     String? remindAt,
     String? remindTime,
+    List<ChecklistItem>? checklist,
+    TaskLocation? location,
   }) {
     final now = DateTime.now().toUtc().toIso8601String();
 
@@ -831,6 +1009,8 @@ class ProjectTasks extends _$ProjectTasks {
       remindAt: remindAt,
       remindTime: remindTime,
       categoryId: categoryId,
+      checklist: checklist,
+      location: location,
       createdAt: now,
       updatedAt: now,
       isCurrent: false,
@@ -838,14 +1018,74 @@ class ProjectTasks extends _$ProjectTasks {
   }
 }
 
-/// What became of a task write.
-enum WriteOutcome {
+/// Whether two wire values are one value: deep for the checklist and the
+/// place, which arrive as lists and maps.
+bool _sameWire(Object? a, Object? b) {
+  if (a is List && b is List) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (!_sameWire(a[i], b[i])) return false;
+    }
+    return true;
+  }
+  if (a is Map && b is Map) {
+    if (a.length != b.length) return false;
+    for (final key in a.keys) {
+      if (!b.containsKey(key) || !_sameWire(a[key], b[key])) return false;
+    }
+    return true;
+  }
+  if (a is num && b is num) return a == b;
+  return a == b;
+}
+
+/// What became of a task write: [sent] or [queued].
+///
+/// A class rather than the enum it was, so that a create can say *which*
+/// task it made ([taskId], [createKey]) -- the editor attaches its pictures
+/// to that. Equality is the outcome alone, so `outcome == WriteOutcome.queued`
+/// holds for every queued write, whatever task it names.
+@immutable
+final class WriteOutcome {
+  const WriteOutcome._(this.isQueued, {this.taskId, this.createKey});
+
   /// The server has it.
-  sent,
+  static const WriteOutcome sent = WriteOutcome._(false);
 
   /// There was no network; it is in the outbox, on this device, and will be
   /// sent when there is one.
-  queued,
+  static const WriteOutcome queued = WriteOutcome._(true);
+
+  /// A create the server has, with the id it got.
+  const WriteOutcome.sentAs(String? taskId, String createKey)
+    : this._(false, taskId: taskId, createKey: createKey);
+
+  /// A create in the outbox: [taskId] is its `local:outbox:<createKey>`.
+  const WriteOutcome.queuedAs(String taskId, String createKey)
+    : this._(true, taskId: taskId, createKey: createKey);
+
+  final bool isQueued;
+
+  /// For a create: the server's id once sent, `local:outbox:<createKey>`
+  /// while queued -- what `AttachmentQueue.add` takes. Null for other writes.
+  final String? taskId;
+
+  /// For a create: its idempotency key.
+  final String? createKey;
+
+  bool get isSent => !isQueued;
+
+  @override
+  bool operator ==(Object other) =>
+      other is WriteOutcome && other.isQueued == isQueued;
+
+  @override
+  int get hashCode => isQueued.hashCode;
+
+  @override
+  String toString() =>
+      'WriteOutcome.${isQueued ? 'queued' : 'sent'}'
+      '${taskId == null ? '' : '($taskId)'}';
 }
 
 /// True for a row this client invented and the server has not confirmed yet.

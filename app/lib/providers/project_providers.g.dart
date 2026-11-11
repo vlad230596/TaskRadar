@@ -27,8 +27,10 @@ part of 'project_providers.dart';
 ///    network and the outbox can hold it.** An optimistic update is a
 ///    *prediction shown for one round trip*. Creates and field edits that hit
 ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-///    and are drawn over the list by [projectView] until they are sent; a
-///    delete, a move or an unfile still needs the network and still says so.
+///    and are drawn over the list by [projectView] until they are sent; so
+///    is a move into another project ([ProjectTasks.moveToProject]). A
+///    delete, a reorder or an unfile still needs the network and still says
+///    so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -102,8 +104,10 @@ final projectHeaderProvider = ProjectHeaderFamily._();
 ///    network and the outbox can hold it.** An optimistic update is a
 ///    *prediction shown for one round trip*. Creates and field edits that hit
 ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-///    and are drawn over the list by [projectView] until they are sent; a
-///    delete, a move or an unfile still needs the network and still says so.
+///    and are drawn over the list by [projectView] until they are sent; so
+///    is a move into another project ([ProjectTasks.moveToProject]). A
+///    delete, a reorder or an unfile still needs the network and still says
+///    so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -175,8 +179,10 @@ final class ProjectHeaderProvider
   ///    network and the outbox can hold it.** An optimistic update is a
   ///    *prediction shown for one round trip*. Creates and field edits that hit
   ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-  ///    and are drawn over the list by [projectView] until they are sent; a
-  ///    delete, a move or an unfile still needs the network and still says so.
+  ///    and are drawn over the list by [projectView] until they are sent; so
+  ///    is a move into another project ([ProjectTasks.moveToProject]). A
+  ///    delete, a reorder or an unfile still needs the network and still says
+  ///    so.
   ///
   /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
   ///    file mentions the scheduler. Writes flow into the board (see
@@ -284,8 +290,10 @@ String _$projectHeaderHash() => r'fa6bbc40c5a329b6c2e938a56f654c0fa35805d9';
 ///    network and the outbox can hold it.** An optimistic update is a
 ///    *prediction shown for one round trip*. Creates and field edits that hit
 ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-///    and are drawn over the list by [projectView] until they are sent; a
-///    delete, a move or an unfile still needs the network and still says so.
+///    and are drawn over the list by [projectView] until they are sent; so
+///    is a move into another project ([ProjectTasks.moveToProject]). A
+///    delete, a reorder or an unfile still needs the network and still says
+///    so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -374,8 +382,10 @@ final class ProjectHeaderFamily extends $Family
   ///    network and the outbox can hold it.** An optimistic update is a
   ///    *prediction shown for one round trip*. Creates and field edits that hit
   ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-  ///    and are drawn over the list by [projectView] until they are sent; a
-  ///    delete, a move or an unfile still needs the network and still says so.
+  ///    and are drawn over the list by [projectView] until they are sent; so
+  ///    is a move into another project ([ProjectTasks.moveToProject]). A
+  ///    delete, a reorder or an unfile still needs the network and still says
+  ///    so.
   ///
   /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
   ///    file mentions the scheduler. Writes flow into the board (see
@@ -453,8 +463,10 @@ final class ProjectHeaderFamily extends $Family
 ///    network and the outbox can hold it.** An optimistic update is a
 ///    *prediction shown for one round trip*. Creates and field edits that hit
 ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-///    and are drawn over the list by [projectView] until they are sent; a
-///    delete, a move or an unfile still needs the network and still says so.
+///    and are drawn over the list by [projectView] until they are sent; so
+///    is a move into another project ([ProjectTasks.moveToProject]). A
+///    delete, a reorder or an unfile still needs the network and still says
+///    so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -572,7 +584,7 @@ final class ProjectTasksProvider
   }
 }
 
-String _$projectTasksHash() => r'25e4e11f7351a4cd1b05582b487ea1b119eadf27';
+String _$projectTasksHash() => r'2fa050f5be4c5eee7a65959041f1d39dd3ec86c0';
 
 /// One project's tasks, and every write that touches them.
 

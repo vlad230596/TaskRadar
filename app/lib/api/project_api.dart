@@ -1,10 +1,13 @@
+import '../models/checklist_item.dart';
 import '../models/note.dart';
 import '../models/project.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
+import '../models/task_location.dart';
 import '../models/task_status.dart';
 import 'api_client.dart';
 import 'patch_field.dart';
+import 'task_wire.dart';
 
 /// Everything the project screen (F3) talks to: one project, its tasks, its
 /// notes.
@@ -194,6 +197,9 @@ class ProjectApi {
   /// [dictationParseId] links the server's dataset record of the parse this
   /// task came from (F14), so the prompt can later be scored against what was
   /// actually kept.
+  ///
+  /// [checklist] and [location] are the task editor's (§10 of
+  /// `design/task-editor-spec.md`); an empty checklist is not sent.
   Future<Task> createTask({
     required String projectId,
     required String title,
@@ -202,6 +208,8 @@ class ProjectApi {
     TaskStatus? status,
     String? remindAt,
     String? remindTime,
+    List<ChecklistItem>? checklist,
+    TaskLocation? location,
     String? dictationParseId,
     String? createKey,
   }) async {
@@ -217,6 +225,8 @@ class ProjectApi {
         'status': ?status?.name,
         'remindAt': ?remindAt,
         'remindTime': ?remindTime,
+        TaskWire.checklistKey: ?TaskWire.checklist(checklist),
+        TaskWire.locationKey: ?TaskWire.location(location),
         'dictationParseId': ?dictationParseId,
       },
     );
@@ -248,6 +258,9 @@ class ProjectApi {
     TaskStatus? status,
     PatchField<String> remindAt = const PatchField<String>.keep(),
     PatchField<String> remindTime = const PatchField<String>.keep(),
+    PatchField<List<ChecklistItem>> checklist =
+        const PatchField<List<ChecklistItem>>.keep(),
+    PatchField<TaskLocation> location = const PatchField<TaskLocation>.keep(),
     String? dictationParseId,
     bool aiClear = false,
   }) async {
@@ -260,6 +273,24 @@ class ProjectApi {
     categoryId.writeTo(body, 'categoryId');
     remindAt.writeTo(body, 'remindAt');
     remindTime.writeTo(body, 'remindTime');
+    // Both as wire maps, never as objects: the same body may be stored in the
+    // outbox, and an empty checklist goes out as a clear (see [TaskWire]).
+    switch (checklist) {
+      case PatchSet(:final value):
+        body[TaskWire.checklistKey] = TaskWire.checklist(value);
+      case PatchClear():
+        body[TaskWire.checklistKey] = null;
+      case PatchKeep():
+        break;
+    }
+    switch (location) {
+      case PatchSet(:final value):
+        body[TaskWire.locationKey] = TaskWire.location(value);
+      case PatchClear():
+        body[TaskWire.locationKey] = null;
+      case PatchKeep():
+        break;
+    }
 
     // The server rejects `{}` with a 400 ("At least one field must be
     // provided"). Failing here instead says *which* call was empty, and it
