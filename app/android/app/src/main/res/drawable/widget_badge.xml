@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The project badge. Drawn white and tinted per project with setColorFilter,
+     because RemoteViews cannot set a background tint below API 31. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#FFFFFFFF" />
+    <corners android:radius="7dp" />
+</shape>

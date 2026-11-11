@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The home-screen widget's palette, light. Every value is a token from
+  lib/theme/tokens.dart (AppColors), named in the comment beside it, so a
+  change there has an obvious counterpart here. The dark half lives in
+  values-night/ and takes the dictation screen's tokens: the one dark surface
+  the app has.
+-->
+<resources>
+    <color name="widget_background">#FFF3F3F7</color>     <!-- background -->
+    <color name="widget_card">#FFFFFFFF</color>           <!-- card -->
+    <color name="widget_line">#FFDEDEE8</color>           <!-- line -->
+    <color name="widget_ink">#FF1B2050</color>            <!-- ink -->
+    <color name="widget_ink_soft">#FF3A3C5C</color>       <!-- inkSoft -->
+    <color name="widget_muted">#FF61637E</color>          <!-- muted -->
+    <color name="widget_pill">#FFE6E8F7</color>           <!-- indigoFill -->
+    <color name="widget_pill_ink">#FF2C3480</color>       <!-- indigoInk -->
+    <color name="widget_dot">#FF4A56BE</color>            <!-- indigo -->
+    <color name="widget_dot_waiting">#FFE0A03C</color>    <!-- waitingDot -->
+    <color name="widget_waiting_ink">#FF8A5A0B</color>    <!-- waitingInk -->
+    <color name="widget_on_badge">#FFFFFFFF</color>       <!-- onInk -->
+</resources>

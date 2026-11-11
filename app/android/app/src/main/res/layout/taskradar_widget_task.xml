@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A task in the widget's list. Tapping it opens the app on the task. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_task_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:minHeight="44dp"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingTop="6dp"
+    android:paddingEnd="8dp"
+    android:paddingBottom="6dp">
+
+    <ImageView
+        android:id="@+id/widget_task_dot"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/widget_dot" />
+
+    <ImageView
+        android:id="@+id/widget_task_dot_blocked"
+        android:layout_width="8dp"
+        android:layout_height="8dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/widget_dot_waiting"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/widget_task_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="2"
+        android:textColor="@color/widget_ink_soft"
+        android:textSize="14sp" />
+
+    <TextView
+        android:id="@+id/widget_task_waiting"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="@string/widget_waiting"
+        android:textColor="@color/widget_waiting_ink"
+        android:textSize="12sp"
+        android:visibility="gone" />
+</LinearLayout>
