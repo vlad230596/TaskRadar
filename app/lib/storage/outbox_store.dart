@@ -19,6 +19,19 @@ enum OutboxKind {
   /// moved -- the target's list has never seen it, and the overlay draws it
   /// there from that copy until the move is sent.
   moveTask,
+
+  /// `POST /tasks/:id/attachments`: a picture, body
+  /// `{ uploadKey, mime, localPath }`. [OutboxEntry.taskId] is the task's id
+  /// **or** the `local:outbox:<createKey>` of a create still in the outbox --
+  /// the picture then waits for that create to be `sent` and goes to the id
+  /// it got. The bytes are a copy made when the picture was queued
+  /// (`OutboxFileStore`), deleted once the upload is sent. A replay is safe:
+  /// the server answers a known `uploadKey` with the attachment it made.
+  uploadAttachment,
+
+  /// `DELETE /attachments/:id`, body `{ attachmentId }`. A 404 counts as
+  /// sent: the picture is gone either way.
+  deleteAttachment,
 }
 
 /// Where an [OutboxEntry] is in its life.
@@ -69,6 +82,7 @@ class OutboxEntry {
     this.serverTask,
     this.message,
     this.row,
+    this.waited = false,
   });
 
   /// The idempotency key: `createKey` of a create, and the entry's identity
@@ -111,6 +125,41 @@ class OutboxEntry {
   /// server's JSON. Null for every other kind.
   final Map<String, Object?>? row;
 
+  /// For a picture (upload or delete): whether it ever had to wait for a
+  /// network. A picture sent on the first try is not offline history, and
+  /// leaves the outbox as soon as it is sent; one that waited stays as the
+  /// green line, like every other offline write.
+  final bool waited;
+
+  /// For an upload: the idempotency key, also the entry's own [key].
+  String? get uploadKey =>
+      kind == OutboxKind.uploadAttachment ? body['uploadKey'] as String? : null;
+
+  /// For an upload: where the copy of the picture is (`OutboxFileStore`).
+  String? get localPath =>
+      kind == OutboxKind.uploadAttachment ? body['localPath'] as String? : null;
+
+  /// For an upload: `image/png` / `image/jpeg` / `image/webp`.
+  String? get mime =>
+      kind == OutboxKind.uploadAttachment ? body['mime'] as String? : null;
+
+  /// For a delete: the attachment it removes.
+  String? get attachmentId => kind == OutboxKind.deleteAttachment
+      ? body['attachmentId'] as String?
+      : null;
+
+  /// For an upload: the id the picture has in the task editor's strip until
+  /// it is sent -- `local:upload:<key>`, prefixed like every client-invented
+  /// id (`isOptimisticId`).
+  String get pendingAttachmentId => '${OutboxEntry.pendingUploadPrefix}$key';
+
+  static const String pendingUploadPrefix = 'local:upload:';
+
+  /// A picture, either way.
+  bool get isAttachment =>
+      kind == OutboxKind.uploadAttachment ||
+      kind == OutboxKind.deleteAttachment;
+
   /// For a move: the project the task goes to.
   String? get targetProjectId =>
       kind == OutboxKind.moveTask ? body['projectId'] as String? : null;
@@ -137,6 +186,7 @@ class OutboxEntry {
     List<String>? conflictFields,
     Map<String, Object?>? serverTask,
     String? message,
+    bool? waited,
   }) => OutboxEntry(
     key: key,
     kind: kind,
@@ -152,6 +202,7 @@ class OutboxEntry {
     serverTask: serverTask ?? this.serverTask,
     message: message ?? this.message,
     row: row,
+    waited: waited ?? this.waited,
   );
 
   Map<String, dynamic> toJson() => <String, dynamic>{
@@ -169,6 +220,7 @@ class OutboxEntry {
     'serverTask': ?serverTask,
     'message': ?message,
     'row': ?row,
+    if (waited) 'waited': true,
   };
 
   static OutboxEntry fromJson(Map<String, dynamic> json) => OutboxEntry(
@@ -196,6 +248,7 @@ class OutboxEntry {
     row: json['row'] == null
         ? null
         : Map<String, Object?>.from(json['row'] as Map),
+    waited: json['waited'] == true,
   );
 
   @override
@@ -222,7 +275,14 @@ class OutboxStore {
   OutboxStore({Future<Directory> Function()? directory})
     : _directory = directory ?? getApplicationSupportDirectory;
 
-  static const int schemaVersion = 1;
+  /// 2: the picture kinds (`uploadAttachment`, `deleteAttachment`) and
+  /// `waited`. A version-1 file is read as it is -- every field added since
+  /// is optional -- and written back as 2.
+  static const int schemaVersion = 2;
+  static const Set<int> readableVersions = <int>{1, 2};
+
+  /// Unchanged by the version bump on purpose: the name is how the file is
+  /// found, and a new name would orphan every entry waiting in the old one.
   static const String fileName = 'outbox.v1.json';
 
   final Future<Directory> Function() _directory;
@@ -294,7 +354,7 @@ class OutboxStore {
       throw const FormatException('outbox root is not an object');
     }
     final version = decoded['version'];
-    if (version != schemaVersion) {
+    if (!readableVersions.contains(version)) {
       throw FormatException('outbox schema version $version');
     }
     final entries = decoded['entries'] as List<dynamic>;

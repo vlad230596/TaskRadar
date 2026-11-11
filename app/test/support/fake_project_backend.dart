@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 
@@ -61,6 +63,22 @@ class FakeProjectBackend {
 
   /// The sandbox (F8), in capture order -- the server sends it oldest first.
   final List<Map<String, dynamic>> inbox = <Map<String, dynamic>>[];
+
+  /// The bytes of every attachment, by id (the task rows carry only the
+  /// metadata, as the server's do); thumbnails are the same bytes reversed,
+  /// so a test can tell which one was asked for.
+  final Map<String, Uint8List> attachmentBytes = <String, Uint8List>{};
+
+  /// Every upload request that reached the server, replays included.
+  final List<({String taskId, String uploadKey, String? filename})> uploads =
+      <({String taskId, String uploadKey, String? filename})>[];
+
+  /// What `GET /link-preview` answers, by url; a url not in here is a 204.
+  final Map<String, Map<String, dynamic>> linkPreviews =
+      <String, Map<String, dynamic>>{};
+
+  /// The 30-per-task limit (`ATTACHMENT` limits, spec §10).
+  static const int maxAttachmentsPerTask = 30;
 
   /// Every PATCH body the client sent, keyed by route, newest last. The
   /// undefined-vs-null assertions read this.
@@ -151,6 +169,8 @@ class FakeProjectBackend {
     String? remindTime,
     double? position,
     String? categoryId,
+    List<Map<String, dynamic>>? checklist,
+    Map<String, dynamic>? location,
 
     /// Задача, уже взятая в работу (F11). Null — обычная задача вне набора;
     /// `true` ставит следующую по порядку метку, так что порядок набора в тесте
@@ -171,9 +191,43 @@ class FakeProjectBackend {
       'createdAt': '2026-08-01T10:00:00.000Z',
       'updatedAt': '2026-08-01T10:00:00.000Z',
       'focusedAt': focused ? _nextFocusStamp() : null,
+      // The task editor's fields (spec §10) only when set, so the rows of
+      // every older test read exactly as they did.
+      'checklist': ?checklist,
+      'location': ?location,
     });
     return taskId;
   }
+
+  /// An attachment the server already has, with [bytes].
+  String addAttachment({
+    required String taskId,
+    Uint8List? bytes,
+    String mime = 'image/png',
+    String? id,
+  }) {
+    final attachmentId = id ?? _id('att');
+    final data = bytes ?? Uint8List.fromList(<int>[1, 2, 3, 4]);
+    attachmentBytes[attachmentId] = data;
+    _attachmentsOf(_task(taskId)!).add(<String, dynamic>{
+      'id': attachmentId,
+      'uploadKey': 'seeded_$attachmentId',
+      'mime': mime,
+      'width': 640,
+      'height': 480,
+      'sizeBytes': data.length,
+      'createdAt': '2026-09-16T12:00:00.000Z',
+    });
+    return attachmentId;
+  }
+
+  List<Map<String, dynamic>> _attachmentsOf(Map<String, dynamic> task) =>
+      (task['attachments'] ??= <Map<String, dynamic>>[])
+          as List<Map<String, dynamic>>;
+
+  /// An attachment's metadata as the server sends it: without `uploadKey`.
+  static Map<String, dynamic> _attachmentJson(Map<String, dynamic> row) =>
+      <String, dynamic>{...row}..remove('uploadKey');
 
   String addCategory({
     required String projectId,
@@ -593,6 +647,10 @@ class FakeProjectBackend {
         'position': _appendPosition(projectId),
         'remindAt': body['remindAt'],
         'remindTime': body['remindAt'] == null ? null : body['remindTime'],
+        // `[]` is stored as null (spec §10).
+        'checklist': _emptyAsNull(body['checklist']),
+        'location': body['location'],
+        'attachments': <Map<String, dynamic>>[],
         'createdAt': '2026-09-16T12:00:00.000Z',
         'updatedAt': '2026-09-16T12:00:00.000Z',
       };
@@ -781,8 +839,14 @@ class FakeProjectBackend {
       // changed elsewhere -- 409, and nothing is written.
       final expected = body['expected'] as Map<String, dynamic>?;
       if (expected != null) {
-        String? norm(String field, Object? value) {
+        Object? norm(String field, Object? value) {
           if (value == null) return null;
+          // Deep, order significant (`sameValue` in `routes/tasks.ts`).
+          if (field == 'checklist') {
+            final list = _emptyAsNull(value);
+            return list == null ? null : jsonEncode(list);
+          }
+          if (field == 'location') return jsonEncode(value);
           final text = value as String;
           if (field == 'remindAt') return text.substring(0, 10);
           if (field == 'description' && text.isEmpty) return null;
@@ -797,6 +861,8 @@ class FakeProjectBackend {
             'status',
             'remindAt',
             'remindTime',
+            'checklist',
+            'location',
           ])
             if (body.containsKey(field) &&
                 expected.containsKey(field) &&
@@ -831,8 +897,12 @@ class FakeProjectBackend {
         'description',
         'status',
         'categoryId',
+        'location',
       ]) {
         if (body.containsKey(field)) task[field] = body[field];
+      }
+      if (body.containsKey('checklist')) {
+        task['checklist'] = _emptyAsNull(body['checklist']);
       }
       if (body.containsKey('remindAt')) {
         final value = body['remindAt'];
@@ -891,6 +961,101 @@ class FakeProjectBackend {
         ..['categoryId'] = null
         ..['updatedAt'] = '2026-09-16T12:30:00.000Z';
       return jsonResponse(task);
+    });
+
+    // --- attachments (spec §10) --------------------------------------------
+
+    backend.on('POST', '/tasks/:id/attachments', (match) {
+      final task = _task(match.params['id']!);
+      if (task == null) return _notFound('Task');
+
+      final form = match.options.data;
+      if (form is! FormData) return _error(400, 'Expected multipart');
+      String? uploadKey;
+      for (final field in form.fields) {
+        if (field.key == 'uploadKey') uploadKey = field.value;
+      }
+      // `@fastify/multipart` only sees fields sent before the file.
+      final keyFirst =
+          form.fields.isNotEmpty &&
+          form.fields.first.key == 'uploadKey' &&
+          (form.files.isEmpty ||
+              _partIndex(form, 'uploadKey') < _partIndex(form, 'file'));
+      if (uploadKey == null || !keyFirst) {
+        return _error(400, 'uploadKey must come before the file');
+      }
+      final file = form.files.where((f) => f.key == 'file').firstOrNull;
+      if (file == null) return _error(400, 'No file');
+      uploads.add((
+        taskId: task['id'] as String,
+        uploadKey: uploadKey,
+        filename: file.value.filename,
+      ));
+
+      final list = _attachmentsOf(task);
+      for (final known in list) {
+        if (known['uploadKey'] == uploadKey) {
+          return jsonResponse(_attachmentJson(known), statusCode: 200);
+        }
+      }
+      if (list.length >= maxAttachmentsPerTask) {
+        return _error(409, 'A task holds at most 30 pictures');
+      }
+      final mime = file.value.contentType?.mimeType ?? 'image/png';
+      if (!const <String>[
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+      ].contains(mime)) {
+        return _error(415, 'Only PNG, JPEG or WebP');
+      }
+
+      {
+        final bytes = _filePart(match.options, form.boundary);
+        final id = _id('att');
+        attachmentBytes[id] = Uint8List.fromList(bytes);
+        final row = <String, dynamic>{
+          'id': id,
+          'uploadKey': uploadKey,
+          'mime': mime,
+          'width': 640,
+          'height': 480,
+          'sizeBytes': bytes.length,
+          'createdAt': '2026-09-16T12:40:00.000Z',
+        };
+        list.add(row);
+        return jsonResponse(_attachmentJson(row), statusCode: 201);
+      }
+    });
+
+    backend.on('GET', '/attachments/:id/thumb', (match) {
+      final bytes = attachmentBytes[match.params['id']!];
+      if (bytes == null) return _notFound('Attachment');
+      return _bytesResponse(Uint8List.fromList(bytes.reversed.toList()));
+    });
+
+    backend.on('GET', '/attachments/:id', (match) {
+      final bytes = attachmentBytes[match.params['id']!];
+      if (bytes == null) return _notFound('Attachment');
+      return _bytesResponse(bytes);
+    });
+
+    backend.on('DELETE', '/attachments/:id', (match) {
+      final id = match.params['id']!;
+      if (attachmentBytes.remove(id) == null) return _notFound('Attachment');
+      for (final task in tasks) {
+        (task['attachments'] as List<dynamic>?)?.removeWhere(
+          (row) => (row as Map)['id'] == id,
+        );
+      }
+      return ResponseBody.fromString('', 204);
+    });
+
+    backend.on('GET', '/link-preview', (match) {
+      final url = match.options.queryParameters['url'] as String?;
+      final preview = url == null ? null : linkPreviews[url];
+      if (preview == null) return ResponseBody.fromString('', 204);
+      return jsonResponse(preview);
     });
 
     backend.on('DELETE', '/tasks/:id', (match) {
@@ -1060,6 +1225,38 @@ class FakeProjectBackend {
   }
 
   static ResponseBody _notFound(String what) => _error(404, '$what not found');
+
+  static Object? _emptyAsNull(Object? list) =>
+      list is List && list.isEmpty ? null : list;
+
+  /// Where a part sits in the multipart body: fields first, then files, in
+  /// the order dio writes them.
+  static int _partIndex(FormData form, String key) {
+    final fields = form.fields.indexWhere((f) => f.key == key);
+    if (fields >= 0) return fields;
+    final files = form.files.indexWhere((f) => f.key == key);
+    return files < 0 ? 1 << 30 : form.fields.length + files;
+  }
+
+  /// The bytes of the `file` part of a multipart request, cut out of the
+  /// body the fake adapter kept ([requestBodyBytesKey]).
+  static Uint8List _filePart(RequestOptions options, String boundary) {
+    final raw = options.extra[requestBodyBytesKey] as Uint8List?;
+    if (raw == null) return Uint8List(0);
+    final text = latin1.decode(raw);
+    final part = text.indexOf('name="file"');
+    final start = text.indexOf('\r\n\r\n', part) + 4;
+    final end = text.indexOf('\r\n--$boundary', start);
+    return Uint8List.sublistView(raw, start, end);
+  }
+
+  static ResponseBody _bytesResponse(Uint8List bytes) => ResponseBody.fromBytes(
+    bytes,
+    200,
+    headers: <String, List<String>>{
+      Headers.contentTypeHeader: <String>['image/png'],
+    },
+  );
 
   static ResponseBody _error(int status, String message) => jsonResponse(
     <String, dynamic>{'error': 'Error', 'message': message},

@@ -3,6 +3,7 @@ import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
 import { idParamSchema } from "../schemas";
 import { getTaskOrThrow } from "./tasks";
+import { taskInclude, taskView } from "../domain/taskView";
 
 /*
  * The working set (F11): the two to five tasks the "work" mode shows, one of
@@ -48,9 +49,9 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
     const tasks = await prisma.task.findMany({
       where: { focusedAt: { not: null }, project: { scope: { userId: userIdOf(request) } } },
       orderBy: { focusedAt: "asc" },
-      include: { project: { select: { id: true, name: true } } },
+      include: { project: { select: { id: true, name: true } }, ...taskInclude },
     });
-    reply.send(tasks);
+    reply.send(tasks.map(taskView));
   });
 
   /*

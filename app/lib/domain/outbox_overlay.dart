@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+
+import '../api/task_wire.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../storage/outbox_store.dart';
@@ -11,6 +14,8 @@ const List<String> outboxTaskFields = <String>[
   'status',
   'remindAt',
   'remindTime',
+  TaskWire.checklistKey,
+  TaskWire.locationKey,
 ];
 
 /// [task]'s values in the shape `PATCH` sends and `expected` compares:
@@ -22,15 +27,25 @@ Map<String, Object?> taskWireValues(Task task) => <String, Object?>{
   'status': task.status.name,
   'remindAt': _calendarDate(task.remindAt),
   'remindTime': task.remindTime,
+  TaskWire.checklistKey: TaskWire.checklist(task.checklist),
+  TaskWire.locationKey: TaskWire.location(task.location),
 };
 
 /// The same for a task in the server's JSON (a conflict's `task`).
 Map<String, Object?> jsonWireValues(Map<String, Object?> json) =>
     <String, Object?>{
       for (final field in outboxTaskFields)
-        field: field == 'remindAt'
-            ? _calendarDate(json['remindAt'] as String?)
-            : json[field],
+        field: switch (field) {
+          'remindAt' => _calendarDate(json['remindAt'] as String?),
+          // `[]` and null are one value, as the server stores them.
+          TaskWire.checklistKey => TaskWire.checklist(
+            TaskWire.checklistFrom(json[field]),
+          ),
+          TaskWire.locationKey => TaskWire.location(
+            TaskWire.locationFrom(json[field]),
+          ),
+          _ => json[field],
+        },
     };
 
 String? _calendarDate(String? value) =>
@@ -72,7 +87,9 @@ List<Task> overlayOutbox(
     switch (entry.kind) {
       case OutboxKind.editTask:
         final index = result.indexWhere((row) => row.id == entry.taskId);
-        if (index >= 0) result[index] = _applyEdit(result[index], entry.body);
+        if (index >= 0) {
+          result[index] = applyTaskPatch(result[index], entry.body);
+        }
       case OutboxKind.createTask:
         result.add(_pendingRow(entry, result));
       case OutboxKind.moveTask:
@@ -86,6 +103,21 @@ List<Task> overlayOutbox(
             !result.any((row) => row.id == entry.taskId)) {
           result.add(_movedRow(moved, projectId, result));
         }
+      case OutboxKind.deleteAttachment:
+        // The picture is gone from the row at once; the pictures still
+        // waiting to go up are not in the row at all -- see
+        // [pendingAttachments].
+        final index = result.indexWhere((row) => row.id == entry.taskId);
+        if (index >= 0) {
+          final row = result[index];
+          result[index] = row.copyWith(
+            attachments: List.unmodifiable(
+              row.attachments.where((a) => a.id != entry.attachmentId),
+            ),
+          );
+        }
+      case OutboxKind.uploadAttachment:
+        break;
     }
   }
   return List<Task>.unmodifiable(result);
@@ -103,7 +135,10 @@ Task _movedRow(Map<String, Object?> json, String projectId, List<Task> rows) {
   );
 }
 
-Task _applyEdit(Task task, Map<String, Object?> body) {
+/// [task] with a `PATCH /tasks/:id` [body] applied the way the server would
+/// apply it -- for an unsent edit in the overlay, and for the optimistic row
+/// of `ProjectTasks.update`.
+Task applyTaskPatch(Task task, Map<String, Object?> body) {
   var next = task;
   if (body.containsKey('title')) {
     next = next.copyWith(title: body['title']! as String);
@@ -133,6 +168,16 @@ Task _applyEdit(Task task, Map<String, Object?> body) {
   if (body.containsKey('remindTime')) {
     next = next.copyWith(remindTime: body['remindTime'] as String?);
   }
+  if (body.containsKey(TaskWire.checklistKey)) {
+    next = next.copyWith(
+      checklist: TaskWire.checklistFrom(body[TaskWire.checklistKey]),
+    );
+  }
+  if (body.containsKey(TaskWire.locationKey)) {
+    next = next.copyWith(
+      location: TaskWire.locationFrom(body[TaskWire.locationKey]),
+    );
+  }
   return next;
 }
 
@@ -152,8 +197,134 @@ Task _pendingRow(OutboxEntry entry, List<Task> rows) {
     remindAt: body['remindAt'] as String?,
     remindTime: body['remindTime'] as String?,
     categoryId: body['categoryId'] as String?,
+    checklist: TaskWire.checklistFrom(body[TaskWire.checklistKey]),
+    location: TaskWire.locationFrom(body[TaskWire.locationKey]),
     createdAt: at,
     updatedAt: at,
     isCurrent: false,
   );
+}
+
+// --- pictures waiting to go up ----------------------------------------------
+
+/// Where a picture in the outbox is.
+enum PendingAttachmentState {
+  /// Waiting for a network, or for the create of its task (the clock).
+  waiting,
+
+  /// The server said no (too big, wrong type, 30 already) -- the red dot:
+  /// «Повторить» or «Убрать».
+  refused,
+}
+
+/// A picture of a task that the server does not have yet: drawn in the
+/// editor's strip from its local copy ([localPath]) next to the task's
+/// `Task.attachments`, and counted in the row's picture badge.
+@immutable
+class PendingAttachment {
+  const PendingAttachment({
+    required this.entry,
+    required this.state,
+    this.progress,
+  });
+
+  /// The outbox entry behind it -- for `AttachmentQueue.retry` / `remove`.
+  final OutboxEntry entry;
+  final PendingAttachmentState state;
+
+  /// 0..1 while its bytes are going up; null otherwise.
+  final double? progress;
+
+  /// `local:upload:<key>`: the id the strip keys it by, and what
+  /// `attachmentBytesProvider` reads the local copy with.
+  String get id => entry.pendingAttachmentId;
+  String get uploadKey => entry.key;
+  String? get localPath => entry.localPath;
+  String get mime => entry.mime ?? 'image/jpeg';
+  String? get message => entry.message;
+  bool get isUploading => progress != null;
+
+  PendingAttachment withProgress(double? value) =>
+      PendingAttachment(entry: entry, state: state, progress: value);
+
+  @override
+  bool operator ==(Object other) =>
+      other is PendingAttachment &&
+      other.entry.key == entry.key &&
+      other.state == state &&
+      other.progress == progress &&
+      other.entry.message == entry.message;
+
+  @override
+  int get hashCode => Object.hash(entry.key, state, progress, entry.message);
+
+  @override
+  String toString() => 'PendingAttachment($id, ${state.name}, $progress)';
+}
+
+const String _localCreatePrefix = 'local:outbox:';
+
+/// The task id an entry applies to *now*: a `local:outbox:<key>` of a create
+/// that has been sent becomes the id the server gave it.
+String? resolvedTaskId(OutboxEntry entry, Iterable<OutboxEntry> entries) {
+  final id = entry.taskId;
+  if (id == null || !id.startsWith(_localCreatePrefix)) return id;
+  final key = id.substring(_localCreatePrefix.length);
+  for (final other in entries) {
+    if (other.kind == OutboxKind.createTask && other.key == key) {
+      return other.state == OutboxState.sent ? (other.taskId ?? id) : id;
+    }
+  }
+  return id;
+}
+
+/// The pictures of [taskIdOrLocal] still in the outbox, oldest first --
+/// waiting and refused. [taskIdOrLocal] may be the task's id or the
+/// `local:outbox:<createKey>` of its unsent create; a picture queued against
+/// the local id is found by the real one once the create is sent, and the
+/// other way round.
+List<PendingAttachment> pendingAttachments(
+  Iterable<OutboxEntry> entries,
+  String taskIdOrLocal,
+) {
+  final all = entries.toList(growable: false);
+  final wanted = <String>{taskIdOrLocal};
+  // The two names of one task: the local id of a sent create, and its id.
+  for (final entry in all) {
+    if (entry.kind != OutboxKind.createTask) continue;
+    final serverId = entry.taskId;
+    if (entry.localTaskId == taskIdOrLocal && serverId != null) {
+      wanted.add(serverId);
+    } else if (serverId == taskIdOrLocal) {
+      wanted.add(entry.localTaskId);
+    }
+  }
+  return List<PendingAttachment>.unmodifiable(<PendingAttachment>[
+    for (final entry in all)
+      if (entry.kind == OutboxKind.uploadAttachment &&
+          (entry.isWaiting || entry.state == OutboxState.refused) &&
+          (wanted.contains(entry.taskId) ||
+              wanted.contains(resolvedTaskId(entry, all))))
+        PendingAttachment(
+          entry: entry,
+          state: entry.isWaiting
+              ? PendingAttachmentState.waiting
+              : PendingAttachmentState.refused,
+        ),
+  ]);
+}
+
+/// How many pictures are still in the outbox per task id (resolved, see
+/// [resolvedTaskId]; an unsent create's under its `local:outbox:<key>`), for
+/// the row's badge: `task.attachments.length + counts[task.id]`.
+Map<String, int> pendingAttachmentCounts(Iterable<OutboxEntry> entries) {
+  final all = entries.toList(growable: false);
+  final counts = <String, int>{};
+  for (final entry in all) {
+    if (entry.kind != OutboxKind.uploadAttachment) continue;
+    if (!entry.isWaiting && entry.state != OutboxState.refused) continue;
+    final id = resolvedTaskId(entry, all);
+    if (id != null) counts[id] = (counts[id] ?? 0) + 1;
+  }
+  return counts;
 }

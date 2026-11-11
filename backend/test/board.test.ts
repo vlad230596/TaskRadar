@@ -329,10 +329,14 @@ describe("GET /board -- response shape", () => {
     const { body } = await getBoard();
     const task = body[0]!.tasks[0]!;
     expect(Object.keys(task).sort()).toEqual([
+      // Task editor (§10): always present, null / [] when the task has none.
+      "attachments",
+      "checklist",
       "createdAt",
       "description",
       "id",
       "isCurrent",
+      "location",
       "position",
       "projectId",
       "remindAt",
@@ -340,6 +344,48 @@ describe("GET /board -- response shape", () => {
       "title",
       "updatedAt",
     ]);
+  });
+
+  it("shows the place as one object and the pictures' metadata, never the location columns", async () => {
+    prismaMock.project.findMany.mockImplementation(() => [
+      {
+        id: "p-editor",
+        name: "Editor",
+        archivedAt: null,
+        createdAt: T0,
+        updatedAt: T0,
+        _count: { notes: 0 },
+        tasks: [
+          {
+            id: "t-editor",
+            projectId: "p-editor",
+            title: "Купить молоко",
+            description: null,
+            status: "pending",
+            position: 1000,
+            remindAt: null,
+            createdAt: T0,
+            updatedAt: T0,
+            checklist: [{ id: "item-0001", text: "2.5%", done: false }],
+            locLat: 55.75,
+            locLng: 37.61,
+            locRadius: 200,
+            locLabel: "Магазин",
+            attachments: [
+              { id: "att1", mime: "image/png", width: 10, height: 20, sizeBytes: 300, createdAt: T0 },
+            ],
+          },
+        ],
+      },
+    ]);
+    const { body } = await getBoard();
+    const task = body[0]!.tasks[0]! as unknown as Record<string, unknown>;
+    expect(task.location).toEqual({ lat: 55.75, lng: 37.61, radius: 200, label: "Магазин" });
+    expect(task.checklist).toEqual([{ id: "item-0001", text: "2.5%", done: false }]);
+    expect(task.attachments).toEqual([
+      { id: "att1", mime: "image/png", width: 10, height: 20, sizeBytes: 300, createdAt: T0.toISOString() },
+    ]);
+    expect(Object.keys(task).filter((k) => k.startsWith("loc"))).toEqual(["location"]);
   });
 
   it("serves byte-identical tasks to GET /projects/:projectId/tasks", async () => {

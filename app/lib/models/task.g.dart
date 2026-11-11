@@ -19,6 +19,17 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
   aiSource: json['aiSource'] as String?,
   aiKind: json['aiKind'] as String?,
   aiResult: json['aiResult'] as Map<String, dynamic>?,
+  checklist: (json['checklist'] as List<dynamic>?)
+      ?.map((e) => ChecklistItem.fromJson(e as Map<String, dynamic>))
+      .toList(),
+  location: json['location'] == null
+      ? null
+      : TaskLocation.fromJson(json['location'] as Map<String, dynamic>),
+  attachments:
+      (json['attachments'] as List<dynamic>?)
+          ?.map((e) => TaskAttachment.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <TaskAttachment>[],
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,
   isCurrent: json['isCurrent'] as bool,
@@ -37,6 +48,9 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'aiSource': instance.aiSource,
   'aiKind': instance.aiKind,
   'aiResult': instance.aiResult,
+  'checklist': instance.checklist?.map((e) => e.toJson()).toList(),
+  'location': instance.location?.toJson(),
+  'attachments': instance.attachments.map((e) => e.toJson()).toList(),
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
   'isCurrent': instance.isCurrent,

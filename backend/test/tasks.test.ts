@@ -41,6 +41,8 @@ const prismaMock = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   taskEvent: { findMany: vi.fn(), create: vi.fn() },
+  // Task editor: the pictures a 409 shows with the task. None in this file's seed.
+  taskAttachment: { findMany: vi.fn(async (): Promise<unknown[]> => []) },
   inboxItem: { create: vi.fn() },
   dictationParse: { updateMany: vi.fn(), findFirst: vi.fn(async (): Promise<unknown> => null) },
   $transaction: vi.fn(),
@@ -1424,5 +1426,218 @@ describe("one user's tasks are invisible to another", () => {
     expect(allA.projects.map((p) => p.projectId).sort()).toEqual(["prj-1", "prj-2"]);
     const allB = (await asB("GET", "/history?range=all")).json() as Body;
     expect(allB.projects.map((p) => p.projectId)).toEqual(["prj-b"]);
+  });
+});
+
+/*
+ * Task editor (design/task-editor-spec.md §10): checklist and place on the
+ * task, through the same create and PATCH as everything else.
+ */
+describe("checklist and location", () => {
+  const items = [
+    { id: "item-0001", text: "Молоко", done: false },
+    { id: "item-0002", text: "Хлеб", done: true },
+  ];
+  const place = { lat: 55.7558, lng: 37.6173, radius: 200, label: "Магазин" };
+  type Shown = { checklist: unknown; location: unknown; attachments: unknown } & Record<string, unknown>;
+
+  it("creates a task with everything in one POST and answers in the API's shape", async () => {
+    const res = await call("POST", "/projects/prj-1/tasks", {
+      title: "Купить",
+      status: "blocked",
+      remindAt: "2026-10-02",
+      remindTime: "18:00",
+      checklist: items,
+      location: place,
+      createKey: "create-key-0001",
+    });
+    expect(res.statusCode).toBe(201);
+    const body = res.json() as Shown;
+    expect(body.checklist).toEqual(items);
+    expect(body.location).toEqual(place);
+    expect(body.attachments).toEqual([]);
+    expect(Object.keys(body).filter((k) => k.startsWith("loc"))).toEqual(["location"]);
+
+    const row = tasks.find((t) => t.id === (body.id as string))! as unknown as Record<string, unknown>;
+    expect(row).toMatchObject({ locLat: 55.7558, locLng: 37.6173, locRadius: 200, locLabel: "Магазин" });
+    expect(row.checklist).toEqual(items);
+
+    // A replay of the same create answers with the task in the same shape.
+    const again = await call("POST", "/projects/prj-1/tasks", {
+      title: "Купить",
+      checklist: items,
+      location: place,
+      createKey: "create-key-0001",
+    });
+    expect(again.statusCode).toBe(200);
+    expect((again.json() as Shown).location).toEqual(place);
+  });
+
+  it("gives a place without a label the picker's default label", async () => {
+    const res = await call("POST", "/projects/prj-1/tasks", {
+      title: "Где-то",
+      location: { lat: 1, lng: 2, radius: 150 },
+    });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as Shown).location).toEqual({ lat: 1, lng: 2, radius: 150, label: "Место" });
+  });
+
+  it("stores an empty checklist as none", async () => {
+    const res = await call("POST", "/projects/prj-1/tasks", { title: "Пусто", checklist: [] });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as Shown).checklist).toBeNull();
+  });
+
+  it.each([
+    ["a radius under 100 m", { location: { ...place, radius: 50 } }],
+    ["a radius over 1000 m", { location: { ...place, radius: 1500 } }],
+    ["a fractional radius", { location: { ...place, radius: 150.5 } }],
+    ["a latitude off the planet", { location: { ...place, lat: 91 } }],
+    ["a longitude off the planet", { location: { ...place, lng: -181 } }],
+    ["a label over 80 characters", { location: { ...place, label: "x".repeat(81) } }],
+    ["an item id too short", { checklist: [{ id: "short", text: "a", done: false }] }],
+    ["an item id too long", { checklist: [{ id: "x".repeat(41), text: "a", done: false }] }],
+    ["an empty item", { checklist: [{ id: "item-0001", text: "   ", done: false }] }],
+    ["an item over 500 characters", { checklist: [{ id: "item-0001", text: "x".repeat(501), done: false }] }],
+    ["an item without done", { checklist: [{ id: "item-0001", text: "a" }] }],
+    ["two items with one id", { checklist: [items[0], { ...items[1], id: "item-0001" }] }],
+    [
+      "more than 200 items",
+      {
+        checklist: Array.from({ length: 201 }, (_, i) => ({
+          id: `item-${String(i).padStart(4, "0")}`,
+          text: "a",
+          done: false,
+        })),
+      },
+    ],
+  ])("refuses %s", async (_name, extra) => {
+    const res = await call("POST", "/projects/prj-1/tasks", { title: "Плохо", ...extra });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("accepts exactly 200 items", async () => {
+    const checklist = Array.from({ length: 200 }, (_, i) => ({
+      id: `item-${String(i).padStart(4, "0")}`,
+      text: "a",
+      done: false,
+    }));
+    const res = await call("POST", "/projects/prj-1/tasks", { title: "Много", checklist });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it("sets, changes and clears both through PATCH", async () => {
+    let res = await call("PATCH", "/tasks/tsk-1", { checklist: items, location: place });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as Shown).checklist).toEqual(items);
+    expect((res.json() as Shown).location).toEqual(place);
+
+    // A ticked box is the whole list again.
+    const ticked = [items[0]!, { ...items[1]!, done: false }];
+    res = await call("PATCH", "/tasks/tsk-1", { checklist: ticked, expected: { checklist: items } });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as Shown).checklist).toEqual(ticked);
+    expect((res.json() as Shown).location).toEqual(place);
+
+    res = await call("PATCH", "/tasks/tsk-1", { checklist: null, location: null });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as Shown).checklist).toBeNull();
+    expect((res.json() as Shown).location).toBeNull();
+    const row = tasks.find((t) => t.id === "tsk-1")! as unknown as Record<string, unknown>;
+    expect(row).toMatchObject({ locLat: null, locLng: null, locRadius: null, locLabel: null });
+  });
+
+  it("refuses a list edit whose base moved, item by item and in order", async () => {
+    Object.assign(tasks.find((t) => t.id === "tsk-1")!, { checklist: items });
+
+    // Same items, other order: a different list.
+    const reordered = [items[1]!, items[0]!];
+    let res = await call("PATCH", "/tasks/tsk-1", {
+      checklist: [items[0]!],
+      expected: { checklist: reordered },
+    });
+    expect(res.statusCode).toBe(409);
+    const body = res.json() as { fields: string[]; task: Shown };
+    expect(body.fields).toEqual(["checklist"]);
+    expect(body.task.checklist).toEqual(items);
+    expect(body.task.attachments).toEqual([]);
+
+    // A box ticked elsewhere.
+    res = await call("PATCH", "/tasks/tsk-1", {
+      checklist: [items[0]!],
+      expected: { checklist: [{ ...items[0]!, done: true }, items[1]!] },
+    });
+    expect(res.statusCode).toBe(409);
+
+    // An expectation of "no list" against a list.
+    res = await call("PATCH", "/tasks/tsk-1", { checklist: [items[0]!], expected: { checklist: null } });
+    expect(res.statusCode).toBe(409);
+
+    // The right base goes through.
+    res = await call("PATCH", "/tasks/tsk-1", { checklist: [items[0]!], expected: { checklist: items } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("treats an expected [] and a stored none as the same list", async () => {
+    const res = await call("PATCH", "/tasks/tsk-1", { checklist: items, expected: { checklist: [] } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("refuses a place edit whose base moved", async () => {
+    Object.assign(tasks.find((t) => t.id === "tsk-1")!, {
+      locLat: 1,
+      locLng: 2,
+      locRadius: 300,
+      locLabel: "Дом",
+    });
+    const res = await call("PATCH", "/tasks/tsk-1", {
+      location: place,
+      expected: { location: { lat: 1, lng: 2, radius: 200, label: "Дом" } },
+    });
+    expect(res.statusCode).toBe(409);
+    const body = res.json() as { fields: string[]; task: Shown };
+    expect(body.fields).toEqual(["location"]);
+    expect(body.task.location).toEqual({ lat: 1, lng: 2, radius: 300, label: "Дом" });
+
+    const ok = await call("PATCH", "/tasks/tsk-1", {
+      location: null,
+      expected: { location: { lat: 1, lng: 2, radius: 300, label: "Дом" } },
+    });
+    expect(ok.statusCode).toBe(200);
+  });
+
+  it("lets a retry through when the task already holds what it asks for", async () => {
+    Object.assign(tasks.find((t) => t.id === "tsk-1")!, { checklist: items });
+    const res = await call("PATCH", "/tasks/tsk-1", { checklist: items, expected: { checklist: null } });
+    expect(res.statusCode).toBe(200);
+  });
+
+  it("keeps the checklist as lines when the task goes back to the sandbox", async () => {
+    Object.assign(tasks.find((t) => t.id === "tsk-1")!, {
+      description: "под мойкой",
+      checklist: [items[0]!, { id: "item-0003", text: "две\nстроки", done: true }],
+      locLat: 1,
+      locLng: 2,
+      locRadius: 300,
+      locLabel: "Дом",
+    });
+    const res = await call("POST", "/tasks/tsk-1/unfile");
+    expect(res.statusCode).toBe(201);
+    expect(inbox.at(-1)!.text).toBe("Починить кран\nпод мойкой\n- Молоко\n- две строки");
+  });
+
+  it("lists tasks in the same shape", async () => {
+    Object.assign(tasks.find((t) => t.id === "tsk-1")!, {
+      checklist: items,
+      locLat: 1,
+      locLng: 2,
+      locRadius: 300,
+      locLabel: "Дом",
+    });
+    const res = await call("GET", "/projects/prj-1/tasks");
+    const first = (res.json() as Shown[]).find((t) => t.id === "tsk-1")!;
+    expect(first.checklist).toEqual(items);
+    expect(first.location).toEqual({ lat: 1, lng: 2, radius: 300, label: "Дом" });
+    expect(first.attachments).toEqual([]);
   });
 });

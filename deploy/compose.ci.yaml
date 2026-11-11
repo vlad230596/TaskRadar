@@ -3,7 +3,7 @@
 # It exists because the production stack cannot be exercised on the development
 # machine (no Docker there) and must not be exercised on the VDS. Everything
 # here mirrors compose.prod.yaml except for the parts that only make sense in
-# production: no restart policy, no volume, no external ingress network, and the
+# production: no restart policy, no database volume, no external ingress network, and the
 # gateway publishes a loopback port so the runner can make requests.
 #
 # All credentials below are throwaway values committed on purpose: they are what
@@ -67,6 +67,12 @@ services:
       # honours the attribute. The native app carries a bearer token anyway, so
       # this does not weaken what the check covers.
       COOKIE_SECURE: "false"
+      ATTACHMENTS_DIR: /var/lib/taskradar/attachments
+    # As in production: the root filesystem is read-only and task pictures go
+    # to a named volume, initialised writable for `node` from the image. `down
+    # -v` in the workflow removes it with the database.
+    volumes:
+      - attachments-data:/var/lib/taskradar/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -112,3 +118,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+
+volumes:
+  attachments-data:
