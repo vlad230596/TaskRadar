@@ -50,7 +50,9 @@ Postgres реально доступен и миграции применены)
 - **Общий Caddy — это `officecooking-caddy-1`**, конфигурация лежит в
   `/opt/officecooking/Caddyfile` (файл чужого проекта). Перед правкой сделана
   копия `Caddyfile.before-taskradar.<дата>`; наш site-блок добавлен в конец, ничего
-  существующего не тронуто. Контейнер подключён к сети `taskradar-ingress`.
+  существующего не тронуто. Контейнер подключён к сети `taskradar-ingress`; с
+  11.11.2026 сеть объявлена в `compose.prod.yaml` OfficeCooking (см. «Сеть
+  `taskradar-ingress` живёт в compose OfficeCooking»).
 - **Памяти в обрез.** 2 ГБ на весь сервер, swap отсутствовал. Добавлен файл подкачки
   на 2 ГБ (`/etc/fstab`, `vm.swappiness=10` в `/etc/sysctl.d/99-taskradar-swap.conf`)
   — как подушка от OOM, а не как рабочий инструмент для страниц БД. После запуска
@@ -154,8 +156,9 @@ Postgres реально доступен и миграции применены)
 ни с их базами.
 
 Общий Caddy правится только после бэкапа его текущих файлов. Требуемое
-изменение ограничено двумя вещами: подключить сервис Caddy к сети
-`taskradar-ingress` и добавить site-блок из
+изменение ограничено двумя вещами: объявить сеть `taskradar-ingress` у сервиса
+Caddy в `compose.prod.yaml` репозитория OfficeCooking.Web (не только
+`docker network connect`) и добавить site-блок из
 `deploy/Caddyfile.taskradar.example`. Перед пересозданием контейнера —
 `caddy validate`.
 
@@ -171,6 +174,42 @@ site-блок вклеен в его конец; шаблон лежит в
 Caddyfile'ами в репозитории, а живой конфиг — это копия, которую человек
 вставил руками. Пока не вставил, правка в `deploy/` не применена — при том что
 в репозитории она выглядит применённой, и CI зелёный.
+
+### Сеть `taskradar-ingress` живёт в compose OfficeCooking
+
+Caddy достаёт `taskradar-backend` и `taskradar-web` только через
+`taskradar-ingress`. Эта сеть должна быть объявлена в `compose.prod.yaml`
+**репозитория OfficeCooking.Web**: у сервиса `caddy` в `networks` и в
+верхнеуровневом `networks` с `external: true`. Одного
+`docker network connect taskradar-ingress officecooking-caddy-1` мало.
+
+Почему: каждый релиз OfficeCooking пересоздаёт контейнер Caddy (он зависит от
+их frontend, а у frontend каждый раз новый образ). Пересозданный контейнер
+получает ровно те сети, что записаны в compose, а подключённые руками теряет.
+11.11.2026 в 08:34 UTC релиз OfficeCooking `1.3.0` так снял
+`taskradar-ingress`, и весь `https://task-radar.duckdns.org:8443` отвечал 502,
+пока сеть не подключили заново. До этого сеть жила только в ручном
+`network connect`, а серверный compose OfficeCooking правили на месте.
+
+После исправления в OfficeCooking.Web (PR
+https://github.com/vlad230596/OfficeCooking.Web/pull/1) их release workflow
+привозит `compose.prod.yaml` из тега. Deploy-скрипт отказывается пересоздавать
+Caddy, если на хосте есть сеть `*-ingress`, которой нет в compose, и
+проверяет после `up`, что Caddy остался во всех сетях. Серверный
+`/opt/officecooking/compose.prod.yaml` руками не правится: правка идёт
+коммитом в OfficeCooking.Web.
+
+Симптом, если сеть всё-таки пропала: TaskRadar отвечает 502 на всё, включая
+`/health`, при здоровых `taskradar-backend-1` и `taskradar-web-1`. Проверка и
+временное лечение (без простоя):
+
+```bash
+docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}' officecooking-caddy-1
+docker network connect taskradar-ingress officecooking-caddy-1
+```
+
+Временное — потому что до коммита в compose OfficeCooking следующий их релиз
+снимет сеть снова.
 
 ### Ловушка: файл смонтирован по inode, а не по пути
 
@@ -398,7 +437,10 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
    проверка релиза, которая ходит через публичный origin, не сможет пройти:
 
    - забэкапить текущий Caddyfile и compose-файл того проекта, где живёт Caddy;
-   - подключить сервис Caddy к сети `taskradar-ingress`;
+   - объявить сеть `taskradar-ingress` у сервиса Caddy в `compose.prod.yaml`
+     репозитория OfficeCooking.Web и выкатить её их релизом; одного
+     `docker network connect` мало (см. «Сеть `taskradar-ingress` живёт в
+     compose OfficeCooking»);
    - добавить site-блок из `deploy/Caddyfile.taskradar.example`, подставив
      решённые хост и порт;
    - `caddy validate` на объединённой конфигурации, потом пересоздать контейнер.
