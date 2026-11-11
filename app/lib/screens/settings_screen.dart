@@ -13,6 +13,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../voice/voice_model.dart';
 import '../widgets/mutation_feedback.dart';
+import 'agent_access_screen.dart';
 import 'ai_insights_screens.dart';
 import 'ai_models_screen.dart';
 import 'dictation_archive_screen.dart';
@@ -85,6 +86,14 @@ class SettingsScreen extends ConsumerWidget {
                                 'Что именно просим у модели, и что значит '
                                 'каждый уровень — с правкой. Только для владельца.',
                             screen: AiPromptsScreen(),
+                          ),
+                          _AiInsightTile(
+                            icon: Icons.key_outlined,
+                            title: AgentAccessScreen.title,
+                            description:
+                                'Токены, с которыми Claude Code и другие '
+                                'агенты читают и правят задачи.',
+                            screen: AgentAccessScreen(),
                           ),
                         ],
                       ),

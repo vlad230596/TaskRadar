@@ -279,6 +279,22 @@ curl -N -H 'Accept: text/event-stream' -H 'Content-Type: application/json' \
 растёт с длиной текста от `LLM_TIMEOUT_MS` до этого потолка. Старый JSON-ответ
 живёт по-прежнему в `LLM_TIMEOUT_MS`.
 
+### MCP-эндпоинт для агентов
+
+`POST /mcp` (MCP Streamable HTTP) и `/agent-tokens` — новые префиксы в
+`@api path` (`/agent-tokens /agent-tokens/* /mcp`); их надо перенести в живой
+Caddyfile тем же способом, что и остальной allowlist. Новых переменных
+окружения нет. Миграция `20261111090000_add_agent_tokens` добавляет одну
+таблицу `agent_tokens` и безопасна на живой базе. Проверка снаружи после
+деплоя (без токена — 401 от бэкенда, не 404 от Caddy):
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  -H 'Content-Type: application/json' -d '{}' "$APP_ORIGIN/mcp"   # 401
+```
+
+Как подключить агента — `docs/mcp.md`.
+
 ---
 
 ## Чем TaskRadar осознанно отличается от CashFlow

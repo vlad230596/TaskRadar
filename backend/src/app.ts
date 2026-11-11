@@ -12,6 +12,8 @@ import { inboxRoutes } from "./routes/inbox";
 import { focusRoutes } from "./routes/focus";
 import { historyRoutes } from "./routes/history";
 import { boardRoutes } from "./routes/board";
+import { agentTokenRoutes } from "./routes/agentTokens";
+import { mcpRoutes } from "./routes/mcp";
 import { dictationRoutes } from "./routes/dictation";
 import { registerErrorHandler } from "./lib/errorHandler";
 import { AuthConfig, SESSION_COOKIE_NAME, loadAuthConfig } from "./lib/authConfig";
@@ -140,6 +142,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(focusRoutes);
   await app.register(historyRoutes);
   await app.register(boardRoutes);
+  await app.register(agentTokenRoutes);
+  await app.register(mcpRoutes(users));
   await app.register(dictationRoutes(dictation, {
       heartbeatMs: options.dictationHeartbeatMs,
       dailyLimit: options.aiDailyLimit,

@@ -77,8 +77,40 @@ model User {
   inboxItems      InboxItem[]
   dictationParses DictationParse[]
   aiUsage         AiUsage[]
+  agentTokens     AgentToken[]
 
   @@map("users")
+}
+
+/// A personal API token for coding agents: the MCP endpoint (`POST /mcp`).
+///
+/// Only the SHA-256 of the token is stored. The plain value is shown once, in
+/// the answer to `POST /agent-tokens`, and cannot be recovered afterwards. A
+/// plain hash rather than bcrypt because the token is 256 random bits -- there
+/// is nothing to brute-force, and the lookup has to be one indexed equality.
+///
+/// The scope is the MCP endpoint and nothing else: the session guard knows
+/// nothing about these tokens, so one sent to `/board` is just a bad JWT (401).
+///
+/// Revoked rather than deleted: a revoked token never authenticates again and
+/// leaves the list, but the row stays as a record that it existed.
+model AgentToken {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// What the owner called it ("ноутбук", "Claude Code"). Optional.
+  name       String?
+  /// Hex SHA-256 of the whole token.
+  tokenHash  String    @unique
+  /// The first characters of the token, to tell tokens apart in the list.
+  prefix     String
+  createdAt  DateTime  @default(now())
+  /// Refreshed at most once a minute while the token is in use.
+  lastUsedAt DateTime?
+  revokedAt  DateTime?
+
+  @@index([userId, createdAt])
+  @@map("agent_tokens")
 }
 
 /// How many AI requests a user has made on one UTC day, for the daily limit.
