@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'attachments/share_intake.dart';
 import 'navigation/app_routes.dart';
 import 'notifications/reminder_lifecycle.dart';
 import 'providers/session_provider.dart';
@@ -122,12 +123,17 @@ class TaskRadarApp extends ConsumerWidget {
               value == SessionStatus.signedIn
                   ? const CaptureFlushScope(
                       child: NotificationLinkScope(
-                        // The Android home-screen widget: fed from here, and
-                        // its task taps go through the link scope just above.
-                        child: HomeWidgetScope(
-                          child: qaBuild
-                              ? QaBoardDrawnSignal(child: ShellScreen())
-                              : ShellScreen(),
+                        // A picture shared from another app (Android):
+                        // «В какую задачу?». Signed-in only, like the link
+                        // scope; see `attachments/share_intake.dart`.
+                        child: ShareIntakeScope(
+                          // The Android home-screen widget: fed from here,
+                          // and its task taps go through the link scope.
+                          child: HomeWidgetScope(
+                            child: qaBuild
+                                ? QaBoardDrawnSignal(child: ShellScreen())
+                                : ShellScreen(),
+                          ),
                         ),
                       ),
                     )

@@ -5,6 +5,7 @@ import '../../models/checklist_item.dart';
 import '../../models/task.dart';
 import '../../models/task_location.dart';
 import '../../providers/project_providers.dart';
+import 'attachment_section.dart';
 import 'attribute_bar.dart';
 import 'checklist_section.dart';
 import 'editor_theme.dart';
@@ -216,6 +217,8 @@ abstract final class EditorSlots {
           onOpen();
         },
       ),
+    // WP6: «Фото» -- opens the picker straight away.
+    AttachmentChip(scope: scope, onOpen: onOpen),
   ];
 
   /// WP5: `ChecklistSection(items: scope.extras.checklist ?? [], onChanged:
@@ -231,7 +234,7 @@ abstract final class EditorSlots {
   /// pending, onAdd, onDelete)`; for a new task, register the upload of the
   /// pending pictures in `scope.extras.createHooks`.
   static Widget attachments(EditorSectionScope scope) =>
-      const SizedBox.shrink();
+      AttachmentsSection(scope: scope);
 
   /// WP7: `LocationTile(value: scope.extras.location, onChanged: (v) =>
   /// scope.extras.location = v)` when `location != null || locationOpen`.
