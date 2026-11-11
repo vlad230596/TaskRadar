@@ -252,7 +252,8 @@ model Task {
   @@index([projectId, position])
   @@index([categoryId])
   // Per project, which is per user: a task has no userId of its own, a project
-  // belongs to exactly one user, and a task never changes project. So this
+  // belongs to exactly one user, and a task changes project only within one
+  // user's projects (`POST /tasks/:id/move`, which clears the key). So this
   // scopes a key to its owner the way `@@unique([userId, captureKey])` does on
   // the inbox, without denormalising userId onto every task -- and a key that
   // two people's phones happened to share can neither collide nor answer one

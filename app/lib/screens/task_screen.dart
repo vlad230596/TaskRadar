@@ -23,6 +23,7 @@ import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
 import '../widgets/focus_toggle.dart';
+import '../widgets/move_task_sheet.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/reminder_time_picker.dart';
@@ -405,6 +406,14 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
     // Leaving, as after a delete: every control here addresses a row that is
     // gone.
     if (ok && navigator.canPop()) navigator.pop();
+  }
+
+  /// "Перенести в проект…" -- the picker and the move live in
+  /// `widgets/move_task_sheet.dart`. Leaving afterwards, as after an unfile.
+  Future<void> _moveToProject(Task task) async {
+    final navigator = Navigator.of(context);
+    final moved = await moveTaskToAnotherProject(context, ref, task);
+    if (moved && navigator.canPop()) navigator.pop();
   }
 
   Future<void> _delete(Task task) async {
@@ -856,28 +865,42 @@ class _TaskScreenState extends ConsumerState<TaskScreen> {
           if (projectName != null)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Container(
-                height: 26,
-                constraints: const BoxConstraints(maxWidth: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.indigoFill,
+              // The project chip is the way to another project: tapping
+              // where the task lives is how one changes where it lives.
+              child: Tooltip(
+                message: 'Перенести в проект…',
+                child: InkWell(
                   borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    Flexible(
-                      child: Text(
-                        projectName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppText.chip.copyWith(
+                  onTap: () => unawaited(_moveToProject(task)),
+                  child: Container(
+                    height: 26,
+                    constraints: const BoxConstraints(maxWidth: 150),
+                    padding: const EdgeInsets.only(left: 10, right: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.indigoFill,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Flexible(
+                          child: Text(
+                            projectName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.chip.copyWith(
+                              color: AppColors.indigoInk,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.expand_more,
+                          size: 16,
                           color: AppColors.indigoInk,
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),

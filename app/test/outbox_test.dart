@@ -330,6 +330,174 @@ void main() {
     });
   });
 
+  group('a move to another project', () {
+    late String home;
+    late String dacha;
+    late String taskId;
+    late ProviderContainer container;
+
+    setUp(() async {
+      home = server.addProject(name: 'Дом');
+      dacha = server.addProject(name: 'Дача');
+      final categoryId = server.addCategory(projectId: home, name: 'Кухня');
+      server.addTask(projectId: home, title: 'Купить хлеб');
+      taskId = server.addTask(
+        projectId: home,
+        title: 'Покрасить забор',
+        categoryId: categoryId,
+      );
+      server.addTask(projectId: dacha, title: 'Скосить траву');
+      container = makeContainer();
+      await loadTasks(container, home);
+      await loadTasks(container, dacha);
+    });
+
+    List<String> titles(String projectId) =>
+        drawn(container, projectId).map((t) => t.title).toList();
+
+    Task rowIn(String projectId) =>
+        drawn(container, projectId).singleWhere((t) => t.id == taskId);
+
+    test('online: leaves one list and lands last in the other', () async {
+      final outcome = await tasksOf(
+        container,
+        home,
+      ).moveToProject(rowIn(home), dacha);
+
+      expect(outcome, WriteOutcome.sent);
+      expect(serverTask(taskId)['projectId'], dacha);
+      expect(store.entries, isEmpty);
+      expect(titles(home), <String>['Купить хлеб']);
+      // The target's open list was re-read, not left to its next visit.
+      expect(titles(dacha), <String>['Скосить траву', 'Покрасить забор']);
+      expect(rowIn(dacha).categoryId, isNull);
+    });
+
+    test('offline: queued, drawn in the target, and sent later', () async {
+      offline();
+      final outcome = await tasksOf(
+        container,
+        home,
+      ).moveToProject(rowIn(home), dacha);
+
+      expect(outcome, WriteOutcome.queued);
+      expect(serverTask(taskId)['projectId'], home);
+      final entry = store.entries.single;
+      expect(entry.kind, OutboxKind.moveTask);
+      expect(entry.projectId, home);
+      expect(entry.targetProjectId, dacha);
+
+      expect(titles(home), <String>['Купить хлеб']);
+      expect(titles(dacha), <String>['Скосить траву', 'Покрасить забор']);
+      expect(rowIn(dacha).projectId, dacha);
+      expect(rowIn(dacha).categoryId, isNull);
+      expect(
+        container.read(outboxMarksProvider(dacha))[taskId],
+        OutboxMark.waiting,
+      );
+      expect(container.read(outboxMarksProvider(home)), isEmpty);
+
+      online();
+      await container.read(outboxProvider.notifier).flush();
+
+      expect(serverTask(taskId)['projectId'], dacha);
+      expect(serverTask(taskId)['categoryId'], isNull);
+      expect(store.entries.single.state, OutboxState.sent);
+      expect(titles(home), <String>['Купить хлеб']);
+      expect(titles(dacha), <String>['Скосить траву', 'Покрасить забор']);
+      expect(
+        container.read(outboxMarksProvider(dacha))[taskId],
+        OutboxMark.sent,
+      );
+    });
+
+    test('an edit of the moved row, offline, follows the move', () async {
+      offline();
+      await tasksOf(container, home).moveToProject(rowIn(home), dacha);
+      final outcome = await tasksOf(
+        container,
+        dacha,
+      ).editTitle(rowIn(dacha), 'Покрасить забор в зелёный');
+
+      // Not "sent": the row is not in the server's list here yet, and
+      // dropping the edit silently was the alternative.
+      expect(outcome, WriteOutcome.queued);
+      expect(rowIn(dacha).title, 'Покрасить забор в зелёный');
+
+      online();
+      await container.read(outboxProvider.notifier).flush();
+
+      expect(serverTask(taskId)['projectId'], dacha);
+      expect(serverTask(taskId)['title'], 'Покрасить забор в зелёный');
+      expect(store.entries.map((e) => e.state), everyElement(OutboxState.sent));
+    });
+
+    test('a second move, offline, goes on from where the first went', () async {
+      final garage = server.addProject(name: 'Гараж');
+      await loadTasks(container, garage);
+
+      offline();
+      await tasksOf(container, home).moveToProject(rowIn(home), dacha);
+      final outcome = await tasksOf(
+        container,
+        dacha,
+      ).moveToProject(rowIn(dacha), garage);
+
+      expect(outcome, WriteOutcome.queued);
+      expect(titles(home), <String>['Купить хлеб']);
+      expect(titles(dacha), <String>['Скосить траву']);
+      expect(titles(garage), <String>['Покрасить забор']);
+
+      online();
+      await container.read(outboxProvider.notifier).flush();
+      expect(serverTask(taskId)['projectId'], garage);
+      expect(titles(garage), <String>['Покрасить забор']);
+    });
+
+    test('refused when the target is gone, and the task stays put', () async {
+      offline();
+      await tasksOf(container, home).moveToProject(rowIn(home), dacha);
+      server.projects.remove(dacha);
+
+      online();
+      await container.read(outboxProvider.notifier).flush();
+
+      expect(store.entries.single.state, OutboxState.refused);
+      expect(serverTask(taskId)['projectId'], home);
+      // No longer drawn over: the server's list is the truth again.
+      expect(titles(home), <String>['Купить хлеб', 'Покрасить забор']);
+    });
+
+    test('an unsent create cannot be moved', () async {
+      offline();
+      await tasksOf(container, home).create('Новая');
+      final local = drawn(container, home).last;
+
+      expect(
+        () => tasksOf(container, home).moveToProject(local, dacha),
+        throwsStateError,
+      );
+    });
+
+    test('round-trips through the file with its copy of the row', () {
+      final entry = OutboxEntry(
+        key: 'k1',
+        kind: OutboxKind.moveTask,
+        projectId: home,
+        taskId: taskId,
+        title: 'Покрасить забор',
+        body: <String, Object?>{'projectId': dacha},
+        row: rowIn(home).toJson(),
+        createdAt: DateTime.utc(2026, 11, 1, 10),
+      );
+
+      final back = OutboxStore.decode(OutboxStore.encode(<OutboxEntry>[entry]));
+
+      expect(back.single.toJson(), entry.toJson());
+      expect(back.single.landsInProjectId, dacha);
+    });
+  });
+
   group('the history', () {
     test(
       'forgets what settled more than a week ago, never what waits',

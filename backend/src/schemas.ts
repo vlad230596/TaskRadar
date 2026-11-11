@@ -256,6 +256,15 @@ export const updateTaskPositionSchema = z
       "At least one of beforeTaskId/afterTaskId must be provided (use null for 'no neighbour on that side')",
   });
 
+/**
+ * Body of `POST /tasks/:id/move`: the project the task goes to. Another of
+ * the same user's projects; the route says why the rest of the move (place in
+ * the list, category) is not the client's to choose.
+ */
+export const moveTaskSchema = z.object({
+  projectId: z.string().min(1, "projectId is required"),
+});
+
 // ---- Task categories ----
 
 /**

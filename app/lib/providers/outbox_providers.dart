@@ -105,6 +105,31 @@ class Outbox extends _$Outbox {
     );
   }
 
+  /// Puts a move of [base] into [targetProjectId] on the outbox.
+  ///
+  /// [base] is the row as the user saw it -- edits still waiting in front of
+  /// this one included -- and is kept whole in [OutboxEntry.row], because the
+  /// target's list has never had the task and has to draw it from something.
+  /// No `expected`: a move overwrites no field the user typed, and the server
+  /// answers a replay of a move that already landed with the task unchanged.
+  Future<OutboxEntry> queueMove({
+    required Task base,
+    required String targetProjectId,
+  }) {
+    return _append(
+      OutboxEntry(
+        key: PendingCapture.newKey(),
+        kind: OutboxKind.moveTask,
+        projectId: base.projectId,
+        taskId: base.id,
+        title: base.title,
+        body: <String, Object?>{'projectId': targetProjectId},
+        row: base.toJson(),
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
   /// A refused entry, back to waiting.
   Future<void> retry(OutboxEntry entry) =>
       _replace(entry.key, (row) => row.copyWith(state: OutboxState.waiting));
@@ -185,13 +210,19 @@ class Outbox extends _$Outbox {
             entry.body,
             expected: entry.expected,
           ),
+          OutboxKind.moveTask => await api.moveTaskToProject(
+            entry.taskId!,
+            entry.targetProjectId!,
+          ),
         };
         settled[entry.key] = entry.copyWith(
           state: OutboxState.sent,
           settledAt: DateTime.now(),
           taskId: task.id,
         );
-        touched.add(entry.projectId);
+        touched
+          ..add(entry.projectId)
+          ..add(entry.landsInProjectId);
       } on NetworkException {
         // Still no network: the rest would fail the same way.
         break;
@@ -345,7 +376,8 @@ Map<String, OutboxMark> outboxMarks(Ref ref, String projectId) {
   final now = DateTime.now();
   final marks = <String, OutboxMark>{};
   for (final entry in ref.watch(outboxEntriesProvider)) {
-    if (entry.projectId != projectId) continue;
+    // A moved row is marked where it is drawn: in the project it went to.
+    if (entry.landsInProjectId != projectId) continue;
     switch (entry.state) {
       case OutboxState.waiting:
         final id = entry.kind == OutboxKind.createTask

@@ -21,6 +21,7 @@ import '../models/task_status.dart';
 import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
+import 'focus_providers.dart';
 import 'inbox_providers.dart';
 import 'outbox_providers.dart';
 import 'read_cache_providers.dart';
@@ -46,8 +47,10 @@ part 'project_providers.g.dart';
 ///    network and the outbox can hold it.** An optimistic update is a
 ///    *prediction shown for one round trip*. Creates and field edits that hit
 ///    a [NetworkException] go to the outbox (`outbox_providers.dart`) instead,
-///    and are drawn over the list by [projectView] until they are sent; a
-///    delete, a move or an unfile still needs the network and still says so.
+///    and are drawn over the list by [projectView] until they are sent; so
+///    is a move into another project ([ProjectTasks.moveToProject]). A
+///    delete, a reorder or an unfile still needs the network and still says
+///    so.
 ///
 /// 3. **Changing the reminder target set *is* the reschedule.** Nothing in this
 ///    file mentions the scheduler. Writes flow into the board (see
@@ -246,6 +249,7 @@ class ProjectTasks extends _$ProjectTasks {
 
     final clearsDate = status == TaskStatus.done && task.remindAt != null;
     return _mutate(
+      taskId: task.id,
       // Checked on the status alone: a reminder moved on the laptop is no
       // reason to refuse "сделано" from the phone.
       offline: () => ref
@@ -503,6 +507,92 @@ class ProjectTasks extends _$ProjectTasks {
     });
   }
 
+  /// Into another of the user's projects (`POST /tasks/:id/move`).
+  ///
+  /// To this list it is a removal, reconciled like [remove] -- the task may
+  /// have been the current one. The other list is re-read here as well, into
+  /// the board and into its provider if it is open, because that is where the
+  /// user goes next to look for the task; and the working set is re-read if
+  /// the task is in it, since its rows carry the project's name.
+  ///
+  /// With no network the move goes to the outbox like an edit: the task is
+  /// drawn in the target from the entry's copy of the row until it is sent
+  /// (`overlayOutbox`). A task that is here only *because* of such a waiting
+  /// move follows it through the outbox too (see [_mutate]).
+  ///
+  /// A task the server has never seen (an unsent create, `isOptimisticId`)
+  /// cannot be moved: there is nothing to address yet. The screen says so
+  /// before calling this; here it is a [StateError].
+  Future<WriteOutcome> moveToProject(Task task, String targetProjectId) {
+    if (isOptimisticId(task.id)) {
+      throw StateError('An unsent task cannot be moved to another project');
+    }
+    if (task.projectId == targetProjectId) {
+      return Future<WriteOutcome>.value(WriteOutcome.sent);
+    }
+
+    return _mutate(
+      taskId: task.id,
+      offline: () => ref
+          .read(outboxProvider.notifier)
+          .queueMove(base: task, targetProjectId: targetProjectId),
+      (rows) {
+        if (!rows.any((row) => row.id == task.id)) return null;
+
+        return _MutationPlan(
+          optimistic: <Task>[
+            for (final row in rows)
+              if (row.id != task.id) row,
+          ],
+          send: () async {
+            await _api.moveTaskToProject(task.id, targetProjectId);
+            await _rereadMovedInto(targetProjectId);
+            _rereadFocusHolding(task.id);
+            return null; // reconcile: the moved task may have been current
+          },
+        );
+      },
+    );
+  }
+
+  /// The list a task was just moved into, re-read once and handed to the
+  /// board and to its open provider. A failure here is not the move's: the
+  /// move is on the server, and the list catches up on its next read.
+  Future<void> _rereadMovedInto(String targetProjectId) async {
+    try {
+      final rows = await _api.fetchTasks(targetProjectId);
+      if (!ref.mounted) return;
+      ref.read(boardProvider.notifier).applyProjectTasks(targetProjectId, rows);
+      final provider = projectTasksProvider(targetProjectId);
+      if (ref.exists(provider)) ref.read(provider.notifier).adopt(rows);
+    } catch (error) {
+      debugPrint('Could not re-read $targetProjectId after a move: $error');
+      final provider = projectTasksProvider(targetProjectId);
+      if (ref.mounted && ref.exists(provider)) ref.invalidate(provider);
+    }
+  }
+
+  /// Whether [taskId] is drawn here only because a move into this project is
+  /// still waiting in the outbox -- see "A row the server does not have here
+  /// yet" on [_mutate].
+  bool _arrivingHere(String taskId) => ref
+      .read(outboxEntriesProvider)
+      .any(
+        (entry) =>
+            entry.isWaiting &&
+            entry.taskId == taskId &&
+            entry.targetProjectId == projectId,
+      );
+
+  /// Re-reads the working set if [taskId] is in it: its row names the
+  /// project, which has just changed.
+  void _rereadFocusHolding(String taskId) {
+    if (!ref.mounted || !ref.exists(focusSetProvider)) return;
+    final set = ref.read(focusSetProvider).value;
+    if (set == null || !set.any((row) => row.id == taskId)) return;
+    unawaited(ref.read(focusSetProvider.notifier).refresh());
+  }
+
   Future<void> remove(Task task) {
     return _mutate((rows) {
       if (!rows.any((row) => row.id == task.id)) return null;
@@ -569,6 +659,7 @@ class ProjectTasks extends _$ProjectTasks {
     required Map<String, Object?> offline,
   }) {
     return _mutate(
+      taskId: task.id,
       offline: () => ref
           .read(outboxProvider.notifier)
           .queueEdit(base: task, body: offline),
@@ -624,9 +715,18 @@ class ProjectTasks extends _$ProjectTasks {
   /// retry on its own (`noAutomaticRetry`), so the old rule -- throw the stored
   /// error -- answered every later write with the "Нет связи" of a load that
   /// failed minutes ago, without sending a request, until a pull-to-refresh.
+  ///
+  /// ## A row the server does not have here yet
+  ///
+  /// [taskId] names the row a write is about. A row moved into this project
+  /// with no network is drawn here from the outbox (`overlayOutbox`) but is
+  /// not in the server's list, so [plan] finds nothing to do -- and saying
+  /// "sent" then would drop the write silently. It goes to the outbox behind
+  /// the move instead, to be sent once the move has been.
   Future<WriteOutcome> _mutate(
     _MutationPlan? Function(List<Task> rows) plan, {
     Future<Object?> Function()? offline,
+    String? taskId,
   }) {
     return _enqueue(() async {
       Future<WriteOutcome> queue(NetworkException error) async {
@@ -646,7 +746,13 @@ class ProjectTasks extends _$ProjectTasks {
       }
 
       final step = plan(previous);
-      if (step == null) return WriteOutcome.sent;
+      if (step == null) {
+        if (offline != null && taskId != null && _arrivingHere(taskId)) {
+          await offline();
+          return WriteOutcome.queued;
+        }
+        return WriteOutcome.sent;
+      }
 
       state = AsyncData(step.optimistic);
 

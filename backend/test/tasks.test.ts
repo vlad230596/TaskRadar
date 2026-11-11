@@ -1019,6 +1019,86 @@ describe("POST /tasks/:id/unfile", () => {
   });
 });
 
+describe("POST /tasks/:id/move", () => {
+  /** A second live project of user A, with two tasks of its own. */
+  function seedTarget(): void {
+    projects.push({ id: "prj-3", scopeId: "scp-a", name: "Дача", archivedAt: null });
+    tasks.push(
+      task({ id: "tsk-6", projectId: "prj-3", title: "Покрасить забор", position: 1000 }),
+      task({ id: "tsk-7", projectId: "prj-3", title: "Скосить траву", position: 2500 }),
+    );
+  }
+
+  it("puts the task last in the other project, without its category", async () => {
+    seedTarget();
+    Object.assign(tasks.find((t) => t.id === "tsk-2")!, {
+      categoryId: "cat-1",
+      createKey: "key-1",
+      remindAt: at("2026-09-25T00:00:00.000Z"),
+    });
+    const eventsBefore = events.length;
+
+    const res = await call("POST", "/tasks/tsk-2/move", { projectId: "prj-3" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      id: "tsk-2",
+      projectId: "prj-3",
+      position: 3500,
+      categoryId: null,
+      createKey: null,
+      // What the task is stays: status, reminder, place in the working set.
+      status: "blocked",
+      remindAt: "2026-09-25T00:00:00.000Z",
+      focusedAt: "2026-09-20T09:00:00.000Z",
+    });
+    expect(tasks.filter((t) => t.projectId === "prj-1").map((t) => t.id)).toEqual([
+      "tsk-1",
+      "tsk-3",
+      "tsk-5",
+    ]);
+    // The journal tracks status and focus, not location.
+    expect(events).toHaveLength(eventsBefore);
+
+    const list = (await call("GET", "/projects/prj-3/tasks")).json() as { id: string }[];
+    expect(list.map((t) => t.id)).toEqual(["tsk-6", "tsk-7", "tsk-2"]);
+  });
+
+  it("goes first into an empty project", async () => {
+    projects.push({ id: "prj-3", scopeId: "scp-a", name: "Дача", archivedAt: null });
+
+    const res = await call("POST", "/tasks/tsk-1/move", { projectId: "prj-3" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ projectId: "prj-3", position: 1000 });
+  });
+
+  it("answers the task unchanged when it is already there (a replayed move)", async () => {
+    const res = await call("POST", "/tasks/tsk-1/move", { projectId: "prj-1" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ id: "tsk-1", projectId: "prj-1", position: 1000 });
+    expect(prismaMock.task.update).not.toHaveBeenCalled();
+  });
+
+  it("refuses a project of another user, or none, with the same 400", async () => {
+    for (const projectId of ["prj-b", "prj-nope"]) {
+      const res = await call("POST", "/tasks/tsk-1/move", { projectId });
+      expect(res.statusCode, projectId).toBe(400);
+    }
+    expect(tasks.find((t) => t.id === "tsk-1")!.projectId).toBe("prj-1");
+    expect(prismaMock.task.update).not.toHaveBeenCalled();
+  });
+
+  it("400s without a project", async () => {
+    expect((await call("POST", "/tasks/tsk-1/move", {})).statusCode).toBe(400);
+  });
+
+  it("404s for an unknown task", async () => {
+    expect((await call("POST", "/tasks/tsk-nope/move", { projectId: "prj-1" })).statusCode).toBe(404);
+  });
+});
+
 describe("GET /tasks/:id/events", () => {
   it("returns one task's journal, oldest first", async () => {
     const res = await call("GET", "/tasks/tsk-2/events");
@@ -1242,6 +1322,8 @@ describe("one user's tasks are invisible to another", () => {
       ["GET", "/tasks/tsk-1/events"],
       ["DELETE", "/tasks/tsk-1"],
       ["POST", "/tasks/tsk-1/unfile"],
+      // Into B's own project: still A's task, so still not B's to move.
+      ["POST", "/tasks/tsk-1/move", { projectId: "prj-b" }],
       ["POST", "/tasks/tsk-1/focus"],
       // tsk-2 is in A's working set: B must not be able to take it out either.
       ["DELETE", "/tasks/tsk-2/focus"],

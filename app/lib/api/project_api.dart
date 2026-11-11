@@ -333,6 +333,21 @@ class ProjectApi {
     return _taskFromMutation(json);
   }
 
+  /// `POST /tasks/:id/move`: the task into another of the user's projects.
+  ///
+  /// Not [moveTask], which reorders inside one project. The server puts the
+  /// task last in [projectId] and drops its category (categories are per
+  /// project), and answers with the raw row -- no `isCurrent`, so both lists
+  /// are re-read by the caller. Moving into the project the task is already in
+  /// answers the task unchanged, which is what makes a replay harmless.
+  Future<Task> moveTaskToProject(String taskId, String projectId) async {
+    final json = await _client.post<Map<String, dynamic>>(
+      '/tasks/$taskId/move',
+      body: <String, dynamic>{'projectId': projectId},
+    );
+    return _taskFromMutation(json);
+  }
+
   /// `DELETE /tasks/:id`. Answers 204 with no body.
   ///
   /// Typed `dynamic` rather than `void` so that [ApiClient.request]'s
