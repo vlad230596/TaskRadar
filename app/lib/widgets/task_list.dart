@@ -18,6 +18,7 @@ import '../providers/outbox_providers.dart';
 import '../providers/project_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'attachment_badge.dart';
 import 'category_sheets.dart';
 import 'glance.dart';
 import 'mutation_feedback.dart';
@@ -683,6 +684,11 @@ class TaskRow extends ConsumerWidget {
                     ),
                   ),
                 ],
+                // 🖼: pictures, the server's and those still in the outbox.
+                AttachmentCountBadge(
+                  task: task,
+                  padding: const EdgeInsets.only(left: 6, top: 4),
+                ),
                 // No second line to put it on, so it rides at the end of the
                 // title -- and never wraps or shrinks. See `widgets/glance.dart`.
                 // Not on a done row: how long a finished task sat still is not
