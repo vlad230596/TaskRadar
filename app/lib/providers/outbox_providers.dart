@@ -5,8 +5,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/api_error_message.dart';
 import '../api/api_exception.dart';
+import '../api/attachment_api.dart';
+import '../api/task_wire.dart';
 import '../domain/outbox_overlay.dart';
 import '../models/task.dart';
+import '../models/task_status.dart';
 import '../storage/capture_queue_store.dart' show PendingCapture;
 import '../storage/outbox_store.dart';
 import 'board_providers.dart';
@@ -57,13 +60,18 @@ class Outbox extends _$Outbox {
 
   /// Puts a create on the outbox. Returns once it is on disk; throws only if
   /// it is not -- then the task exists nowhere and the caller must say so.
+  ///
+  /// [key] is the `createKey`; a create that was already tried online passes
+  /// the key it was tried with, so a request whose answer was lost is not
+  /// made twice.
   Future<OutboxEntry> queueCreate({
     required String projectId,
     required Map<String, Object?> body,
+    String? key,
   }) {
     return _append(
       OutboxEntry(
-        key: PendingCapture.newKey(),
+        key: key ?? PendingCapture.newKey(),
         kind: OutboxKind.createTask,
         projectId: projectId,
         title: body['title']! as String,
@@ -130,17 +138,86 @@ class Outbox extends _$Outbox {
     );
   }
 
+  /// Puts a picture for [taskIdOrLocal] on the outbox: the task's id, or the
+  /// `local:outbox:<createKey>` of its create still in the outbox.
+  ///
+  /// [localPath] is the copy already made in `OutboxFileStore` under [key]
+  /// (which is also the `uploadKey`). [projectId] and [title] are the task's,
+  /// for the history line and the overlay; for a local id they are taken
+  /// from its create. Does not send -- the caller flushes, so the order is
+  /// always the outbox's.
+  Future<OutboxEntry> queueUpload({
+    required String key,
+    required String taskIdOrLocal,
+    required String localPath,
+    required String mime,
+    String? projectId,
+    String? title,
+  }) async {
+    final create = _createOf(await future, taskIdOrLocal);
+    return _append(
+      OutboxEntry(
+        key: key,
+        kind: OutboxKind.uploadAttachment,
+        projectId: create?.projectId ?? projectId ?? '',
+        taskId: taskIdOrLocal,
+        title: create?.title ?? title ?? '',
+        body: <String, Object?>{
+          'uploadKey': key,
+          'mime': mime,
+          'localPath': localPath,
+        },
+        createdAt: DateTime.now(),
+      ),
+    );
+  }
+
+  /// Puts the removal of [attachmentId] from [task] on the outbox. Does not
+  /// send, like [queueUpload].
+  Future<OutboxEntry> queueDeleteAttachment({
+    required Task task,
+    required String attachmentId,
+    bool waited = false,
+  }) {
+    return _append(
+      OutboxEntry(
+        key: PendingCapture.newKey(),
+        kind: OutboxKind.deleteAttachment,
+        projectId: task.projectId,
+        taskId: task.id,
+        title: task.title,
+        body: <String, Object?>{'attachmentId': attachmentId},
+        createdAt: DateTime.now(),
+        waited: waited,
+      ),
+    );
+  }
+
+  /// The create of a `local:outbox:<key>` id, if it is in the outbox.
+  static OutboxEntry? _createOf(List<OutboxEntry> entries, String taskId) {
+    const prefix = 'local:outbox:';
+    if (!taskId.startsWith(prefix)) return null;
+    final key = taskId.substring(prefix.length);
+    for (final entry in entries) {
+      if (entry.kind == OutboxKind.createTask && entry.key == key) return entry;
+    }
+    return null;
+  }
+
   /// A refused entry, back to waiting.
   Future<void> retry(OutboxEntry entry) =>
       _replace(entry.key, (row) => row.copyWith(state: OutboxState.waiting));
 
-  /// A refused entry, thrown away.
+  /// A refused entry, thrown away -- and a picture's local copy with it.
+  /// Also takes a picture still waiting («Убрать» on its thumbnail).
   Future<void> discard(OutboxEntry entry) async {
     final next = (await future)
         .where((row) => row.key != entry.key)
         .toList(growable: false);
     await _store.write(next);
     _publish(next);
+    final path = entry.localPath;
+    if (path != null) await ref.read(outboxFileStoreProvider).delete(path);
   }
 
   /// A skipped edit, left as the server has it.
@@ -191,43 +268,104 @@ class Outbox extends _$Outbox {
     final settled = <String, OutboxEntry>{};
     final touched = <String>{};
 
+    /// Pictures sent on the first try, which leave the outbox instead of
+    /// becoming history (see [OutboxEntry.waited]).
+    final dropped = <String>{};
+
+    /// Local copies to delete once the entries that name them are written.
+    final sentFiles = <String>[];
+
+    /// Whether the pass stopped for want of a network (or a session).
+    var stalled = false;
+
     for (final entry in snapshot) {
       if (!entry.isWaiting) continue;
       try {
-        final task = switch (entry.kind) {
-          OutboxKind.createTask => await api.createTask(
-            projectId: entry.projectId,
-            title: entry.body['title']! as String,
-            description: entry.body['description'] as String?,
-            categoryId: entry.body['categoryId'] as String?,
-            remindAt: entry.body['remindAt'] as String?,
-            remindTime: entry.body['remindTime'] as String?,
-            dictationParseId: entry.body['dictationParseId'] as String?,
-            createKey: entry.key,
-          ),
-          OutboxKind.editTask => await api.replayTaskPatch(
-            entry.taskId!,
-            entry.body,
-            expected: entry.expected,
-          ),
-          OutboxKind.moveTask => await api.moveTaskToProject(
-            entry.taskId!,
-            entry.targetProjectId!,
-          ),
-        };
+        final String? taskId;
+        switch (entry.kind) {
+          case OutboxKind.createTask:
+            final body = entry.body;
+            final status = body['status'] as String?;
+            taskId = (await api.createTask(
+              projectId: entry.projectId,
+              title: body['title']! as String,
+              description: body['description'] as String?,
+              categoryId: body['categoryId'] as String?,
+              status: status == null ? null : TaskStatus.values.byName(status),
+              remindAt: body['remindAt'] as String?,
+              remindTime: body['remindTime'] as String?,
+              checklist: TaskWire.checklistFrom(body[TaskWire.checklistKey]),
+              location: TaskWire.locationFrom(body[TaskWire.locationKey]),
+              dictationParseId: body['dictationParseId'] as String?,
+              createKey: entry.key,
+            )).id;
+          case OutboxKind.editTask:
+            taskId = (await api.replayTaskPatch(
+              entry.taskId!,
+              entry.body,
+              expected: entry.expected,
+            )).id;
+          case OutboxKind.moveTask:
+            taskId = (await api.moveTaskToProject(
+              entry.taskId!,
+              entry.targetProjectId!,
+            )).id;
+          case OutboxKind.uploadAttachment:
+            final target = _uploadTarget(entry, snapshot, settled);
+            switch (target) {
+              case _UploadWaits():
+                // Its task's create has not gone yet (refused, skipped):
+                // the picture waits with it, and holds nothing else up.
+                continue;
+              case _UploadOrphaned(:final message):
+                settled[entry.key] = entry.copyWith(
+                  state: OutboxState.refused,
+                  settledAt: DateTime.now(),
+                  message: message,
+                );
+                continue;
+              case _UploadTo(:final id):
+                final sent = await _upload(entry, id);
+                if (sent == null) {
+                  settled[entry.key] = entry.copyWith(
+                    state: OutboxState.refused,
+                    settledAt: DateTime.now(),
+                    message: 'Файл картинки потерян на устройстве',
+                  );
+                  continue;
+                }
+            }
+            taskId = target.taskId;
+            final path = entry.localPath;
+            if (path != null) sentFiles.add(path);
+            if (!entry.waited) dropped.add(entry.key);
+          case OutboxKind.deleteAttachment:
+            try {
+              await ref.read(attachmentApiProvider).delete(entry.attachmentId!);
+            } on ApiException catch (error) {
+              // Gone already: what the delete wanted.
+              if (error.statusCode != 404) rethrow;
+            }
+            taskId = entry.taskId;
+            if (!entry.waited) dropped.add(entry.key);
+        }
         settled[entry.key] = entry.copyWith(
           state: OutboxState.sent,
           settledAt: DateTime.now(),
-          taskId: task.id,
+          taskId: taskId,
         );
-        touched
-          ..add(entry.projectId)
-          ..add(entry.landsInProjectId);
+        if (entry.projectId.isNotEmpty) {
+          touched
+            ..add(entry.projectId)
+            ..add(entry.landsInProjectId);
+        }
       } on NetworkException {
         // Still no network: the rest would fail the same way.
+        stalled = true;
         break;
       } on UnauthorizedException {
         // The session is gone; the entries wait on disk for the next one.
+        stalled = true;
         break;
       } on ApiException catch (error) {
         final body = error.body;
@@ -258,6 +396,21 @@ class Outbox extends _$Outbox {
       }
     }
 
+    _clearProgress();
+
+    // Pictures that are now waiting for a network are offline history: they
+    // stay in the «Офлайн» view once sent, like any other offline write.
+    if (stalled) {
+      for (final entry in snapshot) {
+        if (entry.isAttachment &&
+            entry.isWaiting &&
+            !entry.waited &&
+            !settled.containsKey(entry.key)) {
+          settled[entry.key] = entry.copyWith(waited: true);
+        }
+      }
+    }
+
     if (settled.isEmpty) return;
 
     // The lists the entries landed in, re-read once per project *before* the
@@ -271,7 +424,8 @@ class Outbox extends _$Outbox {
     // Reconciled against the outbox as it is now, not as this pass found it:
     // an edit can be queued while a request is in flight.
     final live = <OutboxEntry>[
-      for (final row in await future) settled[row.key] ?? row,
+      for (final row in await future)
+        if (!dropped.contains(row.key)) settled[row.key] ?? row,
     ];
     try {
       await _store.write(live);
@@ -283,11 +437,80 @@ class Outbox extends _$Outbox {
     }
     _publish(live);
 
+    final files = ref.read(outboxFileStoreProvider);
+    for (final path in sentFiles) {
+      await files.delete(path);
+    }
+
     _fade?.cancel();
     _fade = Timer(sentMarkFor, () {
       final value = state.value;
       if (value != null) _publish(value);
     });
+  }
+
+  /// Where an upload goes: its task's id, or -- for a picture of a task
+  /// created offline -- the id that create got, from this pass ([settled])
+  /// or an earlier one.
+  static _UploadTarget _uploadTarget(
+    OutboxEntry entry,
+    List<OutboxEntry> snapshot,
+    Map<String, OutboxEntry> settled,
+  ) {
+    final taskId = entry.taskId;
+    if (taskId == null || taskId.isEmpty) {
+      return const _UploadOrphaned('Картинка без задачи');
+    }
+    const prefix = 'local:outbox:';
+    if (!taskId.startsWith(prefix)) return _UploadTo(taskId);
+
+    final key = taskId.substring(prefix.length);
+    OutboxEntry? create;
+    for (final row in snapshot) {
+      if (row.kind == OutboxKind.createTask && row.key == key) {
+        create = settled[row.key] ?? row;
+        break;
+      }
+    }
+    if (create == null) {
+      // The create was thrown away: the task never existed on the server.
+      return const _UploadOrphaned('Задача не была создана');
+    }
+    final created = create.taskId;
+    if (create.state == OutboxState.sent && created != null) {
+      return _UploadTo(created);
+    }
+    return const _UploadWaits();
+  }
+
+  /// Sends one picture's bytes, reporting progress. Null when the local copy
+  /// is gone.
+  Future<Object?> _upload(OutboxEntry entry, String taskId) async {
+    final path = entry.localPath;
+    final bytes = path == null
+        ? null
+        : await ref.read(outboxFileStoreProvider).read(path);
+    if (bytes == null) return null;
+
+    final progress = ref.read(uploadProgressProvider.notifier);
+    progress.report(entry.key, 0);
+    final saved = await ref
+        .read(attachmentApiProvider)
+        .upload(
+          taskId,
+          uploadKey: entry.key,
+          bytes: bytes,
+          mime: entry.mime ?? sniffImageMime(bytes) ?? 'image/jpeg',
+          onSendProgress: (sent, total) {
+            if (total > 0) progress.report(entry.key, sent / total);
+          },
+        );
+    return saved;
+  }
+
+  void _clearProgress() {
+    if (!ref.mounted) return;
+    ref.read(uploadProgressProvider.notifier).clear();
   }
 
   Future<void> _adoptFreshTasks(String projectId) async {
@@ -375,14 +598,17 @@ enum OutboxMark {
 Map<String, OutboxMark> outboxMarks(Ref ref, String projectId) {
   final now = DateTime.now();
   final marks = <String, OutboxMark>{};
-  for (final entry in ref.watch(outboxEntriesProvider)) {
+  final entries = ref.watch(outboxEntriesProvider);
+  for (final entry in entries) {
     // A moved row is marked where it is drawn: in the project it went to.
     if (entry.landsInProjectId != projectId) continue;
     switch (entry.state) {
       case OutboxState.waiting:
-        final id = entry.kind == OutboxKind.createTask
-            ? entry.localTaskId
-            : entry.taskId;
+        final id = switch (entry.kind) {
+          OutboxKind.createTask => entry.localTaskId,
+          OutboxKind.uploadAttachment => resolvedTaskId(entry, entries),
+          _ => entry.taskId,
+        };
         if (id != null) marks[id] = OutboxMark.waiting;
       case OutboxState.sent:
         final id = entry.taskId;
@@ -409,4 +635,51 @@ class HistoryShowsOutbox extends _$HistoryShowsOutbox {
   bool build() => false;
 
   void show(bool value) => state = value;
+}
+
+/// How far each picture being uploaded has got, 0..1, by upload key. Empty
+/// between flushes -- a picture not in here is waiting (the clock) or done.
+@Riverpod(keepAlive: true)
+class UploadProgress extends _$UploadProgress {
+  @override
+  Map<String, double> build() => const <String, double>{};
+
+  void report(String uploadKey, double fraction) {
+    final value = fraction.clamp(0.0, 1.0);
+    if (state[uploadKey] == value) return;
+    state = Map<String, double>.unmodifiable(<String, double>{
+      ...state,
+      uploadKey: value,
+    });
+  }
+
+  void clear() {
+    if (state.isNotEmpty) state = const <String, double>{};
+  }
+}
+
+/// Where an upload goes: see `Outbox._uploadTarget`.
+sealed class _UploadTarget {
+  const _UploadTarget();
+
+  String? get taskId => null;
+}
+
+class _UploadTo extends _UploadTarget {
+  const _UploadTo(this.id);
+
+  final String id;
+
+  @override
+  String get taskId => id;
+}
+
+class _UploadWaits extends _UploadTarget {
+  const _UploadWaits();
+}
+
+class _UploadOrphaned extends _UploadTarget {
+  const _UploadOrphaned(this.message);
+
+  final String message;
 }

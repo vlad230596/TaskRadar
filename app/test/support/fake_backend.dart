@@ -249,6 +249,9 @@ ResponseBody sseStreamResponse(Stream<String> chunks) {
   );
 }
 
+/// `RequestOptions.extra` key holding a multipart request's raw body.
+const String requestBodyBytesKey = 'fakeBackend.requestBody';
+
 class _FakeAdapter implements HttpClientAdapter {
   _FakeAdapter(this._handle);
 
@@ -259,7 +262,16 @@ class _FakeAdapter implements HttpClientAdapter {
     RequestOptions options,
     Stream<Uint8List>? requestStream,
     Future<void>? cancelFuture,
-  ) {
+  ) async {
+    // A multipart body cannot be read twice (dio has already finalized it
+    // into this stream), so the bytes on the wire are kept for the routes.
+    if (requestStream != null && options.data is FormData) {
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in requestStream) {
+        bytes.add(chunk);
+      }
+      options.extra[requestBodyBytesKey] = bytes.takeBytes();
+    }
     return _handle(options);
   }
 

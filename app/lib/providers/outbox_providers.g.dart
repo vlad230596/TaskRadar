@@ -93,7 +93,7 @@ final class OutboxProvider
   Outbox create() => Outbox();
 }
 
-String _$outboxHash() => r'9cb555fe56bde198fcd3a199331a65de08f1e2cb';
+String _$outboxHash() => r'13a9aedc7d3a6423d1e464a1e6cdc546333bf61e';
 
 /// Task writes made with no network, and the last week of what became of
 /// them (the "Офлайн" view of the history mode).
@@ -315,7 +315,7 @@ final class OutboxMarksProvider
   }
 }
 
-String _$outboxMarksHash() => r'4208dd9f9e62bcc40acc2414ff1ff9888af80d11';
+String _$outboxMarksHash() => r'f5bd1d12b00e4a5381ea23f952bdea234e5fd7a0';
 
 /// The marks of one project's rows, by task id (an unsent create's by its
 /// `localTaskId`).
@@ -401,6 +401,68 @@ abstract class _$HistoryShowsOutbox extends $Notifier<bool> {
             as $ClassProviderElement<
               AnyNotifier<bool, bool>,
               bool,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, build);
+  }
+}
+
+/// How far each picture being uploaded has got, 0..1, by upload key. Empty
+/// between flushes -- a picture not in here is waiting (the clock) or done.
+
+@ProviderFor(UploadProgress)
+final uploadProgressProvider = UploadProgressProvider._();
+
+/// How far each picture being uploaded has got, 0..1, by upload key. Empty
+/// between flushes -- a picture not in here is waiting (the clock) or done.
+final class UploadProgressProvider
+    extends $NotifierProvider<UploadProgress, Map<String, double>> {
+  /// How far each picture being uploaded has got, 0..1, by upload key. Empty
+  /// between flushes -- a picture not in here is waiting (the clock) or done.
+  UploadProgressProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'uploadProgressProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$uploadProgressHash();
+
+  @$internal
+  @override
+  UploadProgress create() => UploadProgress();
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(Map<String, double> value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<Map<String, double>>(value),
+    );
+  }
+}
+
+String _$uploadProgressHash() => r'2879eae6f80564d1a5a23d64271e3c05d8e29680';
+
+/// How far each picture being uploaded has got, 0..1, by upload key. Empty
+/// between flushes -- a picture not in here is waiting (the clock) or done.
+
+abstract class _$UploadProgress extends $Notifier<Map<String, double>> {
+  Map<String, double> build();
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<Map<String, double>, Map<String, double>>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<Map<String, double>, Map<String, double>>,
+              Map<String, double>,
               Object?,
               Object?
             >;

@@ -2,14 +2,18 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../api/api_client.dart';
+import '../api/attachment_api.dart';
 import '../api/auth_api.dart';
 import '../api/board_api.dart';
 import '../api/dictation_api.dart';
 import '../api/project_api.dart';
 import '../api/inbox_api.dart';
+import '../api/link_preview_api.dart';
 import '../api/scope_api.dart';
+import '../storage/attachment_cache.dart';
 import '../storage/board_snapshot_store.dart';
 import '../storage/capture_queue_store.dart';
+import '../storage/outbox_files.dart';
 import '../storage/outbox_store.dart';
 import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
@@ -69,6 +73,17 @@ CaptureQueueStore captureQueueStore(Ref ref) =>
 @Riverpod(keepAlive: true)
 OutboxStore outboxStore(Ref ref) => kIsWeb ? WebOutboxStore() : OutboxStore();
 
+/// The copies of pictures waiting in the outbox (`OutboxKind.uploadAttachment`).
+/// In memory on web, which has no file system to copy into.
+@Riverpod(keepAlive: true)
+OutboxFileStore outboxFileStore(Ref ref) =>
+    kIsWeb ? MemoryOutboxFileStore() : IoOutboxFileStore();
+
+/// Pictures already fetched, by attachment id (`attachmentBytesProvider`).
+@Riverpod(keepAlive: true)
+AttachmentCache attachmentCache(Ref ref) =>
+    kIsWeb ? MemoryAttachmentCache() : IoAttachmentCache();
+
 /// Persisted user preferences (F4): currently the reminder hour.
 ///
 /// Here rather than in `reminder_providers.dart` for the same reason as
@@ -108,3 +123,13 @@ InboxApi inboxApi(Ref ref) => InboxApi(ref.watch(apiClientProvider));
 @Riverpod(keepAlive: true)
 DictationApi dictationApi(Ref ref) =>
     DictationApi(ref.watch(apiClientProvider));
+
+/// A task's pictures (task editor). Same shape and reasoning as [projectApi].
+@Riverpod(keepAlive: true)
+AttachmentApi attachmentApi(Ref ref) =>
+    AttachmentApi(ref.watch(apiClientProvider));
+
+/// Link titles for the editor's link cards. Same shape as [projectApi].
+@Riverpod(keepAlive: true)
+LinkPreviewApi linkPreviewApi(Ref ref) =>
+    LinkPreviewApi(ref.watch(apiClientProvider));

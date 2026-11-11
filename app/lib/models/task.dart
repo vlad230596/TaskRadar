@@ -1,5 +1,8 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'checklist_item.dart';
+import 'task_attachment.dart';
+import 'task_location.dart';
 import 'task_status.dart';
 
 part 'task.freezed.dart';
@@ -12,6 +15,11 @@ part 'task.g.dart';
 /// on [Project] for why the timestamps stay ISO strings.
 @freezed
 abstract class Task with _$Task {
+  // Nested models out as maps, not objects: a task's JSON goes into the board
+  // snapshot and into an outbox entry (`OutboxEntry.row`), and is read back by
+  // [Task.fromJson] -- which wants maps.
+  // ignore: invalid_annotation_target -- freezed forwards it to the class.
+  @JsonSerializable(explicitToJson: true)
   const factory Task({
     required String id,
     required String projectId,
@@ -71,6 +79,18 @@ abstract class Task with _$Task {
     String? aiSource,
     String? aiKind,
     Map<String, dynamic>? aiResult,
+
+    /// The checklist (`design/task-editor-spec.md` §6), in its order, or null
+    /// for none -- the server stores an empty list as null too. Optional on
+    /// the wire like [categoryId]: older servers and snapshots lack it.
+    List<ChecklistItem>? checklist,
+
+    /// The place reminder (§7), or null.
+    TaskLocation? location,
+
+    /// The pictures' metadata, oldest first. Never null: a response without
+    /// the key (an older server, an older snapshot) reads as "none".
+    @Default(<TaskAttachment>[]) List<TaskAttachment> attachments,
     required String createdAt,
     required String updatedAt,
 

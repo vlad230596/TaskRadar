@@ -437,11 +437,15 @@ const Map<String, String> _fieldLabel = <String, String>{
   'status': 'Статус',
   'remindAt': 'Напоминание',
   'remindTime': 'Напоминание',
+  'checklist': 'Список',
+  'location': 'Место',
 };
 
 String _kindLabel(OutboxEntry entry) {
   if (entry.kind == OutboxKind.createTask) return 'Новая задача';
   if (entry.kind == OutboxKind.moveTask) return 'Перенос в другой проект';
+  if (entry.kind == OutboxKind.uploadAttachment) return 'Картинка';
+  if (entry.kind == OutboxKind.deleteAttachment) return 'Удаление картинки';
   final fields = <String>{for (final key in entry.body.keys) ?_fieldLabel[key]};
   return fields.isEmpty ? 'Правка' : fields.join(', ');
 }
@@ -485,10 +489,26 @@ String _valuesText(OutboxEntry entry, Map<String, Object?> values) {
                       ''
                 : '',
           'categoryId' => values[field] == null ? 'без категории' : 'другая',
+          'checklist' => _checklistText(values[field]),
+          'location' => _locationText(values[field]),
           _ => (values[field] as String?) ?? '—',
         },
   ];
   return lines.where((line) => line.isNotEmpty).join('\n');
+}
+
+/// "☑ 2/5" for a checklist value, "—" for none.
+String _checklistText(Object? value) {
+  if (value is! List || value.isEmpty) return 'без списка';
+  final done = value.where((item) => item is Map && item['done'] == true);
+  return 'список ${done.length}/${value.length}';
+}
+
+/// The place's label, or that there is none.
+String _locationText(Object? value) {
+  if (value is! Map) return 'без места';
+  final label = value['label'];
+  return label is String && label.isNotEmpty ? label : 'место';
 }
 
 String _time(DateTime at) {

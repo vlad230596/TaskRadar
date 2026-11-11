@@ -299,6 +299,72 @@ class ApiClient {
     return request<T>('DELETE', path);
   }
 
+  /// `GET`s [path] and returns the body as raw bytes -- a picture
+  /// (`GET /attachments/:id`). Errors map exactly as in [request]; a JSON
+  /// error body is decoded first so its `message` still reaches the caller.
+  Future<Uint8List> getBytes(String path) async {
+    try {
+      final response = await dio.get<List<int>>(
+        path,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final data = response.data;
+      if (data == null) {
+        throw ApiException(response.statusCode, 'Empty body where bytes were expected');
+      }
+      return data is Uint8List ? data : Uint8List.fromList(data);
+    } on DioException catch (error) {
+      _decodeBytesErrorBody(error);
+      throw _mapError(error);
+    }
+  }
+
+  /// `POST`s a multipart [form] (`POST /tasks/:id/attachments`) and returns
+  /// the decoded JSON answer.
+  ///
+  /// dio sets the `multipart/form-data; boundary=...` content type itself for
+  /// a [FormData] body, over the client's JSON default. [sendTimeout] replaces
+  /// the client-wide 15 s, which is a short time for 10 MB on one bar.
+  Future<T> postForm<T>(
+    String path,
+    FormData form, {
+    ProgressCallback? onSendProgress,
+    CancelToken? cancelToken,
+    Duration sendTimeout = const Duration(minutes: 3),
+  }) async {
+    try {
+      final response = await dio.post<dynamic>(
+        path,
+        data: form,
+        onSendProgress: onSendProgress,
+        cancelToken: cancelToken,
+        options: Options(sendTimeout: sendTimeout),
+      );
+      final data = response.data;
+      if (data is! T) {
+        throw ApiException(
+          response.statusCode,
+          'Unexpected response shape: got ${data.runtimeType}, expected $T',
+          data,
+        );
+      }
+      return data;
+    } on DioException catch (error) {
+      throw _mapError(error);
+    }
+  }
+
+  static void _decodeBytesErrorBody(DioException error) {
+    final response = error.response;
+    final data = response?.data;
+    if (response == null || data is! List<int>) return;
+    try {
+      response.data = jsonDecode(utf8.decode(data));
+    } catch (_) {
+      response.data = null;
+    }
+  }
+
   /// Turns dio's single catch-all exception into the three cases callers care
   /// about. Mirrors the status checks at the bottom of `apiRequest` in `api.ts`.
   ApiException _mapError(DioException error) {
