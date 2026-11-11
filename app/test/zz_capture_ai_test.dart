@@ -22,7 +22,7 @@ import 'package:taskradar/screens/dictation_screen.dart';
 import 'package:taskradar/screens/inbox_screen.dart';
 import 'package:taskradar/screens/note_editor_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/voice/dictation_archive.dart';
 import 'package:taskradar/voice/voice_model.dart';
@@ -138,19 +138,19 @@ void main() {
   );
 
   testWidgets('01 task with the AI mark', (tester) async {
-    await pump(tester, const TaskScreen(projectId: 'prj_dom', taskId: 't1'));
+    await pump(tester, const TaskEditor(projectId: 'prj_dom', taskId: 't1'));
     await shot(tester, '01-Task-AI-mark');
   });
 
   testWidgets('02 the AI screen from the mark', (tester) async {
-    await pump(tester, const TaskScreen(projectId: 'prj_dom', taskId: 't1'));
+    await pump(tester, const TaskEditor(projectId: 'prj_dom', taskId: 't1'));
     await tester.tap(find.text('AI'));
     await settle(tester);
     await shot(tester, '02-Task-AI-screen');
   });
 
   testWidgets('03 task edited after AI', (tester) async {
-    await pump(tester, const TaskScreen(projectId: 'prj_dom', taskId: 't2'));
+    await pump(tester, const TaskEditor(projectId: 'prj_dom', taskId: 't2'));
     await shot(tester, '03-Task-AI-edited');
   });
 

@@ -6,7 +6,9 @@ import '../screens/inbox_screen.dart';
 import '../screens/project_screen.dart';
 import '../screens/scopes_screen.dart';
 import '../screens/settings_screen.dart';
-import '../screens/task_screen.dart';
+import '../screens/task_editor_screen.dart';
+import '../widgets/adaptive_layout.dart';
+import '../widgets/editor/task_draft.dart';
 
 /// The app's routes, and the seam F4 plugs the notification deep link into.
 ///
@@ -64,12 +66,16 @@ class ProjectRouteArgs {
 /// moment of the tap.
 @immutable
 class TaskRouteArgs {
-  const TaskRouteArgs({required this.projectId, this.taskId});
+  const TaskRouteArgs({required this.projectId, this.taskId, this.prefill});
 
   final String projectId;
 
-  /// Null opens the screen as a draft -- see [TaskScreen.draft].
+  /// Null opens the editor on a new task -- see [TaskEditor].
   final String? taskId;
+
+  /// A new task's starting text and reminder («Дополнить…» on the dictation
+  /// review). Ignored with a [taskId].
+  final TaskDraft? prefill;
 }
 
 abstract final class AppRoutes {
@@ -141,9 +147,7 @@ abstract final class AppRoutes {
       }
       return MaterialPageRoute<void>(
         settings: settings,
-        builder: (_) => args.taskId == null
-            ? TaskScreen.draft(projectId: args.projectId)
-            : TaskScreen(projectId: args.projectId, taskId: args.taskId),
+        builder: (_) => _editor(args),
       );
     }
 
@@ -217,25 +221,52 @@ abstract final class AppRoutes {
   static Future<void> openInbox(BuildContext context) =>
       Navigator.of(context).pushNamed<void>(inbox);
 
-  /// Opens a blank task screen, which creates the row when it is saved (F12).
+  static TaskEditor _editor(TaskRouteArgs args, {bool dialog = false}) =>
+      TaskEditor(
+        projectId: args.projectId,
+        taskId: args.taskId,
+        prefill: args.taskId == null ? args.prefill : null,
+        presentation: dialog
+            ? EditorPresentation.dialog
+            : EditorPresentation.page,
+      );
+
+  /// The task editor as a route: a full page on a phone, a 560 px dialog on
+  /// a wide window (task-editor spec, section 1). Named [task] either way,
+  /// so observers see one route.
+  static Route<void> taskEditorRoute(BuildContext context, TaskRouteArgs args) {
+    final settings = RouteSettings(name: task, arguments: args);
+    if (isWideLayout(context)) {
+      return DialogRoute<void>(
+        context: context,
+        settings: settings,
+        builder: (_) => TaskEditorDialog(child: _editor(args, dialog: true)),
+      );
+    }
+    return MaterialPageRoute<void>(
+      settings: settings,
+      builder: (_) => _editor(args),
+    );
+  }
+
+  /// «+ Задача»: the new task's editor, as the compact quick-add sheet over
+  /// the list (a dialog on a wide window). It creates the row on "Добавить".
   static Future<void> openNewTask(
     BuildContext context, {
     required String projectId,
-  }) {
-    return Navigator.of(
-      context,
-    ).pushNamed<void>(task, arguments: TaskRouteArgs(projectId: projectId));
-  }
+  }) => showNewTaskEditor(context, projectId: projectId);
 
-  /// Opens one task, large (F12).
+  /// Opens one task in the editor, full height.
   static Future<void> openTask(
     BuildContext context, {
     required String projectId,
     required String taskId,
   }) {
-    return Navigator.of(context).pushNamed<void>(
-      task,
-      arguments: TaskRouteArgs(projectId: projectId, taskId: taskId),
+    return Navigator.of(context).push<void>(
+      taskEditorRoute(
+        context,
+        TaskRouteArgs(projectId: projectId, taskId: taskId),
+      ),
     );
   }
 

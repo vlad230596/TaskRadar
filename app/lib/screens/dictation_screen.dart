@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/dictation_api.dart';
 import '../domain/ai_level.dart';
 import '../models/board_project.dart';
+import '../navigation/app_routes.dart';
 import '../providers/board_providers.dart';
 import '../providers/capture_queue_providers.dart';
 import '../providers/dictation_providers.dart';
@@ -16,6 +17,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
+import '../widgets/editor/task_draft.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/tidy_progress.dart';
 import '../widgets/unsaved_changes_guard.dart';
@@ -69,8 +71,9 @@ final class FieldDestination extends DictationDestination {
 
   /// What "Разобрать" makes of the words for this field: [ParseKind.note] for
   /// a note, [ParseKind.taskTidy] for a task's text, [ParseKind.sandbox] for a
-  /// sandbox line. Never [ParseKind.task] -- a field gets text back, and a
-  /// reminder has nowhere to go in it.
+  /// sandbox line, [ParseKind.task] for a new, still empty task in the task
+  /// editor -- the answer's reminder comes back in [FieldTaskText] and goes
+  /// into the editor's reminder chip, not into the text.
   final ParseKind kind;
 
   /// [ParseKind.taskTidy]: the task's text as it stands behind this screen.
@@ -102,12 +105,24 @@ final class FieldWords extends FieldDictation {
 /// A task's whole text, tidied from what it held and the words said into it:
 /// replaces its title and its description. [parseId] is the server's record
 /// of the answer, for the save to label (see `ProjectTasks.editText`).
+///
+/// [remindAt] / [remindTime]: the reminder of a [ParseKind.task] answer, as
+/// proposed (and possibly taken off) on this screen -- `YYYY-MM-DD` and
+/// `HH:MM`. Null for every other kind.
 final class FieldTaskText extends FieldDictation {
-  const FieldTaskText({required this.title, this.description, this.parseId});
+  const FieldTaskText({
+    required this.title,
+    this.description,
+    this.parseId,
+    this.remindAt,
+    this.remindTime,
+  });
 
   final String title;
   final String? description;
   final String? parseId;
+  final String? remindAt;
+  final String? remindTime;
 }
 
 /// The dictation screen: dark, full of screen, and already recording (F12).
@@ -595,10 +610,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         final title = _title.text.trim();
         if (title.isEmpty) return FieldWords(words);
         final description = _description.text.trim();
+        final remindAt = _result is ParsedDictation ? _remindDate : null;
         return FieldTaskText(
           title: title,
           description: description.isEmpty ? null : description,
           parseId: parseId,
+          remindAt: remindAt,
+          remindTime: remindAt == null ? null : _remindTime,
         );
       case TidiedNote() || TidiedLine():
         final text = _resultText.text.trim();
@@ -1165,10 +1183,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    // Said plainly, because it changes the task: a reminder
-                    // only fires for a blocked one.
-                    'Напомнить ${_shortDate(remindDate, _remindTime)} · '
-                    'задача будет ждать',
+                    // Only the reminder: it does not change the status --
+                    // a reminder fires for any task that is not done
+                    // (`domain/board_reminders.dart`).
+                    'Напомнить ${_shortDate(remindDate, _remindTime)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.w500,
                       fontSize: 15,
@@ -1275,25 +1293,90 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
             ),
           if (!compact) ...<Widget>[
             const SizedBox(height: 12),
-            SizedBox(
-              height: 52,
-              child: OutlinedButton(
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  foregroundColor: AppColors.voiceBright,
-                  side: const BorderSide(color: AppColors.voiceLine),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(Radii.stub),
+            ValueListenableBuilder<TextEditingValue>(
+              valueListenable: _text,
+              builder: (context, value, _) => Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _outlined('Отменить', () => unawaited(_abandon())),
                   ),
-                ),
-                onPressed: () => unawaited(_abandon()),
-                child: const Text('Отменить'),
+                  // Into a project: "Дополнить…" opens the task editor on
+                  // what is here, for a reminder, a category or more text
+                  // before the task exists. "Готово" stays one tap -- the
+                  // quick path is not made longer.
+                  if (_destination is ProjectDestination &&
+                      state is DictationIdle &&
+                      !busy &&
+                      value.text.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _outlined(
+                        'Дополнить…',
+                        () => unawaited(_complete()),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ],
         ],
       ),
     );
+  }
+
+  Widget _outlined(String label, VoidCallback onPressed) {
+    return SizedBox(
+      height: 52,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: AppColors.voiceBright,
+          side: const BorderSide(color: AppColors.voiceLine),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Radii.stub),
+          ),
+        ),
+        onPressed: onPressed,
+        child: Text(label),
+      ),
+    );
+  }
+
+  /// "Дополнить…": this screen gives way to the task editor -- a new task in
+  /// the chosen project, opened on what is on screen: the proposal if
+  /// "Разобрать" answered (its reminder and record included), the words
+  /// otherwise. Nothing is created here.
+  Future<void> _complete() async {
+    final destination = _destination;
+    if (destination is! ProjectDestination || _leaving) return;
+    final words = _text.text.trim();
+    if (words.isEmpty) return;
+
+    final proposal = switch (_result) {
+      ParsedDictation() || TidiedTask() => _result,
+      _ => null,
+    };
+    final title = proposal == null ? '' : _title.text.trim();
+    final description = proposal == null ? '' : _description.text.trim();
+    final remindAt = proposal is ParsedDictation ? _remindDate : null;
+    final draft = TaskDraft(
+      title: title.isEmpty ? words : title,
+      description: description.isEmpty ? null : description,
+      remindAt: remindAt,
+      remindTime: remindAt == null ? null : _remindTime,
+      parseId: proposal?.parseId,
+    );
+
+    _leaving = true;
+    final navigator = Navigator.of(context);
+    final route = AppRoutes.taskEditorRoute(
+      context,
+      TaskRouteArgs(projectId: destination.projectId, prefill: draft),
+    );
+    await ref.read(voiceDictationProvider.notifier).cancel();
+    if (!mounted) return;
+    unawaited(navigator.pushReplacement<void, FieldDictation>(route));
   }
 }
 

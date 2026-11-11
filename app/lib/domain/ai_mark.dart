@@ -115,7 +115,7 @@ AiMark inboxAiMark(InboxItem item, {String? text}) => _mark(
 /// - `note`: only the description was processed -- it gets the source back,
 ///   the title stays.
 /// - `task_tidy`: the title and description were joined, title on the first
-///   line (`task_screen.dart`) -- split back the same way.
+///   line (`task_editor_screen.dart`) -- split back the same way.
 /// - `task`, `sandbox`: the source is speech or a sandbox line with no title
 ///   of its own -- split the way the server files a line ([splitSourceText]).
 ({String title, String? description}) taskSourceFields(

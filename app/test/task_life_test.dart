@@ -8,7 +8,7 @@ import 'package:taskradar/models/history_task_event.dart';
 import 'package:taskradar/models/task_status.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/widgets/history_charts.dart';
@@ -71,7 +71,7 @@ void main() {
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
-          home: TaskScreen(projectId: projectId, taskId: taskId),
+          home: TaskEditor(projectId: projectId, taskId: taskId),
           onGenerateRoute: AppRoutes.onGenerateRoute,
         ),
       ),
@@ -91,7 +91,7 @@ void main() {
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
-          home: TaskScreen(projectId: projectId, taskId: taskId),
+          home: TaskEditor(projectId: projectId, taskId: taskId),
           onGenerateRoute: AppRoutes.onGenerateRoute,
         ),
       ),
@@ -197,7 +197,7 @@ void main() {
         ],
         child: MaterialApp(
           theme: buildAppTheme(),
-          home: TaskScreen(projectId: projectId, taskId: taskId),
+          home: TaskEditor(projectId: projectId, taskId: taskId),
           onGenerateRoute: AppRoutes.onGenerateRoute,
         ),
       ),
@@ -224,8 +224,8 @@ void main() {
 
     expect(find.text('ЖИЗНЬ ЗАДАЧИ'), findsOneWidget);
     expect(find.textContaining('не прочитался'), findsOneWidget);
-    // Остальное на месте: поле, статусы, «Сохранить».
-    expect(find.widgetWithText(FilledButton, 'Сохранить'), findsOneWidget);
+    // Остальное на месте: поле и статусы («Сохранить» — только после правки).
+    expect(find.byType(TextField), findsWidgets);
     expect(find.text('Блокер'), findsOneWidget);
   });
 

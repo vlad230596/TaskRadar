@@ -20,7 +20,7 @@ import 'package:taskradar/screens/inbox_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
 import 'package:taskradar/screens/shell_screen.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/voice/voice_model.dart';
 
@@ -173,9 +173,39 @@ void main() {
   testWidgets('Edit — one task', (tester) async {
     await pump(
       tester,
-      const TaskScreen(projectId: 'prj_dom', taskId: 't4'),
+      const TaskEditor(projectId: 'prj_dom', taskId: 't4'),
     );
     await shot(tester, 'Edit');
+  });
+
+  // The task editor (WP4): quick-add over the list, and the full editor with
+  // a date, a project and a category recognised in the title.
+  testWidgets('Edit-New-Compact — quick-add over the list', (tester) async {
+    await pump(tester, const ProjectScreen(projectId: 'prj_dom'));
+    await tester.tap(find.widgetWithText(OutlinedButton, 'Задача'));
+    await settle(tester);
+    await tester.enterText(
+      find.byType(TextField).first,
+      'Купить корм коту завтра в 10',
+    );
+    await settle(tester);
+    await shot(tester, 'Edit-New-Compact');
+  });
+
+  testWidgets('Edit-New-Full — tokens lit, chips filled', (tester) async {
+    await pump(
+      tester,
+      TaskEditor(
+        projectId: 'prj_dom',
+        clock: () => DateTime(2026, 11, 11, 15),
+      ),
+    );
+    await tester.enterText(
+      find.byType(TextField).first,
+      'Купить корм коту завтра в 10 https://example.com/korm',
+    );
+    await settle(tester);
+    await shot(tester, 'Edit-New-Full');
   });
 
   testWidgets('Inbox — the sandbox', (tester) async {
