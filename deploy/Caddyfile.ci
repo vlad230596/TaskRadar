@@ -23,11 +23,17 @@
 		X-Frame-Options "DENY"
 	}
 
-	request_body {
+	# As in production, including the 12 MB exception for picture uploads.
+	@upload path /tasks/*/attachments
+	request_body @upload {
+		max_size 12MB
+	}
+	@notUpload not path /tasks/*/attachments
+	request_body @notUpload {
 		max_size 1MB
 	}
 
-	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /categories/* /notes/* /inbox /inbox/* /dictation/* /agent-tokens /agent-tokens/* /mcp
+	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /categories/* /notes/* /inbox /inbox/* /dictation/* /agent-tokens /agent-tokens/* /mcp /attachments/* /link-preview
 	handle @api {
 		# Unbuffered, as in production: see the note there.
 		reverse_proxy backend:3001 {

@@ -64,7 +64,18 @@
 	# edge keeps them from being buffered by Node at all. Caddy applies
 	# directives in its own fixed order regardless of where they appear, but this
 	# sits above the handlers so that reading order matches execution order.
-	request_body {
+	#
+	# The one exception is a task picture (design/task-editor-spec.md §10):
+	# the backend takes up to 10 MB per file, so its upload route gets 12 MB --
+	# the file plus the multipart framing -- and nothing else does. Two matchers
+	# that exclude each other rather than a global 1 MB plus a larger override:
+	# nested body limits do not raise each other, the smaller one would win.
+	@upload path /tasks/*/attachments
+	request_body @upload {
+		max_size 12MB
+	}
+	@notUpload not path /tasks/*/attachments
+	request_body @notUpload {
 		max_size 1MB
 	}
 
@@ -88,7 +99,7 @@
 	# Neither check can see the file that actually serves traffic: this one is
 	# pasted into the shared Caddyfile on the VDS by hand, so a fix here is not
 	# live until that is done (DEPLOYMENT.md).
-	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /categories/* /notes/* /inbox /inbox/* /dictation/* /agent-tokens /agent-tokens/* /mcp
+	@api path /health /ready /version /auth/* /board /focus /history /scopes /scopes/* /projects /projects/* /tasks/* /categories/* /notes/* /inbox /inbox/* /dictation/* /agent-tokens /agent-tokens/* /mcp /attachments/* /link-preview
 	handle @api {
 		# Matches the alias and port from compose.prod.yaml. Resolution works only
 		# because the Caddy container is attached to the `taskradar-ingress`

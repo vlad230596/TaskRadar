@@ -130,8 +130,8 @@ COPY package.json package-lock.json ./
 # the lockfile marks them -- and ~40 packages under them, `effect` included --
 # `devOptional`, and npm only drops a devOptional package when both dev and
 # optional are omitted. With `--omit=dev` alone the 0.10.1 image still carried
-# the whole CLI. The app has no optional production dependencies today; if one
-# is ever added (a platform-specific prebuild, say), it has to be handled here.
+# the whole CLI. The one optional production dependency that matters -- sharp's
+# platform-specific prebuild -- is put back right after this step.
 #
 # The `test` makes that regression fail the build instead of silently doubling
 # the image again.
@@ -143,6 +143,16 @@ RUN npm ci --omit=dev --omit=optional --no-audit --no-fund \
 
 COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 
+# sharp (task pictures: thumbnails, JPEG re-encode) ships its native code as
+# optional dependencies, one per platform: `@img/sharp-linux-x64` and
+# `@img/sharp-libvips-linux-x64` here. `--omit=optional` above drops them, and
+# without them `require('sharp')` throws "Could not load the sharp module" --
+# at the first upload, not at start. The build stage ran a full `npm ci` on
+# this same base image, so npm already picked exactly the glibc/x64 pair for
+# it; `@img` is copied from there whole (it holds nothing else that matters).
+# The runtime stage proves the result by actually encoding an image.
+COPY --from=build /app/node_modules/@img ./node_modules/@img
+
 
 # ---------------------------------------------------------------------------
 # Runtime stage (`taskradar-backend`, the default target): production
@@ -151,7 +161,8 @@ COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 FROM ${NODE_IMAGE} AS runtime
 
 ENV NODE_ENV=production \
-    PORT=3001
+    PORT=3001 \
+    ATTACHMENTS_DIR=/var/lib/taskradar/attachments
 
 WORKDIR /app
 
@@ -167,6 +178,17 @@ COPY --from=build /app/dist ./dist
 # The URL is a dummy: the constructor validates it but does not connect.
 RUN DATABASE_URL=postgresql://build@127.0.0.1:5432/build \
     node -e "require('bcrypt'); new (require('@prisma/client').PrismaClient)();"
+
+# Same for sharp: load the native binary and libvips and make a WebP, which is
+# what every upload's thumbnail is.
+RUN node -e "require('sharp')({create:{width:2,height:2,channels:3,background:'#000'}}).webp().toBuffer().then(b => { if (!b.length) process.exit(1); }, e => { console.error(e); process.exit(1); })"
+
+# The attachments volume's mount point (compose.prod.yaml). Created here, owned
+# by `node`, because Docker initialises a new named volume from the image's
+# directory -- ownership included -- so the unprivileged process can write to
+# it while the rest of the root filesystem stays read-only.
+RUN mkdir -p /var/lib/taskradar/attachments \
+ && chown node:node /var/lib/taskradar/attachments
 
 # The release identity comes last on purpose. Both values change on every
 # release, and an ARG or ENV invalidates the build cache for every instruction

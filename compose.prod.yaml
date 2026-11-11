@@ -143,6 +143,22 @@ services:
       LLM_INCEPTION_API_KEY: ${LLM_INCEPTION_API_KEY:-}
       # AI requests one user may make per UTC day. The one key pays for everyone.
       AI_DAILY_LIMIT: ${AI_DAILY_LIMIT:-50}
+      # Task pictures (design/task-editor-spec.md §10). The directory is the
+      # `attachments-data` volume below; the limits default in the code to
+      # 10 MB per file, 30 per task, 2 GB per user.
+      ATTACHMENTS_DIR: /var/lib/taskradar/attachments
+      ATTACHMENT_MAX_BYTES: ${ATTACHMENT_MAX_BYTES:-}
+      ATTACHMENT_MAX_PER_TASK: ${ATTACHMENT_MAX_PER_TASK:-}
+      ATTACHMENT_USER_QUOTA_BYTES: ${ATTACHMENT_USER_QUOTA_BYTES:-}
+      # Link titles fetched per user per UTC day (cache hits are free). Default 100.
+      LINK_PREVIEW_DAILY_LIMIT: ${LINK_PREVIEW_DAILY_LIMIT:-}
+    # The one writable place besides /tmp: task pictures. A named volume, not a
+    # host directory, for the same reason as the database's -- it belongs to
+    # this Compose project and nothing else on the VDS mounts it. Caddy never
+    # sees it; files leave only through the API, after an owner check. Backed
+    # up by scripts/export-production-attachments.sh (BACKUPS.md).
+    volumes:
+      - attachments-data:/var/lib/taskradar/attachments
     depends_on:
       postgres:
         condition: service_healthy
@@ -244,6 +260,7 @@ services:
 
 volumes:
   postgres-data:
+  attachments-data:
 
 networks:
   # Created once by hand (see DEPLOYMENT.md), not by Compose, because the Caddy
