@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
 import '../domain/reminders.dart';
+import '../domain/smart_tokens.dart';
 import '../domain/task_age.dart';
 import '../domain/task_groups.dart';
 import '../domain/task_reorder.dart';
@@ -31,14 +32,13 @@ import 'reminder_time_picker.dart';
 /// The inline composer at the top of this list is gone. It was a one-line
 /// `TextField` with a microphone beside it, and it was the literal subject of
 /// complaint number one -- "в композере видно два-три слова". The brief is
-/// explicit that the new screens must not have one. Adding a task now opens
-/// `TaskScreen.draft`, which is the same field the task screen uses -- two
-/// lines at least, growing with its text.
-///
-/// That trades one navigation for readable text, and the trade is smaller than
-/// it looks: the gesture that justified the inline field (five sentences, five
-/// Enters, "empty my head into the list") is now the microphone, which files
-/// straight into a project without opening any screen at all.
+/// explicit that the new screens must not have one. Adding a task opens the
+/// task editor (`screens/task_editor_screen.dart`) as a compact sheet over
+/// this list -- the same field as editing, two lines at least, growing with
+/// its text, with the reminder and category chips right under it and «завтра
+/// в 10» / `#проект` / `/категория` recognised as typed. Pulled up, the sheet
+/// is the full editor; "Добавить и ещё" keeps it open for the next one (the
+/// old "five sentences, five Enters").
 ///
 /// The inline *title* editor inside each row is gone for the same reason, and
 /// the description dialog with it: both are the task screen now.
@@ -601,6 +601,10 @@ class TaskRow extends ConsumerWidget {
   /// this lasts is more noise than a plain one.
   bool get _unconfirmed => isOptimisticId(task.id);
 
+  bool get _hasLink =>
+      findLinks(task.title).isNotEmpty ||
+      findLinks(task.description ?? '').isNotEmpty;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final blocked = task.status == TaskStatus.blocked;
@@ -651,6 +655,21 @@ class TaskRow extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Expanded(child: title),
+                // 🔗: the task holds a link (task-editor spec, section 5).
+                // The checklist, picture and place marks join it with
+                // WP5–7.
+                if (_hasLink) ...<Widget>[
+                  const SizedBox(width: 6),
+                  const Padding(
+                    padding: EdgeInsets.only(top: 3),
+                    child: Icon(
+                      Icons.link,
+                      size: 16,
+                      color: AppColors.muted,
+                      semanticLabel: 'есть ссылка',
+                    ),
+                  ),
+                ],
                 // No second line to put it on, so it rides at the end of the
                 // title -- and never wraps or shrinks. See `widgets/glance.dart`.
                 // Not on a done row: how long a finished task sat still is not

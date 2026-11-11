@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 
 import 'support/fake_outbox_store.dart';
@@ -74,7 +74,7 @@ void main() {
       arguments: TaskRouteArgs(projectId: projectId, taskId: task),
     );
     await settle(tester);
-    expect(find.byType(TaskScreen), findsOneWidget);
+    expect(find.byType(TaskEditor), findsOneWidget);
   }
 
   Future<void> back(WidgetTester tester) async {
@@ -93,7 +93,7 @@ void main() {
     await back(tester);
 
     expect(find.text('Выйти без сохранения?'), findsNothing);
-    expect(find.byType(TaskScreen), findsNothing);
+    expect(find.byType(TaskEditor), findsNothing);
     expect(find.text('home'), findsOneWidget);
   });
 
@@ -107,7 +107,7 @@ void main() {
 
     await tester.tap(find.text('Остаться'));
     await settle(tester);
-    expect(find.byType(TaskScreen), findsOneWidget);
+    expect(find.byType(TaskEditor), findsOneWidget);
     expect(find.text('Купить кабель HDMI'), findsOneWidget);
   });
 
@@ -173,7 +173,7 @@ void main() {
     // and will be sent when there is a network.
     // The write goes to disk first; the pop and its transition follow.
     await settle(tester);
-    expect(find.byType(TaskScreen), findsNothing);
+    expect(find.byType(TaskEditor), findsNothing);
     expect(outbox.entries.single.body['title'], 'Позвонить электрику');
   });
 

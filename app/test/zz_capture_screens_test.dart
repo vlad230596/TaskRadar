@@ -20,7 +20,7 @@ import 'package:taskradar/screens/inbox_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
 import 'package:taskradar/screens/shell_screen.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/voice/voice_model.dart';
 
@@ -173,7 +173,7 @@ void main() {
   testWidgets('Edit — one task', (tester) async {
     await pump(
       tester,
-      const TaskScreen(projectId: 'prj_dom', taskId: 't4'),
+      const TaskEditor(projectId: 'prj_dom', taskId: 't4'),
     );
     await shot(tester, 'Edit');
   });

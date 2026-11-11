@@ -9,7 +9,7 @@ import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/note_editor_screen.dart';
 import 'package:taskradar/screens/project_screen.dart';
-import 'package:taskradar/screens/task_screen.dart';
+import 'package:taskradar/screens/task_editor_screen.dart';
 import 'package:taskradar/theme/app_theme.dart';
 import 'package:taskradar/theme/tokens.dart';
 import 'package:taskradar/storage/board_snapshot_store.dart';
@@ -61,7 +61,7 @@ void main() {
   ///
   /// Only the notes list has one now: F12 removed the task composer, because a
   /// one-line field was complaint number one. Adding a task opens
-  /// `TaskScreen.draft` instead. The finder stays scoped to a list rather than
+  /// the task editor's quick-add sheet instead. The finder stays scoped to a list rather than
   /// using `find.byType(TextField).first`, because on the desktop both panes
   /// are on screen at once.
   Finder composerIn(Type list) => find
@@ -555,7 +555,7 @@ void main() {
 
       await openDraft(tester);
       // The field this screen exists for: sized to its text, at 16.5 px.
-      expect(find.byType(TaskScreen), findsOneWidget);
+      expect(find.byType(TaskEditor), findsOneWidget);
       final field = tester.widget<TextField>(find.byType(TextField).first);
       expect(field.style?.fontSize, 16.5);
       expect(field.maxLines, isNull);
@@ -567,7 +567,7 @@ void main() {
       expect(server.titlesInOrder(projectId), <String>['Позвонить прорабу']);
       // ...and it is back on the list, which is where the next one is added
       // from.
-      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsNothing);
       expect(find.text('Позвонить прорабу'), findsOneWidget);
     });
 
@@ -587,7 +587,7 @@ void main() {
       // ...but on the device, in the outbox, and in the list with a mark that
       // says so -- the words are not lost and not pretended to be saved.
       expect(outbox.entries.single.body['title'], 'Доедет потом');
-      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsNothing);
       expect(find.text('Доедет потом'), findsOneWidget);
       expect(find.text('не отправлено'), findsOneWidget);
     });
@@ -611,7 +611,7 @@ void main() {
         find.textContaining('Не удалось добавить задачу.'),
         findsOneWidget,
       );
-      expect(find.byType(TaskScreen), findsOneWidget);
+      expect(find.byType(TaskEditor), findsOneWidget);
       expect(
         tester.widget<TextField>(find.byType(TextField).first).controller!.text,
         'Не доедет',
@@ -752,7 +752,7 @@ void main() {
       expect(server.tasks, isEmpty);
       // ...and the screen the task was on is gone with it, rather than sitting
       // there addressing a row that no longer exists.
-      expect(find.byType(TaskScreen), findsNothing);
+      expect(find.byType(TaskEditor), findsNothing);
       expect(find.text('Лишняя'), findsNothing);
     });
 
