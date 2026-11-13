@@ -35,4 +35,6 @@ if ! compose exec -T backend node dist/scripts/sweepAttachments.js >&2; then
   echo 'warning: the attachment sweep failed; exporting anyway' >&2
 fi
 
-exec compose exec -T backend tar -C /var/lib/taskradar/attachments -cf - .
+# `exec` needs a program, not the shell function above, hence the full command.
+exec /usr/bin/docker compose --env-file .env -f compose.prod.yaml \
+  exec -T backend tar -C /var/lib/taskradar/attachments -cf - .

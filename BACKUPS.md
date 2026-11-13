@@ -108,6 +108,14 @@ Pre-snapshot команда плана — `scripts/pull-production-backup.ps1`.
 проверки лежит в
 `%LOCALAPPDATA%\TaskRadarBackup\system-backup-verification.json`.
 
+Backrest запускает **копию** скрипта —
+`%LOCALAPPDATA%\TaskRadarBackup\pull-production-backup.ps1`, а не файл из
+репозитория. Сама она не обновляется: после правки
+`scripts/pull-production-backup.ps1` её надо скопировать туда руками (так
+картинки 14.11.2026 и попали в план). Серверную сторону — форсированную
+команду, экспортёры и `deploy/taskradar-backup.sudoers` — деплой тоже не
+трогает, их ставят по `DEPLOYMENT.md`.
+
 ## Проверка восстановления
 
 Бэкап, который никто не восстанавливал, — это гипотеза, а не бэкап. Хотя бы
