@@ -60,15 +60,16 @@ export function mcpRoutes(users: UserStore): FastifyPluginAsync {
         return reply;
       }
 
+      const internalToken = () =>
+        app.jwt.sign({ sub: userId }, { expiresIn: INTERNAL_TOKEN_TTL_SECONDS });
       const context: McpContext = {
         userId,
         async callApi(method, url, payload) {
-          const jwt = app.jwt.sign({ sub: userId }, { expiresIn: INTERNAL_TOKEN_TTL_SECONDS });
           const res = await app.inject({
             method,
             url,
-            payload,
-            headers: { authorization: `Bearer ${jwt}` },
+            ...(payload === undefined ? {} : { payload }),
+            headers: { authorization: `Bearer ${internalToken()}` },
           });
           let body: unknown;
           try {
@@ -77,6 +78,14 @@ export function mcpRoutes(users: UserStore): FastifyPluginAsync {
             body = { message: res.body };
           }
           return { status: res.statusCode, body };
+        },
+        async fetchBytes(url) {
+          const res = await app.inject({
+            method: "GET",
+            url,
+            headers: { authorization: `Bearer ${internalToken()}` },
+          });
+          return { status: res.statusCode, body: res.rawPayload };
         },
       };
 

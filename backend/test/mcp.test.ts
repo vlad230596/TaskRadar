@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import sharp from "sharp";
 import type { FastifyInstance } from "fastify";
+import {
+  DEFAULT_ATTACHMENT_LIMITS,
+  fileAttachmentStore,
+  type AttachmentStore,
+} from "../src/domain/attachmentStore";
 import type { AuthConfig } from "../src/lib/authConfig";
 import { inMemoryUsers, tokenFor, USER_A, USER_B, USER_DISABLED } from "./support/users";
 
@@ -39,6 +48,7 @@ const prismaMock = vi.hoisted(() => ({
     delete: vi.fn(),
   },
   taskCategory: { findFirst: vi.fn(), findMany: vi.fn() },
+  taskAttachment: { findFirst: vi.fn() },
   taskEvent: { create: vi.fn(), findMany: vi.fn() },
   note: { findMany: vi.fn() },
   inboxItem: { findMany: vi.fn() },
@@ -94,8 +104,23 @@ interface TaskRow {
   focusedAt: Date | null;
   aiSource: string | null;
   createKey: string | null;
+  checklist?: unknown;
+  locLat?: number | null;
+  locLng?: number | null;
+  locRadius?: number | null;
+  locLabel?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+interface AttachmentRow {
+  id: string;
+  taskId: string;
+  mime: string;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  sha256: string;
+  createdAt: Date;
 }
 interface CategoryRow {
   id: string;
@@ -134,6 +159,7 @@ let categories: CategoryRow[] = [];
 let events: EventRow[] = [];
 let notes: NoteRow[] = [];
 let inbox: InboxRow[] = [];
+let attachments: AttachmentRow[] = [];
 let seq = 0;
 
 const T0 = new Date("2026-11-01T10:00:00.000Z");
@@ -220,6 +246,25 @@ function seed(): void {
     { id: "i-1", userId: USER_A.id, text: "купить молоко", createdAt: T0 },
     { id: "i-b", userId: USER_B.id, text: "B inbox", createdAt: T0 },
   ];
+  attachments = [];
+}
+
+/** The pictures of a task as `include: taskInclude` returns them. */
+function withPictures(t: TaskRow, include: unknown) {
+  if (include === undefined) return t;
+  return {
+    ...t,
+    attachments: attachments
+      .filter((a) => a.taskId === t.id)
+      .map(({ id, mime, width, height, sizeBytes, createdAt }) => ({
+        id,
+        mime,
+        width,
+        height,
+        sizeBytes,
+        createdAt,
+      })),
+  };
 }
 
 // ---- the fake's `where` evaluation ----
@@ -362,14 +407,31 @@ function wireFakes(): void {
   );
 
   m.task.findFirst.mockImplementation(
-    async ({ where }: { where: Record<string, unknown> }) =>
-      tasks.find((t) => taskMatches(t, where)) ?? null,
+    async ({ where, include }: { where: Record<string, unknown>; include?: unknown }) => {
+      const row = tasks.find((t) => taskMatches(t, where));
+      return row === undefined ? null : withPictures(row, include);
+    },
   );
   m.task.findUnique.mockImplementation(
     async ({ where }: { where: { id?: string } }) => tasks.find((t) => t.id === where.id) ?? null,
   );
-  m.task.findMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
-    tasks.filter((t) => taskMatches(t, where)).sort(byKey("position")),
+  m.task.findMany.mockImplementation(
+    async ({ where, include }: { where: Record<string, unknown>; include?: unknown }) =>
+      tasks
+        .filter((t) => taskMatches(t, where))
+        .sort(byKey("position"))
+        .map((t) => withPictures(t, include)),
+  );
+  m.taskAttachment.findFirst.mockImplementation(
+    async ({
+      where,
+    }: {
+      where: { id: string; task: { project: { scope: { userId: string } } } };
+    }) =>
+      attachments.find((a) => {
+        const owner = scopeOwner(tasks.find((t) => t.id === a.taskId)?.projectId ?? "");
+        return a.id === where.id && owner === where.task.project.scope.userId;
+      }) ?? null,
   );
   m.task.aggregate.mockImplementation(async ({ where }: { where: { projectId: string } }) => {
     const positions = tasks.filter((t) => t.projectId === where.projectId).map((t) => t.position);
@@ -452,11 +514,21 @@ let app: FastifyInstance;
 let users: ReturnType<typeof inMemoryUsers>;
 let sessionA: string;
 let sessionB: string;
+let picturesDir: string;
+let store: AttachmentStore;
 
 beforeAll(async () => {
   const { buildApp } = await import("../src/app");
   users = inMemoryUsers();
-  app = await buildApp({ authConfig: config, users, logger: false, dictation: null });
+  picturesDir = mkdtempSync(join(tmpdir(), "mcp-pictures-"));
+  store = fileAttachmentStore(picturesDir);
+  app = await buildApp({
+    authConfig: config,
+    users,
+    logger: false,
+    dictation: null,
+    attachments: { store, limits: DEFAULT_ATTACHMENT_LIMITS },
+  });
   await app.ready();
   sessionA = await tokenFor(app, USER_A.email);
   sessionB = await tokenFor(app, USER_B.email);
@@ -464,6 +536,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await app.close();
+  rmSync(picturesDir, { recursive: true, force: true });
 });
 
 beforeEach(() => {
@@ -502,7 +575,7 @@ function mcp(token: string | null, method: string, params: Record<string, unknow
 
 interface ToolResult {
   isError?: boolean;
-  content: { type: string; text: string }[];
+  content: { type: string; text: string; data?: string; mimeType?: string }[];
 }
 
 async function callTool(
@@ -685,11 +758,13 @@ describe("POST /mcp auth", () => {
     );
     expect(names.sort()).toEqual([
       "create_task",
+      "get_picture",
       "get_task",
       "list_inbox",
       "list_notes",
       "list_projects",
       "list_tasks",
+      "move_task",
       "search",
       "update_task",
     ]);
@@ -924,5 +999,173 @@ describe("MCP tools", () => {
     expect(result.isError).toBe(true);
     expect(result.content[0]!.text).toMatch(/^404/);
     expect(tasks.find((t) => t.id === "t-1")!.status).toBe("pending");
+  });
+
+  /** A real picture on disk for task [taskId], as the upload route would leave it. */
+  async function addPicture(id: string, taskId: string, width: number, height: number) {
+    const png = await sharp({
+      create: { width, height, channels: 3, background: { r: 30, g: 120, b: 200 } },
+    })
+      .png()
+      .toBuffer();
+    const owner = scopeOwner(tasks.find((t) => t.id === taskId)!.projectId)!;
+    await store.write(owner, id, "png", png, png);
+    attachments.push({
+      id,
+      taskId,
+      mime: "image/png",
+      width,
+      height,
+      sizeBytes: png.length,
+      sha256: "0".repeat(64),
+      createdAt: T0,
+    });
+  }
+
+  it("get_task: checklist, place and pictures as images; lists show only counts", async () => {
+    Object.assign(
+      tasks.find((t) => t.id === "t-1")!,
+      {
+        checklist: [
+          { id: "item-0001", text: "Молоко", done: true },
+          { id: "item-0002", text: "Хлеб", done: false },
+        ],
+        locLat: 55.75,
+        locLng: 37.61,
+        locRadius: 200,
+        locLabel: "Магазин",
+      },
+    );
+    await addPicture("pic-1", "t-1", 2400, 1080);
+    await addPicture("pic-2", "t-1", 40, 30);
+
+    const { tasks: list } = await toolJson<{ tasks: Record<string, unknown>[] }>(
+      token,
+      "list_tasks",
+      { projectId: "proj-a" },
+    );
+    expect(list[0]).toMatchObject({
+      checklist: { done: 1, total: 2 },
+      location: { lat: 55.75, lng: 37.61, radius: 200, label: "Магазин" },
+      pictures: 2,
+    });
+    expect(list[1]).not.toHaveProperty("pictures");
+
+    const result = await callTool(token, "get_task", { taskId: "t-1" });
+    expect(result.isError).toBeFalsy();
+    const json = JSON.parse(result.content[0]!.text) as Record<string, unknown>;
+    expect(json.checklist).toEqual([
+      { id: "item-0001", text: "Молоко", done: true },
+      { id: "item-0002", text: "Хлеб", done: false },
+    ]);
+    expect(json.pictures).toEqual([
+      { id: "pic-1", mime: "image/png", width: 2400, height: 1080, sizeBytes: expect.any(Number) },
+      { id: "pic-2", mime: "image/png", width: 40, height: 30, sizeBytes: expect.any(Number) },
+    ]);
+    const images = result.content.slice(1);
+    expect(images.map((c) => [c.type, c.mimeType])).toEqual([
+      ["image", "image/jpeg"],
+      ["image", "image/jpeg"],
+    ]);
+    // Scaled to the longest side a model looks at; a small one is not blown up.
+    const big = await sharp(Buffer.from(images[0]!.data!, "base64")).metadata();
+    expect([big.width, big.height]).toEqual([1568, 706]);
+    const small = await sharp(Buffer.from(images[1]!.data!, "base64")).metadata();
+    expect([small.width, small.height]).toEqual([40, 30]);
+
+    const textOnly = await callTool(token, "get_task", { taskId: "t-1", pictures: false });
+    expect(textOnly.content).toHaveLength(1);
+  });
+
+  it("get_task: attaches the first five pictures and points at get_picture for the rest", async () => {
+    for (let i = 1; i <= 7; i++) await addPicture(`pic-${i}`, "t-2", 20, 20);
+    const result = await callTool(token, "get_task", { taskId: "t-2" });
+    expect(result.content.filter((c) => c.type === "image")).toHaveLength(5);
+    expect(result.content.at(-1)!.text).toMatch(/2 more picture/);
+  });
+
+  it("get_picture: own pictures only", async () => {
+    await addPicture("pic-a", "t-1", 30, 20);
+    const own = await callTool(token, "get_picture", { pictureId: "pic-a" });
+    expect(own.content[0]).toMatchObject({ type: "image", mimeType: "image/jpeg" });
+    const other = await callTool(tokenB, "get_picture", { pictureId: "pic-a" });
+    expect(other.isError).toBe(true);
+    expect(other.content[0]!.text).toBe("Picture not found");
+  });
+
+  it("create_task / update_task: checklist with generated ids, place, clearing", async () => {
+    const created = await toolJson<{ id: string; checklist: { id: string }[] }>(
+      token,
+      "create_task",
+      {
+        projectId: "proj-a",
+        title: "Список покупок",
+        checklist: [{ text: "Молоко" }, { text: "Хлеб", done: true }],
+        location: { lat: 55.7, lng: 37.6, radius: 300, label: "Ашан" },
+      },
+    );
+    expect(created).toMatchObject({
+      checklist: [
+        { text: "Молоко", done: false },
+        { text: "Хлеб", done: true },
+      ],
+      location: { lat: 55.7, lng: 37.6, radius: 300, label: "Ашан" },
+    });
+    const ids = created.checklist.map((i) => i.id);
+    expect(ids.every((id) => id.length >= 8)).toBe(true);
+
+    const ticked = await toolJson<Record<string, unknown>>(token, "update_task", {
+      taskId: created.id,
+      checklist: [
+        { id: ids[0], text: "Молоко", done: true },
+        { id: ids[1], text: "Хлеб", done: true },
+      ],
+    });
+    expect(ticked.checklist).toEqual([
+      { id: ids[0], text: "Молоко", done: true },
+      { id: ids[1], text: "Хлеб", done: true },
+    ]);
+
+    const cleared = await toolJson<Record<string, unknown>>(token, "update_task", {
+      taskId: created.id,
+      checklist: null,
+      location: null,
+    });
+    expect(cleared).not.toHaveProperty("checklist");
+    expect(cleared).not.toHaveProperty("location");
+  });
+
+  it("update_task: puts a task into the working set and takes it out, journaled", async () => {
+    const inSet = await toolJson<Record<string, unknown>>(token, "update_task", {
+      taskId: "t-2",
+      inWorkingSet: true,
+    });
+    expect(inSet).toMatchObject({ inWorkingSet: true });
+    const out = await toolJson<Record<string, unknown>>(token, "update_task", {
+      taskId: "t-2",
+      inWorkingSet: false,
+    });
+    expect(out).not.toHaveProperty("inWorkingSet");
+    expect(events.filter((e) => e.taskId === "t-2").map((e) => e.kind)).toEqual([
+      "focused",
+      "unfocused",
+    ]);
+    const other = await callTool(tokenB, "update_task", { taskId: "t-2", inWorkingSet: true });
+    expect(other.isError).toBe(true);
+  });
+
+  it("move_task: to the end of another own project, category dropped; not into someone else's", async () => {
+    tasks.push(task({ id: "t-x", projectId: "proj-a-old", title: "Там", position: 5 }));
+    const moved = await toolJson<Record<string, unknown>>(token, "move_task", {
+      taskId: "t-1",
+      projectId: "proj-a-old",
+    });
+    expect(moved).toMatchObject({ id: "t-1", projectId: "proj-a-old" });
+    expect(moved).not.toHaveProperty("categoryId");
+    expect(tasks.find((t) => t.id === "t-1")!.position).toBeGreaterThan(5);
+
+    const foreign = await callTool(token, "move_task", { taskId: "t-2", projectId: "proj-b" });
+    expect(foreign.isError).toBe(true);
+    expect(tasks.find((t) => t.id === "t-2")!.projectId).toBe("proj-a");
   });
 });
