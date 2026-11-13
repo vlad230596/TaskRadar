@@ -1,6 +1,8 @@
 """Fallback client for the TaskRadar MCP server, for sessions where the
-`taskradar` MCP tools did not load. Reads url + token from the user-scope
-`mcpServers.taskradar` entry in ~/.claude.json, so no secret lives here.
+`taskradar` MCP tools did not load. No secret lives here: the token is
+TASKRADAR_TOKEN from the environment (Codex reads the same variable), else
+the user-scope `mcpServers.taskradar` entry in ~/.claude.json. The URL is
+TASKRADAR_MCP_URL, else the one in ~/.claude.json, else production.
 
 Usage:
   python -I -X utf8 mcp_call.py tools                      # list tools + input schemas
@@ -14,15 +16,25 @@ import os
 import sys
 import urllib.request
 
-cfg = json.load(open(os.path.expanduser("~/.claude.json"), encoding="utf-8"))
-srv = cfg.get("mcpServers", {}).get("taskradar")
-if not srv:
-    sys.exit("No user-scope mcpServers.taskradar in ~/.claude.json")
+DEFAULT_URL = "https://task-radar.duckdns.org:8443/mcp"
+
+claude_srv = {}
+try:
+    with open(os.path.expanduser("~/.claude.json"), encoding="utf-8") as f:
+        claude_srv = json.load(f).get("mcpServers", {}).get("taskradar") or {}
+except (OSError, ValueError):
+    pass
+
+token = os.environ.get("TASKRADAR_TOKEN")
+auth = f"Bearer {token}" if token else claude_srv.get("headers", {}).get("Authorization")
+if not auth:
+    sys.exit("No TaskRadar token: set TASKRADAR_TOKEN (or add the MCP server to Claude Code)")
+srv = {"url": os.environ.get("TASKRADAR_MCP_URL") or claude_srv.get("url") or DEFAULT_URL}
 
 HEADERS = {
     "Content-Type": "application/json",
     "Accept": "application/json, text/event-stream",
-    **srv.get("headers", {}),
+    "Authorization": auth,
 }
 session_id = None
 

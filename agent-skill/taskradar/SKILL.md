@@ -5,23 +5,23 @@ description: Задачи, заметки и инбокс владельца в 
 
 # TaskRadar
 
-TaskRadar — личный трекер владельца. Доступ к нему — MCP-сервер `taskradar` (user-скоуп, есть в каждом проекте).
+TaskRadar — личный трекер владельца. Доступ к нему — MCP-сервер `taskradar` (https://task-radar.duckdns.org:8443/mcp, Bearer-токен из настроек приложения; подключён глобально — в Claude Code в user-скоупе, в Codex в `~/.codex/config.toml`).
 Инструменты: `list_projects`, `list_tasks`, `get_task`, `get_picture`, `list_notes`, `list_inbox`, `search`, `create_task`, `update_task`, `move_task`.
 
-Этот skill лежит в репозитории TaskRadar (`agent-skill/taskradar/`) и подключён в `~/.claude/skills` ссылкой (`scripts/install-agent-skill.ps1`). Меняешь инструменты MCP — поправь и этот файл.
+Этот skill лежит в репозитории TaskRadar (`agent-skill/taskradar/`, https://github.com/vlad230596/TaskRadar) и подключён в `~/.claude/skills` и `~/.codex/skills` ссылкой (`scripts/install-agent-skill.ps1`). Меняешь инструменты MCP — поправь и этот файл.
 
-## Если инструментов `mcp__taskradar__*` нет в сессии
+## Если инструментов `taskradar` нет в сессии
 
-Сначала `ToolSearch` с запросом `+taskradar` — сервер мог ещё подключаться.
-Если не нашлось — тот же сервер через запасной клиент рядом с этим файлом (токен он берёт из `~/.claude.json` сам, не выводи его):
+В Claude Code сначала `ToolSearch` с запросом `+taskradar` — сервер мог ещё подключаться.
+Если инструментов нет — тот же сервер через запасной клиент `mcp_call.py` из папки этого skill (`~/.claude/skills/taskradar/` или `~/.codex/skills/taskradar/`). Токен он берёт сам — из `TASKRADAR_TOKEN` или конфига Claude Code; не выводи его:
 
 ```bash
-python -I -X utf8 ~/.claude/skills/taskradar/mcp_call.py tools
-python -I -X utf8 ~/.claude/skills/taskradar/mcp_call.py list_tasks '{"status":["pending","blocked"]}'
-python -I -X utf8 ~/.claude/skills/taskradar/mcp_call.py get_task '{"taskId":"..."}' --images DIR
+python -I -X utf8 <папка skill>/mcp_call.py tools
+python -I -X utf8 <папка skill>/mcp_call.py list_tasks '{"status":["pending","blocked"]}'
+python -I -X utf8 <папка skill>/mcp_call.py get_task '{"taskId":"..."}' --images DIR
 ```
 
-С `--images DIR` картинки из ответа сохраняются в DIR файлами — открой их через Read. Скажи владельцу одной строкой, что MCP в сессии не поднялся и ты пошёл через запасной клиент.
+С `--images DIR` картинки из ответа сохраняются в DIR файлами — открой и посмотри их. Скажи владельцу одной строкой, что MCP в сессии не поднялся и ты пошёл через запасной клиент.
 
 ## Как отвечать
 
