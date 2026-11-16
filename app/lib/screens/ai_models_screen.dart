@@ -8,6 +8,7 @@ import '../api/dictation_api.dart';
 import '../providers/dictation_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mutation_feedback.dart';
 
 /// The server's list of preferred models (`backend/src/domain/modelRoster.ts`):
@@ -323,19 +324,19 @@ class _ModelDialog extends StatefulWidget {
 }
 
 class _ModelDialogState extends State<_ModelDialog> {
-  late final TextEditingController _name = TextEditingController(
+  late final TextEditingController _name = ImeTextController(
     text: widget.current?.name ?? '',
   );
-  late final TextEditingController _label = TextEditingController(
+  late final TextEditingController _label = ImeTextController(
     text: widget.current?.label ?? '',
   );
-  late final TextEditingController _baseUrl = TextEditingController(
+  late final TextEditingController _baseUrl = ImeTextController(
     text: widget.current?.baseUrl ?? '',
   );
-  late final TextEditingController _apiKeyEnv = TextEditingController(
+  late final TextEditingController _apiKeyEnv = ImeTextController(
     text: widget.current?.apiKeyEnv ?? '',
   );
-  late final TextEditingController _temperature = TextEditingController(
+  late final TextEditingController _temperature = ImeTextController(
     text: widget.current?.temperature?.toString() ?? '',
   );
 

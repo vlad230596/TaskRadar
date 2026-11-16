@@ -18,6 +18,7 @@ import '../theme/tokens.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictation.dart';
 import '../widgets/editor/task_draft.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/tidy_progress.dart';
 import '../widgets/unsaved_changes_guard.dart';
@@ -162,7 +163,7 @@ class DictationScreen extends ConsumerStatefulWidget {
 }
 
 class _DictationScreenState extends ConsumerState<DictationScreen> {
-  final TextEditingController _text = TextEditingController();
+  final TextEditingController _text = ImeTextController();
   final FocusNode _textFocus = FocusNode();
 
   late DictationDestination _destination = widget.destination;
@@ -200,11 +201,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   bool _showSource = false;
 
   /// The answer as a task: [ParsedDictation], [TidiedTask].
-  final TextEditingController _title = TextEditingController();
-  final TextEditingController _description = TextEditingController();
+  final TextEditingController _title = ImeTextController();
+  final TextEditingController _description = ImeTextController();
 
   /// The answer as one text: [TidiedNote], [TidiedLine].
-  final TextEditingController _resultText = TextEditingController();
+  final TextEditingController _resultText = ImeTextController();
 
   /// The proposed reminder, `YYYY-MM-DD`. Separate from [_result] because the
   /// user can take it off without throwing the rest of the proposal away.

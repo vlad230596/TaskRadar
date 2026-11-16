@@ -22,6 +22,7 @@ import '../domain/ai_mark.dart';
 import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/glance.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/overflow_fade_text.dart';
@@ -266,7 +267,7 @@ class _OpenLine extends ConsumerStatefulWidget {
 }
 
 class _OpenLineState extends ConsumerState<_OpenLine> {
-  late final TextEditingController _text = TextEditingController(
+  late final TextEditingController _text = ImeTextController(
     text: widget.item.text,
   );
 

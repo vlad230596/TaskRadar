@@ -11,6 +11,7 @@ import '../../models/task_location.dart';
 import '../../providers/geofence_providers.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../ime_text_controller.dart';
 
 /// Opens the full-screen map and answers the chosen place, or null when the
 /// user backed out without choosing (`design/task-editor-spec.md` §7).
@@ -68,7 +69,7 @@ class LocationPickerScreen extends ConsumerStatefulWidget {
 
 class _LocationPickerScreenState extends ConsumerState<LocationPickerScreen> {
   final MapController _map = MapController();
-  late final TextEditingController _label = TextEditingController(
+  late final TextEditingController _label = ImeTextController(
     text: widget.initial?.label == defaultPlaceLabel
         ? ''
         : widget.initial?.label ?? '',

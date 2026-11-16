@@ -10,6 +10,7 @@ import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/ai_tidy.dart' show TidyLabel;
 import '../widgets/attachment_image.dart';
+import '../widgets/ime_text_controller.dart';
 import 'share_intake.dart';
 
 /// Asks «В какую задачу?» for [files] shared into the app: a new task in a
@@ -41,10 +42,10 @@ class ShareTargetSheet extends ConsumerStatefulWidget {
 }
 
 class _ShareTargetSheetState extends ConsumerState<ShareTargetSheet> {
-  late final TextEditingController _title = TextEditingController(
+  late final TextEditingController _title = ImeTextController(
     text: widget.files.length == 1 ? 'Картинка' : 'Картинки',
   );
-  final TextEditingController _query = TextEditingController();
+  final TextEditingController _query = ImeTextController();
   String? _projectId;
 
   @override

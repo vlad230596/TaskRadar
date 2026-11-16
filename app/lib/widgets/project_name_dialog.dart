@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'ime_text_controller.dart';
+
 /// Asks for a project's name -- the new one, or a corrected one.
 ///
 /// One dialog for creating and for renaming, because `POST /projects` and
@@ -96,7 +98,7 @@ class _NameDialog extends StatefulWidget {
 
 class _NameDialogState extends State<_NameDialog> {
   late final TextEditingController
-  _controller = TextEditingController(text: widget.initialName)
+  _controller = ImeTextController(text: widget.initialName)
     ..selection = TextSelection(
       // Pre-selected, so a rename can be typed over in one gesture. The name is
       // usually being replaced rather than edited -- and when it is being edited,

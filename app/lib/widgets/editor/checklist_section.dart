@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../models/checklist_item.dart';
 import '../../theme/app_theme.dart';
 import '../../theme/tokens.dart';
+import '../ime_text_controller.dart';
 
 /// The task editor's checklist ("СПИСОК · 2/5", `design/task-editor-spec.md`
 /// §6, WP5): one row per [ChecklistItem] -- a checkbox, a multi-line field
@@ -195,7 +196,7 @@ class _ChecklistSectionState extends State<ChecklistSection> {
     for (final item in _items) {
       final controller = _controllers[item.id];
       if (controller == null) {
-        _controllers[item.id] = TextEditingController(text: item.text);
+        _controllers[item.id] = ImeTextController(text: item.text);
         final node = FocusNode(debugLabel: 'checklist ${item.id}');
         node.addListener(() => _focusChanged(item.id, node));
         _focus[item.id] = node;

@@ -11,6 +11,7 @@ import '../providers/dictation_providers.dart';
 import '../providers/reminder_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'ime_text_controller.dart';
 import 'tidy_progress.dart';
 import 'unsaved_changes_guard.dart';
 
@@ -911,11 +912,11 @@ class AiTidyScreen extends ConsumerStatefulWidget {
 }
 
 class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
-  late final TextEditingController _source = TextEditingController(
+  late final TextEditingController _source = ImeTextController(
     text: widget.source,
   );
-  final TextEditingController _title = TextEditingController();
-  final TextEditingController _body = TextEditingController();
+  final TextEditingController _title = ImeTextController();
+  final TextEditingController _body = ImeTextController();
 
   TidyJob? _job;
 

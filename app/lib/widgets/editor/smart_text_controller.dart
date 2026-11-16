@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../domain/smart_tokens.dart';
+import '../ime_text_controller.dart';
 import 'editor_theme.dart';
 
 /// A text field's controller that knows what is recognised in its text
@@ -27,7 +28,7 @@ import 'editor_theme.dart';
 ///
 /// The controller holds no values: what a token *means* to the task is the
 /// editor's business (the chips, `screens/task_editor_screen.dart`).
-class SmartTextController extends TextEditingController {
+class SmartTextController extends ImeTextController {
   SmartTextController({
     super.text,
     SmartContext Function()? contextFor,
@@ -244,11 +245,7 @@ class SmartTextController extends TextEditingController {
     }
 
     final composing = value.composing;
-    final showComposing =
-        withComposing &&
-        composing.isValid &&
-        !composing.isCollapsed &&
-        composing.end <= text.length;
+    final showComposing = showsComposing(withComposing);
 
     // Every place the look can change, then one span per piece between them.
     final cuts = <int>{0, text.length};
@@ -290,10 +287,14 @@ class SmartTextController extends TextEditingController {
           piece = piece.copyWith(color: EditorColors.bright);
         }
       }
+      // The word the keyboard is composing: a tint behind it, never an
+      // underline over it (see [ImeTextController]). An active token keeps
+      // its own fill.
       if (showComposing &&
           composing.start <= start &&
-          end <= composing.end) {
-        decorations.add(TextDecoration.underline);
+          end <= composing.end &&
+          piece.backgroundColor == null) {
+        piece = piece.merge(ImeTextController.composingStyle(style));
       }
       if (decorations.isNotEmpty) {
         piece = piece.copyWith(

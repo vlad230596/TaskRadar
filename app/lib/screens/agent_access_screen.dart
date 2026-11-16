@@ -9,6 +9,7 @@ import '../api/api_exception.dart';
 import '../providers/dependencies.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mutation_feedback.dart';
 
 /// `/agent-tokens` for this screen. Hand-written rather than generated: it is
@@ -235,7 +236,7 @@ class _NameDialog extends StatefulWidget {
 }
 
 class _NameDialogState extends State<_NameDialog> {
-  final TextEditingController _name = TextEditingController();
+  final TextEditingController _name = ImeTextController();
 
   @override
   void dispose() {

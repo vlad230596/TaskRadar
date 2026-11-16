@@ -10,6 +10,7 @@ import '../providers/project_providers.dart';
 import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/dictate_into.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mutation_feedback.dart';
 import '../widgets/note_markdown.dart';
 import '../widgets/unsaved_changes_guard.dart';
@@ -55,10 +56,10 @@ class NoteEditorScreen extends ConsumerStatefulWidget {
 }
 
 class _NoteEditorScreenState extends ConsumerState<NoteEditorScreen> {
-  late final TextEditingController _title = TextEditingController(
+  late final TextEditingController _title = ImeTextController(
     text: widget.note.title,
   );
-  late final TextEditingController _content = TextEditingController(
+  late final TextEditingController _content = ImeTextController(
     text: widget.note.content,
   );
 

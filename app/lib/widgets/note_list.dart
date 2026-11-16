@@ -7,6 +7,7 @@ import '../models/note.dart';
 import '../providers/project_providers.dart';
 import '../screens/note_editor_screen.dart';
 import 'dictate_into.dart';
+import 'ime_text_controller.dart';
 import 'mutation_feedback.dart';
 import 'note_markdown.dart';
 import 'unsaved_changes_guard.dart';
@@ -73,7 +74,7 @@ class _NoteComposer extends ConsumerStatefulWidget {
 }
 
 class _NoteComposerState extends ConsumerState<_NoteComposer> {
-  final TextEditingController _controller = TextEditingController();
+  final TextEditingController _controller = ImeTextController();
 
   @override
   void dispose() {

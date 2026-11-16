@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/app_config.dart';
 import '../providers/login_controller.dart';
+import '../widgets/ime_text_controller.dart';
 
 /// Email + password, one button, one inline error.
 ///
@@ -25,8 +26,8 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _emailController = ImeTextController();
+  final _passwordController = ImeTextController();
 
   @override
   void dispose() {

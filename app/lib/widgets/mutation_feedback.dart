@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api_error_message.dart';
+import 'ime_text_controller.dart';
 
 /// Runs a write and says so out loud when it fails.
 ///
@@ -189,7 +190,7 @@ class _TypedConfirmationDialog extends StatefulWidget {
 }
 
 class _TypedConfirmationDialogState extends State<_TypedConfirmationDialog> {
-  final TextEditingController _controller = TextEditingController();
+  final TextEditingController _controller = ImeTextController();
 
   bool get _matches =>
       _controller.text.trim().toLowerCase() ==

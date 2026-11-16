@@ -9,6 +9,7 @@ import '../domain/ai_level.dart';
 import '../providers/dependencies.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mutation_feedback.dart';
 
 /// What a failed load says, for both screens: a 403 is "owner only".
@@ -245,7 +246,7 @@ class _AiPromptsScreenState extends ConsumerState<AiPromptsScreen> {
   }
 
   Future<void> _edit(AiLevelBlock block) async {
-    final controller = TextEditingController(text: block.rules.join('\n'));
+    final controller = ImeTextController(text: block.rules.join('\n'));
     final rules = await showDialog<List<String>>(
       context: context,
       builder: (dialogContext) => AlertDialog(
