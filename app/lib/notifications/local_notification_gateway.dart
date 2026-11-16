@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../domain/notification_actions.dart';
+import 'notification_actions_runner.dart';
 import 'notification_gateway.dart';
 
 /// The real [NotificationGateway], on top of `flutter_local_notifications`.
@@ -71,6 +73,11 @@ class LocalNotificationGateway implements NotificationGateway {
   /// order the moment a handler is registered.
   final List<String?> _bufferedTaps = <String?>[];
 
+  /// Set by [setActionHandler]; buffered the same way as taps.
+  void Function(NotificationActionRequest request)? _actionHandler;
+  final List<NotificationActionRequest> _bufferedActions =
+      <NotificationActionRequest>[];
+
   /// The launch payload, read once during [initialize] and handed out once by
   /// [takeLaunchPayload].
   String? _launchPayload;
@@ -131,6 +138,12 @@ class LocalNotificationGateway implements NotificationGateway {
           ),
         ),
         onDidReceiveNotificationResponse: _onNotificationTapped,
+        // The buttons (Android): run in a background isolate the plugin
+        // starts, whether or not this one is alive. Registered on every
+        // start, because the plugin stores the handle and a new build may
+        // move the function. See `notification_actions_runner.dart`.
+        onDidReceiveBackgroundNotificationResponse:
+            onNotificationActionInBackground,
       );
 
       // Android 8+ requires the channel to exist before anything is posted to
@@ -160,7 +173,19 @@ class LocalNotificationGateway implements NotificationGateway {
        */
       final launch = await _plugin.getNotificationAppLaunchDetails();
       if (launch != null && launch.didNotificationLaunchApp) {
-        _launchPayload = launch.notificationResponse?.payload;
+        final response = launch.notificationResponse;
+        // Windows starts a closed app for a toast *button* too, and reports
+        // it as a launch whose payload is the button's argument. That is a
+        // press to carry out, not a task to open.
+        final action = NotificationActionRequest.parse(
+          actionId: response?.actionId,
+          payload: response?.payload,
+        );
+        if (action != null) {
+          _deliverAction(action);
+        } else {
+          _launchPayload = response?.payload;
+        }
       }
     } catch (error) {
       // See [_unavailable]. Degrading to "this platform cannot do reminders" is
@@ -179,8 +204,42 @@ class LocalNotificationGateway implements NotificationGateway {
   ///
   /// Not the cold start -- see the note in [initialize].
   void _onNotificationTapped(NotificationResponse response) {
-    debugPrint('Notification tapped: payload=${response.payload}');
+    debugPrint(
+      'Notification response: action=${response.actionId} '
+      'payload=${response.payload}',
+    );
+    // A button press that reached this isolate (Windows, or an Android
+    // action shown with the UI). Anything unrecognised -- a body tap
+    // included -- goes down the tap path, which ignores what is not a task.
+    final action = NotificationActionRequest.parse(
+      actionId: response.actionId,
+      payload: response.payload,
+    );
+    if (action != null) {
+      _deliverAction(action);
+      return;
+    }
     _deliver(response.payload);
+  }
+
+  void _deliverAction(NotificationActionRequest action) {
+    final handler = _actionHandler;
+    if (handler == null) {
+      _bufferedActions.add(action);
+      return;
+    }
+    handler(action);
+  }
+
+  @override
+  void setActionHandler(
+    void Function(NotificationActionRequest request) handler,
+  ) {
+    _actionHandler = handler;
+    if (_bufferedActions.isEmpty) return;
+    final buffered = List<NotificationActionRequest>.of(_bufferedActions);
+    _bufferedActions.clear();
+    buffered.forEach(handler);
   }
 
   void _deliver(String? payload) {
@@ -263,6 +322,7 @@ class LocalNotificationGateway implements NotificationGateway {
     required tz.TZDateTime fireAt,
     required bool exact,
     String? payload,
+    List<ReminderAction> actions = const <ReminderAction>[],
   }) async {
     if (!support.schedulesReminders) return;
 
@@ -283,7 +343,7 @@ class LocalNotificationGateway implements NotificationGateway {
           // still pierces Doze, but Android batches it and it can arrive hours
           // late. See [NotificationScheduleMode.inexact].
           : AndroidScheduleMode.inexactAllowWhileIdle,
-      notificationDetails: _details(),
+      notificationDetails: _details(payload, actions),
     );
   }
 
@@ -293,6 +353,7 @@ class LocalNotificationGateway implements NotificationGateway {
     required String title,
     required String body,
     String? payload,
+    List<ReminderAction> actions = const <ReminderAction>[],
   }) async {
     if (!support.schedulesReminders) return;
 
@@ -301,7 +362,7 @@ class LocalNotificationGateway implements NotificationGateway {
       title: title,
       body: body,
       payload: payload,
-      notificationDetails: _details(),
+      notificationDetails: _details(payload, actions),
     );
   }
 
@@ -334,7 +395,10 @@ class LocalNotificationGateway implements NotificationGateway {
     await _plugin.cancelAll();
   }
 
-  NotificationDetails _details() => NotificationDetails(
+  NotificationDetails _details(
+    String? payload,
+    List<ReminderAction> actions,
+  ) => NotificationDetails(
     android: AndroidNotificationDetails(
       remindersChannel.id,
       remindersChannel.name,
@@ -345,9 +409,40 @@ class LocalNotificationGateway implements NotificationGateway {
       // The body is a task title and can be long; without this it is clipped to
       // one line on the lock screen, which is where it will most often be read.
       styleInformation: const BigTextStyleInformation(''),
+      actions: androidActions(actions),
     ),
-    windows: const WindowsNotificationDetails(),
+    windows: WindowsNotificationDetails(
+      // A Windows press comes back as the button's argument alone -- no
+      // payload, no id -- so each button carries the payload in it.
+      actions: payload == null
+          ? const <WindowsAction>[]
+          : <WindowsAction>[
+              for (final action in actions)
+                WindowsAction(
+                  content: action.label,
+                  arguments: actionArgument(action, payload),
+                ),
+            ],
+    ),
   );
+
+  /// The Android buttons for [actions]: handled without opening the app, and
+  /// dismissing the notification they are on. Shared with the place reminder
+  /// (`PluginPlaceNotifier`), which posts from another isolate.
+  static List<AndroidNotificationAction> androidActions(
+    List<ReminderAction> actions,
+  ) => <AndroidNotificationAction>[
+    for (final action in actions)
+      AndroidNotificationAction(
+        action.id,
+        action.label,
+        // The point of the buttons: «Выполнено» on the lock screen must not
+        // unlock the phone and open the app. The press runs in the plugin's
+        // background isolate instead.
+        showsUserInterface: false,
+        cancelNotification: true,
+      ),
+  ];
 
   /// Runs a platform call that is allowed to fail.
   ///

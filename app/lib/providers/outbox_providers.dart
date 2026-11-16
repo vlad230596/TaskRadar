@@ -93,25 +93,7 @@ class Outbox extends _$Outbox {
     required Task base,
     required Map<String, Object?> body,
     Set<String>? checked,
-  }) {
-    final values = taskWireValues(base);
-    final fields = checked ?? body.keys.toSet();
-    return _append(
-      OutboxEntry(
-        key: PendingCapture.newKey(),
-        kind: OutboxKind.editTask,
-        projectId: base.projectId,
-        taskId: base.id,
-        title: base.title,
-        body: body,
-        expected: <String, Object?>{
-          for (final field in outboxTaskFields)
-            if (fields.contains(field)) field: values[field],
-        },
-        createdAt: DateTime.now(),
-      ),
-    );
-  }
+  }) => _append(outboxEditEntry(base: base, body: body, checked: checked));
 
   /// Puts a move of [base] into [targetProjectId] on the outbox.
   ///
@@ -591,6 +573,31 @@ class Outbox extends _$Outbox {
       ),
     );
   }
+}
+
+/// The entry [Outbox.queueEdit] appends, built on its own: a notification
+/// button pressed with no app running (`notification_actions_runner.dart`)
+/// appends the same entry to the file directly, with no provider graph.
+OutboxEntry outboxEditEntry({
+  required Task base,
+  required Map<String, Object?> body,
+  Set<String>? checked,
+}) {
+  final values = taskWireValues(base);
+  final fields = checked ?? body.keys.toSet();
+  return OutboxEntry(
+    key: PendingCapture.newKey(),
+    kind: OutboxKind.editTask,
+    projectId: base.projectId,
+    taskId: base.id,
+    title: base.title,
+    body: body,
+    expected: <String, Object?>{
+      for (final field in outboxTaskFields)
+        if (fields.contains(field)) field: values[field],
+    },
+    createdAt: DateTime.now(),
+  );
 }
 
 /// Everything in the outbox, or nothing while the file loads.

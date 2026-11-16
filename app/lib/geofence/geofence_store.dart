@@ -22,8 +22,12 @@ import '../domain/geofence_plan.dart';
 /// files, read fresh every time, have no such second copy.
 ///
 /// Two files, two writers: the main isolate writes [writeZones], the background
-/// isolate writes [writeCooldowns]. Neither ever writes the other's file, so no
-/// lock is needed.
+/// isolates write [writeCooldowns] -- the geofence callback, and a «Завтра» /
+/// «Выполнено» pressed on a notification ([snoozePlace]). Neither kind ever
+/// writes the other's file. The two cooldown writers are a read-modify-write
+/// each, and could in principle interleave; the cost of losing that race is
+/// one extra or one missing «Рядом» notification, which is not worth a lock
+/// across isolates.
 abstract interface class GeofenceStore {
   /// The zones as last registered, by zone id. Empty when unreadable.
   Future<Map<String, PlannedGeofence>> readZones();
@@ -113,4 +117,22 @@ class FileGeofenceStore implements GeofenceStore {
         for (final entry in marks.entries)
           entry.key: entry.value.toUtc().toIso8601String(),
       });
+}
+
+/// Keeps [taskId]'s place quiet until [until] (see `placeSnoozeKey`). Never
+/// throws: a snooze that did not stick costs one notification, and the
+/// button that asked for it has already done its main job.
+Future<void> snoozePlace(
+  GeofenceStore store,
+  String taskId, {
+  required DateTime until,
+  required DateTime now,
+}) async {
+  try {
+    final marks = await store.readCooldowns();
+    marks[placeSnoozeKey(taskId)] = until;
+    await store.writeCooldowns(pruneCooldowns(marks, now: now));
+  } catch (error) {
+    debugPrint('Could not snooze the place of $taskId: $error');
+  }
 }

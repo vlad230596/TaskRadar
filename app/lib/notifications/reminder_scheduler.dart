@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../domain/notification_actions.dart';
 import '../domain/reminder_schedule.dart';
 import 'notification_gateway.dart';
 
@@ -100,6 +101,8 @@ class ReminderScheduler {
           fireAt: reminder.fireAt,
           payload: reminder.payload,
           exact: mode == NotificationScheduleMode.exact,
+          // «Выполнено» / «Завтра» -- answered without opening the app.
+          actions: dateReminderActions,
         );
       }
 

@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:taskradar/domain/notification_actions.dart';
 import 'package:taskradar/domain/reminder_schedule.dart';
+import 'package:taskradar/notifications/notification_action_log.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/notification_action_providers.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
 
@@ -18,17 +21,17 @@ import 'support/fake_settings_store.dart';
 /// These are smoke tests of the wiring, not of the UI's looks.
 void main() {
   late FakeNotificationGateway gateway;
+  late MemoryNotificationActionLog actionLog;
 
   setUp(() {
     gateway = FakeNotificationGateway();
+    actionLog = MemoryNotificationActionLog();
 
     // `flutter_timezone` is a platform channel and would otherwise throw
     // MissingPluginException, sending NotificationTimeZone down its
     // fixed-offset fallback path and making these tests depend on the machine's
     // clock settings. Pinning it keeps them the same everywhere.
-    TestDefaultBinaryMessengerBinding
-        .instance
-        .defaultBinaryMessenger
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
           const MethodChannel('flutter_timezone'),
           (MethodCall call) async =>
@@ -59,6 +62,7 @@ void main() {
           // The reminder hour is persisted from F4 on, and the real store is a
           // `shared_preferences` platform channel the test VM does not have.
           settingsStoreProvider.overrideWithValue(FakeSettingsStore()),
+          notificationActionLogProvider.overrideWithValue(actionLog),
         ],
         child: const MaterialApp(home: NotificationBenchScreen()),
       ),
@@ -72,7 +76,9 @@ void main() {
     expect(find.text('выдано'), findsNWidgets(2));
   });
 
-  testWidgets('warns loudly when notifications are switched off', (tester) async {
+  testWidgets('warns loudly when notifications are switched off', (
+    tester,
+  ) async {
     gateway.permissionState = const NotificationPermissionState(
       notificationsEnabled: false,
       canScheduleExactAlarms: false,
@@ -84,6 +90,34 @@ void main() {
     expect(find.textContaining('могут опоздать на часы'), findsOneWidget);
   });
 
+  testWidgets(
+    '"show now" comes with the real buttons, and presses are listed',
+    (tester) async {
+      actionLog.records.add(
+        NotificationActionRecord(
+          at: DateTime(2026, 11, 17, 9, 5),
+          action: 'done',
+          taskId: 'bench:now',
+          outcome: 'не задача — ничего не делаем',
+          where: 'фон',
+        ),
+      );
+      await pumpBench(tester);
+
+      await tester.tap(find.text('Показать сейчас'));
+      await tester.pumpAndSettle();
+
+      final shown = gateway.shown.single;
+      expect(shown.payload, 'bench:now');
+      expect(shown.actions, dateReminderActions);
+      expect(find.text('Кнопки уведомлений'), findsOneWidget);
+      expect(
+        find.textContaining('не задача — ничего не делаем'),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('the synthetic set reaches the OS queue', (tester) async {
     await pumpBench(tester);
 
@@ -93,8 +127,14 @@ void main() {
     // Two of the five rows are deliberately unschedulable (a past date and a
     // malformed one), and "today" depends on the wall clock, so assert on the
     // rows that are unambiguous rather than on a count.
-    expect(gateway.queue.keys, contains(notificationIdForTask('synthetic-tomorrow')));
-    expect(gateway.queue.keys, contains(notificationIdForTask('synthetic-in-3-days')));
+    expect(
+      gateway.queue.keys,
+      contains(notificationIdForTask('synthetic-tomorrow')),
+    );
+    expect(
+      gateway.queue.keys,
+      contains(notificationIdForTask('synthetic-in-3-days')),
+    );
     expect(
       gateway.queue.keys,
       isNot(contains(notificationIdForTask('synthetic-yesterday'))),

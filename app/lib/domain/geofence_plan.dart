@@ -192,10 +192,10 @@ GeofencePlan geofencesFromBoard(
 
   if (near != null) {
     candidates.sort((a, b) {
-      final byDistance = distanceMeters(
-        near,
-        (lat: a.$1.lat, lng: a.$1.lng),
-      ).compareTo(distanceMeters(near, (lat: b.$1.lat, lng: b.$1.lng)));
+      final byDistance = distanceMeters(near, (
+        lat: a.$1.lat,
+        lng: a.$1.lng,
+      )).compareTo(distanceMeters(near, (lat: b.$1.lat, lng: b.$1.lng)));
       return byDistance != 0 ? byDistance : b.$2.compareTo(a.$2);
     });
   } else {
@@ -312,20 +312,45 @@ bool cooldownAllows({
 }
 
 /// Drops cooldown marks that no longer suppress anything, so the file the
-/// background isolate rewrites stays a handful of entries.
+/// background isolate rewrites stays a handful of entries. A snooze
+/// ([placeSnoozeKey]) is kept until the moment it names.
 Map<String, DateTime> pruneCooldowns(
   Map<String, DateTime> marks, {
   required DateTime now,
   Duration cooldown = geofenceCooldown,
 }) => <String, DateTime>{
   for (final entry in marks.entries)
-    if (!cooldownAllows(
-      lastNotified: entry.value,
-      now: now,
-      cooldown: cooldown,
-    ))
+    if (entry.key.startsWith(_snoozePrefix)
+        ? entry.value.isAfter(now)
+        : !cooldownAllows(
+            lastNotified: entry.value,
+            now: now,
+            cooldown: cooldown,
+          ))
       entry.key: entry.value,
 };
+
+const String _snoozePrefix = 'snooze:';
+
+/// The key under which a snooze of [taskId]'s place is kept in the cooldown
+/// map: «Завтра» (or «Выполнено» with no app running) on a notification.
+///
+/// In the cooldown map rather than a file of its own because it *is* a
+/// cooldown -- one that ends at a moment the user chose rather than six hours
+/// after the last notification -- and the callback already reads that map
+/// before every notification. The value is the end of the snooze, not a
+/// start; task ids are cuids and can never begin with the prefix.
+String placeSnoozeKey(String taskId) => '$_snoozePrefix$taskId';
+
+/// Whether [taskId]'s place is snoozed at [now] (see [placeSnoozeKey]).
+bool placeSnoozed(
+  Map<String, DateTime> marks,
+  String taskId, {
+  required DateTime now,
+}) {
+  final until = marks[placeSnoozeKey(taskId)];
+  return until != null && until.isAfter(now);
+}
 
 /// The notification for a zone: «Рядом: <задача>», with the place and the
 /// project underneath.

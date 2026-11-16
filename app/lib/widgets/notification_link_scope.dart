@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
 import '../navigation/app_routes.dart';
+import '../providers/notification_action_providers.dart';
 import '../providers/notification_link_providers.dart';
 
 /// Turns a resolved reminder tap into a navigation, and an unresolvable one into
@@ -81,6 +82,9 @@ class _NotificationLinkScopeState extends ConsumerState<NotificationLinkScope> {
      * app does not yet know whether there is a session to open anything with.
      */
     ref.watch(notificationLinkBridgeProvider);
+    // The notification buttons («Выполнено», «Завтра») -- behind the same
+    // switch for the same reason: they write to the server.
+    ref.watch(notificationActionBridgeProvider);
 
     ref.listen<NotificationLinkState>(notificationLinkProvider, (_, next) {
       _handle(next);

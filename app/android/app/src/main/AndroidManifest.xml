@@ -177,6 +177,17 @@
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
+        <!--
+          The notification buttons («Выполнено», «Завтра»). Not declared by the
+          plugin either, with the same silence when it is missing: the buttons
+          are drawn, and a press does nothing at all. The receiver starts a
+          background Flutter engine that runs the press without opening the
+          app (notification_actions_runner.dart). Reached only through this
+          app's own PendingIntents, so not exported.
+        -->
+        <receiver
+            android:exported="false"
+            android:name="com.dexterous.flutterlocalnotifications.ActionBroadcastReceiver" />
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">

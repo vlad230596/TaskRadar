@@ -1,3 +1,4 @@
+import 'package:taskradar/domain/notification_actions.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -74,6 +75,35 @@ class FakeNotificationGateway implements NotificationGateway {
     }
   }
 
+  void Function(NotificationActionRequest request)? _actionHandler;
+  final List<NotificationActionRequest> _bufferedActions =
+      <NotificationActionRequest>[];
+
+  /// Every [showNow] call.
+  final List<FakeScheduledNotification> shown = <FakeScheduledNotification>[];
+
+  /// Simulates a press on a notification button that reached the app
+  /// (Windows, or an Android press forwarded by the background isolate).
+  /// Buffered until a handler is registered, as in the real gateway.
+  void press(NotificationActionRequest request) {
+    final handler = _actionHandler;
+    if (handler == null) {
+      _bufferedActions.add(request);
+      return;
+    }
+    handler(request);
+  }
+
+  @override
+  void setActionHandler(
+    void Function(NotificationActionRequest request) handler,
+  ) {
+    _actionHandler = handler;
+    final buffered = List<NotificationActionRequest>.of(_bufferedActions);
+    _bufferedActions.clear();
+    buffered.forEach(handler);
+  }
+
   @override
   Future<String?> takeLaunchPayload() async {
     launchPayloadReads++;
@@ -112,6 +142,7 @@ class FakeNotificationGateway implements NotificationGateway {
     required tz.TZDateTime fireAt,
     required bool exact,
     String? payload,
+    List<ReminderAction> actions = const <ReminderAction>[],
   }) async {
     _maybeFail();
     final notification = FakeScheduledNotification(
@@ -121,6 +152,7 @@ class FakeNotificationGateway implements NotificationGateway {
       fireAt: fireAt,
       payload: payload,
       exact: exact,
+      actions: actions,
     );
     scheduleCalls.add(notification);
     queue[id] = notification;
@@ -132,8 +164,20 @@ class FakeNotificationGateway implements NotificationGateway {
     required String title,
     required String body,
     String? payload,
+    List<ReminderAction> actions = const <ReminderAction>[],
   }) async {
     _maybeFail();
+    shown.add(
+      FakeScheduledNotification(
+        id: id,
+        title: title,
+        body: body,
+        fireAt: tz.TZDateTime.utc(1970),
+        exact: true,
+        payload: payload,
+        actions: actions,
+      ),
+    );
   }
 
   @override
@@ -180,6 +224,7 @@ class FakeScheduledNotification {
     required this.fireAt,
     required this.exact,
     this.payload,
+    this.actions = const <ReminderAction>[],
   });
 
   /// Convenience for seeding a queue entry whose fire time nobody asserts on.
@@ -202,4 +247,7 @@ class FakeScheduledNotification {
   final tz.TZDateTime fireAt;
   final String? payload;
   final bool exact;
+
+  /// The buttons, in order.
+  final List<ReminderAction> actions;
 }

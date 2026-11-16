@@ -3,7 +3,10 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:native_geofence/native_geofence.dart';
 
 import '../domain/geofence_plan.dart';
+import '../domain/notification_actions.dart';
 import '../domain/reminder_schedule.dart';
+import '../notifications/local_notification_gateway.dart';
+import '../notifications/notification_actions_runner.dart';
 import 'geofence_store.dart';
 
 /// The geofence callback: what runs when the phone walks into a zone.
@@ -24,13 +27,15 @@ import 'geofence_store.dart';
 /// `design/task-editor-spec.md`). Reading two small files and posting one
 /// notification is well inside the time a plain worker gets.
 ///
-/// ## The tap
+/// ## The tap, and the buttons
 ///
 /// The payload is the ordinary reminder payload ([reminderPayload]), so a tap
 /// goes down exactly the path a date reminder's does
 /// (`providers/notification_link_providers.dart`): cold start via the launch
 /// details, warm via the response callback, both resolving the task against
-/// the board and opening it.
+/// the board and opening it. The buttons are those of
+/// [placeReminderActions]; «Завтра» snoozes the place rather than moving a
+/// date (`notification_actions_runner.dart`).
 @pragma('vm:entry-point')
 Future<void> onGeofenceEvent(GeofenceCallbackParams params) async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -87,6 +92,7 @@ Future<List<String>> handleGeofenceEnter({
       debugPrint('Place reminder: no record for zone $id, skipping.');
       continue;
     }
+    if (placeSnoozed(marks, zone.taskId, now: now)) continue;
     if (!cooldownAllows(
       lastNotified: marks[zone.taskId],
       now: now,
@@ -149,6 +155,11 @@ class PluginPlaceNotifier implements PlaceNotifier {
       settings: const InitializationSettings(
         android: AndroidInitializationSettings(_icon),
       ),
+      // So the buttons below work even if the app has not been opened since
+      // it was installed -- the plugin only knows the handler once some
+      // isolate has passed it in.
+      onDidReceiveBackgroundNotificationResponse:
+          onNotificationActionInBackground,
     );
     await _plugin
         .resolvePlatformSpecificImplementation<
@@ -170,6 +181,10 @@ class PluginPlaceNotifier implements PlaceNotifier {
           icon: _icon,
           category: AndroidNotificationCategory.reminder,
           styleInformation: const BigTextStyleInformation(''),
+          // «Выполнено» / «Завтра» (quiet until tomorrow).
+          actions: LocalNotificationGateway.androidActions(
+            placeReminderActions,
+          ),
         ),
       ),
     );

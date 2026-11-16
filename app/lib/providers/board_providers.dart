@@ -4,11 +4,14 @@ import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../domain/board_reminders.dart';
+import '../domain/outbox_overlay.dart';
 import '../models/board_project.dart';
 import '../models/project.dart';
 import '../models/task.dart';
 import '../storage/board_snapshot_store.dart';
+import '../storage/outbox_store.dart';
 import 'dependencies.dart';
+import 'outbox_providers.dart';
 import 'reminder_providers.dart';
 
 part 'board_providers.g.dart';
@@ -95,9 +98,7 @@ class Board extends _$Board {
     // and "savedAt" in the file would disagree by a few milliseconds for no
     // reason. `write` swallows its own failures (see BoardSnapshotStore): a
     // cache that cannot be written must not turn a good response into an error.
-    final snapshot = await ref
-        .read(boardSnapshotStoreProvider)
-        .write(projects);
+    final snapshot = await ref.read(boardSnapshotStoreProvider).write(projects);
 
     return FreshBoard(projects: projects, fetchedAt: snapshot.savedAt);
   }
@@ -410,25 +411,45 @@ BoardView boardView(Ref ref) {
 /// only thing that has to remember anything. It used to be a `ref.watch` in
 /// the planning screen, which Riverpod pauses whenever a route covers the
 /// shell -- see the scope for why that lost alarms.
+///
+/// ## Edits still in the outbox
+///
+/// The board is the server's answer, so a reminder moved with no network --
+/// «Завтра» pressed on a notification in a tunnel, or a date picked offline
+/// -- is not in it until the outbox is sent. The targets are therefore drawn
+/// from the board *with the waiting outbox entries applied* (the overlay the
+/// project screen draws), so the alarm moves when the user moves it, not
+/// when the network comes back; and the outbox is listened to as well, so
+/// queuing such an edit re-arms on its own.
 @Riverpod(keepAlive: true)
 void boardReminderBridge(Ref ref) {
   List<BoardProject>? published;
 
   void publish(BoardView view) {
     if (view is! BoardReady) return;
+    // The board itself when no edit is waiting -- the common case -- so the
+    // check below still sees an unchanged board as unchanged.
+    final rows = withOutboxEdits(
+      view.projects,
+      ref.read(outboxEntriesProvider),
+    );
 
     // Identity, not equality: every `isRefreshing` flip produces a new
     // `BoardView` around the *same* list instance, and re-publishing an
     // unchanged set would re-arm every alarm for nothing.
-    if (identical(view.projects, published)) return;
-    published = view.projects;
+    if (identical(rows, published)) return;
+    published = rows;
 
     ref
         .read(reminderTargetsProvider.notifier)
-        .replaceWith(remindersFromBoard(view.projects));
+        .replaceWith(remindersFromBoard(rows));
   }
 
   ref.listen(reminderSyncProvider, (_, _) {});
+  ref.listen(
+    outboxEntriesProvider,
+    (_, _) => publish(ref.read(boardViewProvider)),
+  );
 
   // Writing another provider's state from a listener callback is fine *here*:
   // Riverpod clears its "currently building" marker before notifying listeners
@@ -455,4 +476,30 @@ void boardReminderBridge(Ref ref) {
     if (!ref.mounted) return;
     publish(ref.read(boardViewProvider));
   });
+}
+
+/// [board] with the outbox's waiting *edits* applied to the rows they are
+/// about -- what the board will be once they are sent. Creates and moves are
+/// left out: an unsent create has no server id for an alarm to open, and a
+/// move does not change a reminder. Returns [board] itself when nothing
+/// applies, so an identity check upstream still means "unchanged".
+List<BoardProject> withOutboxEdits(
+  List<BoardProject> board,
+  List<OutboxEntry> outbox,
+) {
+  final edits = outbox
+      .where((entry) => entry.isWaiting && entry.kind == OutboxKind.editTask)
+      .toList(growable: false);
+  if (edits.isEmpty) return board;
+  return <BoardProject>[
+    for (final row in board)
+      row.copyWith(
+        tasks: <Task>[
+          for (final task in row.tasks)
+            edits
+                .where((entry) => entry.taskId == task.id)
+                .fold(task, (next, entry) => applyTaskPatch(next, entry.body)),
+        ],
+      ),
+  ];
 }

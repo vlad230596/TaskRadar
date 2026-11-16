@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../domain/notification_actions.dart';
 import '../domain/reminder_schedule.dart';
+import '../notifications/notification_action_log.dart';
 import '../notifications/notification_gateway.dart';
 import '../notifications/notification_time_zone.dart';
 import '../notifications/reminder_scheduler.dart';
+import '../providers/notification_action_providers.dart';
 import '../providers/reminder_providers.dart';
 
 /// TEMPORARY — F1 only. Delete together with its route when F4 lands.
@@ -84,6 +87,8 @@ class _NotificationBenchScreenState
           const SizedBox(height: 12),
           const _PendingQueueCard(),
           const SizedBox(height: 12),
+          const _ActionLogCard(),
+          const SizedBox(height: 12),
           OutlinedButton.icon(
             onPressed: _cancelEverything,
             icon: const Icon(Icons.delete_sweep_outlined),
@@ -103,6 +108,7 @@ class _NotificationBenchScreenState
   void _refreshEverything() {
     ref.invalidate(pendingNotificationsProvider);
     ref.invalidate(notificationPermissionsProvider);
+    ref.invalidate(_actionLogProvider);
   }
 
   Future<void> _showNow() async {
@@ -113,6 +119,10 @@ class _NotificationBenchScreenState
           title: 'TaskRadar',
           body: 'Проверка: уведомление показано сразу',
           payload: 'bench:now',
+          // The real buttons, on a payload that is not a task: a press
+          // reaches the handler, is logged below as skipped, and changes
+          // nothing.
+          actions: dateReminderActions,
         );
     _refreshEverything();
     _say(
@@ -141,7 +151,8 @@ class _NotificationBenchScreenState
     // `.value ?? default` rather than awaiting the future: this is a diagnostic
     // button, and the settled hour is on screen right next to it. See
     // `_OneOffTestsCard`.
-    final at = ref.read(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
+    final at =
+        ref.read(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
     final today = tz.TZDateTime.now(location);
     final fireAt = tz.TZDateTime(
       location,
@@ -203,40 +214,38 @@ class _NotificationBenchScreenState
           'T00:00:00.000Z';
     }
 
-    ref
-        .read(reminderTargetsProvider.notifier)
-        .replaceWith(<TaskReminder>[
-          TaskReminder(
-            taskId: 'synthetic-yesterday',
-            taskTitle: 'Вчерашнее напоминание (должно быть пропущено)',
-            remindAt: isoDay(-1),
-            projectName: 'Стенд',
-          ),
-          TaskReminder(
-            taskId: 'synthetic-today',
-            taskTitle: 'Сегодня (сработает, только если час ещё не прошёл)',
-            remindAt: isoDay(0),
-            projectName: 'Стенд',
-          ),
-          TaskReminder(
-            taskId: 'synthetic-tomorrow',
-            taskTitle: 'Завтра — жду кабель',
-            remindAt: isoDay(1),
-            projectName: 'Стенд',
-          ),
-          TaskReminder(
-            taskId: 'synthetic-in-3-days',
-            taskTitle: 'Через три дня — перезвонить в сервис',
-            remindAt: isoDay(3),
-            projectName: 'Стенд',
-          ),
-          const TaskReminder(
-            taskId: 'synthetic-broken',
-            taskTitle: 'Битая дата (должна быть пропущена с причиной)',
-            remindAt: 'не-дата',
-            projectName: 'Стенд',
-          ),
-        ]);
+    ref.read(reminderTargetsProvider.notifier).replaceWith(<TaskReminder>[
+      TaskReminder(
+        taskId: 'synthetic-yesterday',
+        taskTitle: 'Вчерашнее напоминание (должно быть пропущено)',
+        remindAt: isoDay(-1),
+        projectName: 'Стенд',
+      ),
+      TaskReminder(
+        taskId: 'synthetic-today',
+        taskTitle: 'Сегодня (сработает, только если час ещё не прошёл)',
+        remindAt: isoDay(0),
+        projectName: 'Стенд',
+      ),
+      TaskReminder(
+        taskId: 'synthetic-tomorrow',
+        taskTitle: 'Завтра — жду кабель',
+        remindAt: isoDay(1),
+        projectName: 'Стенд',
+      ),
+      TaskReminder(
+        taskId: 'synthetic-in-3-days',
+        taskTitle: 'Через три дня — перезвонить в сервис',
+        remindAt: isoDay(3),
+        projectName: 'Стенд',
+      ),
+      const TaskReminder(
+        taskId: 'synthetic-broken',
+        taskTitle: 'Битая дата (должна быть пропущена с причиной)',
+        remindAt: 'не-дата',
+        projectName: 'Стенд',
+      ),
+    ]);
   }
 
   /// Removes one row from the target set. The point is to watch the queue
@@ -376,7 +385,8 @@ class _OneOffTestsCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final at =
-        ref.watch(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
+        ref.watch(reminderSettingsProvider).value ??
+        ReminderTime.defaultMorning;
 
     return _Section(
       title: 'Разовые проверки',
@@ -385,7 +395,10 @@ class _OneOffTestsCard extends ConsumerWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton(onPressed: onShowNow, child: const Text('Показать сейчас')),
+            FilledButton(
+              onPressed: onShowNow,
+              child: const Text('Показать сейчас'),
+            ),
             FilledButton(
               onPressed: onInTwoMinutes,
               child: const Text('Через 2 минуты'),
@@ -434,7 +447,10 @@ class _SyntheticSetCard extends ConsumerWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton(onPressed: onSeed, child: const Text('Заполнить (5 задач)')),
+            FilledButton(
+              onPressed: onSeed,
+              child: const Text('Заполнить (5 задач)'),
+            ),
             OutlinedButton(
               onPressed: targets.isEmpty ? null : onDropFirst,
               child: const Text('Убрать первую'),
@@ -523,7 +539,8 @@ class _PendingQueueCard extends ConsumerWidget {
         ),
         const SizedBox(height: 8),
         switch (pending) {
-          AsyncData(:final List<PendingNotification> value) when value.isEmpty =>
+          AsyncData(:final List<PendingNotification> value)
+              when value.isEmpty =>
             const Text('Очередь пуста.'),
           AsyncData(:final List<PendingNotification> value) => Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -543,6 +560,60 @@ class _PendingQueueCard extends ConsumerWidget {
           onPressed: () => ref.invalidate(pendingNotificationsProvider),
           icon: const Icon(Icons.refresh),
           label: const Text('Перечитать очередь'),
+        ),
+      ],
+    );
+  }
+}
+
+final _actionLogProvider =
+    FutureProvider.autoDispose<List<NotificationActionRecord>>(
+      (ref) => ref.watch(notificationActionLogProvider).read(),
+    );
+
+/// The last presses of «Выполнено» / «Завтра», wherever they were handled.
+class _ActionLogCard extends ConsumerWidget {
+  const _ActionLogCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final log = ref.watch(_actionLogProvider);
+
+    return _Section(
+      title: 'Кнопки уведомлений',
+      children: [
+        const Text(
+          '«Показать сейчас» приходит с кнопками «Выполнено» и «Завтра». '
+          'Нажатие на нём ничего не меняет и записывается сюда как пропущенное; '
+          'нажатие на настоящем напоминании — с тем, что из него вышло. '
+          '«фон» — приложение было закрыто, «приложение» — было открыто.',
+        ),
+        const SizedBox(height: 8),
+        switch (log) {
+          AsyncData(:final List<NotificationActionRecord> value)
+              when value.isEmpty =>
+            const Text('Нажатий пока не было.'),
+          AsyncData(:final List<NotificationActionRecord> value) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final entry in value)
+                _Row(
+                  label:
+                      '${_two(entry.at.toLocal().day)}.${_two(entry.at.toLocal().month)} '
+                      '${_two(entry.at.toLocal().hour)}:${_two(entry.at.toLocal().minute)} '
+                      '${entry.action}',
+                  value: '${entry.outcome} · ${entry.where} · ${entry.taskId}',
+                ),
+            ],
+          ),
+          AsyncError(:final error) => Text('Ошибка: $error'),
+          _ => const Text('…'),
+        },
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: () => ref.invalidate(_actionLogProvider),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Перечитать'),
         ),
       ],
     );
@@ -594,10 +665,7 @@ class _Row extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: 140,
-            child: Text(label, style: style),
-          ),
+          SizedBox(width: 140, child: Text(label, style: style)),
           Expanded(child: Text(value, style: style)),
         ],
       ),

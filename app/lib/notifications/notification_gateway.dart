@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../domain/notification_actions.dart';
 import '../domain/reminder_schedule.dart';
 
 /// The app's own, deliberately small, view of the notification plugin.
@@ -49,6 +50,19 @@ abstract interface class NotificationGateway {
   /// them.
   void setTapHandler(void Function(String? payload) handler);
 
+  /// Registers the handler for a press on one of a notification's buttons
+  /// ([ReminderAction]) that reached **this isolate**.
+  ///
+  /// On Android that is rare by design: the buttons do not open the app
+  /// (`showsUserInterface: false`), so the plugin runs them in a background
+  /// isolate of its own (`onNotificationActionInBackground`), which forwards
+  /// them here when the app is alive. Windows has no background isolate and
+  /// hands every press to the app. Either way, buffered like taps until a
+  /// handler exists.
+  void setActionHandler(
+    void Function(NotificationActionRequest request) handler,
+  );
+
   /// The payload of the notification that **launched** the app, or null.
   ///
   /// Consuming: the second call answers null. The alternative -- a plain getter
@@ -78,6 +92,9 @@ abstract interface class NotificationGateway {
   ///
   /// [exact] false asks the OS for a best-effort alarm instead; see
   /// [NotificationPermissionState.canScheduleExactAlarms].
+  ///
+  /// [actions] are the buttons, in order (a task reminder passes
+  /// [dateReminderActions]); a button press comes back with [payload].
   Future<void> schedule({
     required int id,
     required String title,
@@ -85,6 +102,7 @@ abstract interface class NotificationGateway {
     required tz.TZDateTime fireAt,
     required bool exact,
     String? payload,
+    List<ReminderAction> actions = const <ReminderAction>[],
   });
 
   /// Posts a notification right now. Used by the bench, and by nothing else.
@@ -93,6 +111,7 @@ abstract interface class NotificationGateway {
     required String title,
     required String body,
     String? payload,
+    List<ReminderAction> actions = const <ReminderAction>[],
   });
 
   /// Everything the OS has queued for this app.
