@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cross_file/cross_file.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +31,7 @@ import '../widgets/adaptive_layout.dart';
 import '../widgets/ai_source_mark.dart';
 import '../widgets/ai_tidy.dart';
 import '../widgets/category_sheets.dart';
+import '../widgets/glance.dart';
 import '../widgets/dictation.dart';
 import '../widgets/editor/attachment_section.dart';
 import '../widgets/editor/attribute_bar.dart';
@@ -350,15 +352,15 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
         : const <SmartProject>[];
     return SmartContext(
       projects: projects,
-      categories: _categories[_draft ? _projectId : widget.projectId] ??
+      categories:
+          _categories[_draft ? _projectId : widget.projectId] ??
           const <SmartCategory>[],
     );
   }
 
   static String? _tokenValue(SmartToken? token) => switch (token) {
     null => null,
-    SmartToken(kind: TokenKind.date) =>
-      '${token.remindAt} ${token.remindTime}',
+    SmartToken(kind: TokenKind.date) => '${token.remindAt} ${token.remindTime}',
     SmartToken(kind: TokenKind.project) => token.projectId,
     SmartToken(kind: TokenKind.category) => token.categoryId,
   };
@@ -486,7 +488,8 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
 
   bool _reminderDiffers(Task task) =>
       task.status != TaskStatus.done &&
-      _reminderOf(task) != ReminderValue.fromRow(task.remindAt, task.remindTime);
+      _reminderOf(task) !=
+          ReminderValue.fromRow(task.remindAt, task.remindTime);
 
   bool _editedAgainst(Task task) =>
       _loadedFrom == task.id &&
@@ -1590,12 +1593,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
         .toList(growable: false);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(
-        Insets.gutter,
-        4,
-        Insets.gutter,
-        12,
-      ),
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 4, Insets.gutter, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
@@ -1926,8 +1924,14 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     required TaskStatus current,
     required ValueChanged<TaskStatus> onTap,
   }) {
+    // 40 as drawn, or taller when the labels are (a large system font).
+    final label = measureText(
+      context,
+      'Ag',
+      EditorText.chip.copyWith(fontSize: 13.5, fontWeight: FontWeight.w700),
+    );
     return Container(
-      height: 40,
+      height: math.max(40, label.height + 14),
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: EditorColors.well,

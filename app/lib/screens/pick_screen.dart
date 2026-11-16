@@ -128,7 +128,9 @@ class _PickHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          FocusSlots(taken: taken, size: 12, gap: 6, showFree: true),
+          Flexible(
+            child: FocusSlots(taken: taken, size: 12, gap: 6, showFree: true),
+          ),
         ],
       ),
     );
@@ -198,24 +200,30 @@ class _SectionLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 12, 4, 6),
-      child: Row(
-        children: <Widget>[
-          // `flex: 0`, а не обычный `Flexible`: тот делит свободное место
-          // поровну с линией справа, и линия выходит вдвое короче, чем на
-          // эталонной странице. Так имя берёт ровно свою ширину, а линия — всё
-          // остальное.
-          Flexible(
-            flex: 0,
-            child: Text(
-              name.toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: AppText.sectionLabel,
+      // Имя берёт ровно свою ширину, линия — всё остальное, как на эталонной
+      // странице. Не `Flexible`: тот делит свободное место поровну с линией, и
+      // линия выходит вдвое короче. И не `Flexible(flex: 0)`, как было: flex 0
+      // — это «не гибкий», такой ребёнок получает бесконечную ширину, и
+      // длинное имя проекта не сокращалось, а уезжало за край экрана. Потолок
+      // ширины — вся строка без отступа и короткого хвоста линии.
+      child: LayoutBuilder(
+        builder: (context, box) => Row(
+          children: <Widget>[
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: box.maxWidth > 32 ? box.maxWidth - 32 : 0,
+              ),
+              child: Text(
+                name.toUpperCase(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.sectionLabel,
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          const Expanded(child: Divider(color: AppColors.line, height: 1)),
-        ],
+            const SizedBox(width: 8),
+            const Expanded(child: Divider(color: AppColors.line, height: 1)),
+          ],
+        ),
       ),
     );
   }
@@ -251,9 +259,7 @@ class _TaskChoice extends ConsumerWidget {
           constraints: const BoxConstraints(minHeight: Targets.row),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: chosen ? AppColors.ink : AppColors.line,
-            ),
+            border: Border.all(color: chosen ? AppColors.ink : AppColors.line),
             borderRadius: BorderRadius.circular(Radii.card),
           ),
           child: Row(
@@ -361,8 +367,10 @@ class _WorkOnButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 12, Insets.gutter, 18),
-      child: SizedBox(
-        height: 60,
+      // At least 60, not exactly: at a large system font "Работать над 16
+      // задачами" takes two lines, and a fixed 60 cut the second in half.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 60),
         child: FilledButton.icon(
           onPressed: taken == 0 ? null : () => Navigator.of(context).pop(),
           style: FilledButton.styleFrom(
@@ -374,7 +382,9 @@ class _WorkOnButton extends StatelessWidget {
           iconAlignment: IconAlignment.end,
           icon: const Icon(Icons.arrow_forward, size: 22),
           label: Text(
-            taken == 0 ? 'Пока ничего не выбрано' : 'Работать над ${_count(taken)}',
+            taken == 0
+                ? 'Пока ничего не выбрано'
+                : 'Работать над ${_count(taken)}',
           ),
         ),
       ),
@@ -422,7 +432,11 @@ class _Message extends StatelessWidget {
             else
               Icon(icon, size: 40, color: AppColors.lineStrong),
             const SizedBox(height: 16),
-            Text(title, textAlign: TextAlign.center, style: AppText.projectName),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: AppText.projectName,
+            ),
             const SizedBox(height: 8),
             Text(body, textAlign: TextAlign.center, style: AppText.hint),
           ],

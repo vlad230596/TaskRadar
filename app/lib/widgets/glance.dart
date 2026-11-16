@@ -56,27 +56,35 @@ class AgeChip extends StatelessWidget {
     final foreground = stale ? AppColors.waitingInk : AppColors.muted;
 
     return Container(
-      height: 22,
+      // At least 22, not exactly: at a large system font the digits are
+      // taller than that, and a fixed height cut them through the middle.
+      constraints: const BoxConstraints(minHeight: 22),
       padding: EdgeInsets.symmetric(horizontal: showIcon ? 8 : 7),
       decoration: BoxDecoration(
         color: stale ? AppColors.waitingChip : AppColors.background,
         borderRadius: BorderRadius.circular(Radii.chip),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (showIcon) ...<Widget>[
-            Icon(Icons.schedule, size: 12, color: foreground),
-            const SizedBox(width: 5),
+      // Scaled down -- never wrapped, never cut -- in the one case where even
+      // a line of its own is narrower than the chip: a 320 dp phone at twice
+      // the system font. Everywhere else the scale is 1 and this is a no-op.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (showIcon) ...<Widget>[
+              Icon(Icons.schedule, size: 12, color: foreground),
+              const SizedBox(width: 5),
+            ],
+            Text(
+              formatAgeShort(value),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              style: AppText.chip.copyWith(color: foreground),
+            ),
           ],
-          Text(
-            formatAgeShort(value),
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.visible,
-            style: AppText.chip.copyWith(color: foreground),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -114,8 +122,12 @@ class ProjectBadge extends StatelessWidget {
         color: color ?? projectBadgeColor(name),
         borderRadius: BorderRadius.circular(size * 0.35),
       ),
+      // Not scaled with the system font: the letter is a mark on a box of
+      // fixed size, not text to read -- the name beside it is that -- and at
+      // 160 % it no longer fitted the box.
       child: Text(
         projectBadgeLetter(name),
+        textScaler: TextScaler.noScaling,
         style: AppText.badge.copyWith(fontSize: size * 0.4),
       ),
     );
@@ -136,6 +148,15 @@ class ProjectBadge extends StatelessWidget {
 /// something the counter beside it already says. Past the cap the dots stop and
 /// the count carries the rest; the cap is generous enough that the ordinary
 /// project (two to eight tasks) never reaches it.
+///
+/// ## And why it also stops at the edge
+///
+/// The cap is a count, and a count does not know how wide the row is: eight
+/// dots fit a 179 px tile at the reference font size and do not fit the same
+/// tile on a 360 dp phone with the system font at 130 %, where they ran over
+/// the age beside them. So the strip measures the width it was given and draws
+/// only the dots that fit, with the "…" taking the place of the rest -- see
+/// [fitDots].
 class TaskDots extends StatelessWidget {
   const TaskDots({
     required this.tasks,
@@ -148,26 +169,88 @@ class TaskDots extends StatelessWidget {
   final double size;
   final int maxDots;
 
+  static const double _gap = 5;
+
   @override
   Widget build(BuildContext context) {
-    final shown = tasks.length > maxDots ? tasks.sublist(0, maxDots) : tasks;
+    final more = Text('…', maxLines: 1, softWrap: false, style: AppText.chip);
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (final task in shown)
-          Padding(
-            padding: const EdgeInsets.only(right: 5),
-            child: _Dot(status: task.status, size: size),
-          ),
-        if (tasks.length > maxDots)
-          Padding(
-            padding: const EdgeInsets.only(right: 5),
-            child: Text('…', style: AppText.chip),
-          ),
-      ],
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fit = fitDots(
+          count: tasks.length,
+          cap: maxDots,
+          pitch: size + _gap,
+          width: constraints.maxWidth,
+          moreWidth: measureTextWidth(context, '…', AppText.chip) + _gap,
+        );
+
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final task in tasks.take(fit.shown))
+              Padding(
+                padding: const EdgeInsets.only(right: _gap),
+                child: _Dot(status: task.status, size: size),
+              ),
+            if (fit.more)
+              Padding(
+                padding: const EdgeInsets.only(right: _gap),
+                child: more,
+              ),
+          ],
+        );
+      },
     );
   }
+}
+
+/// How many of [count] dots, each [pitch] wide, a strip [width] wide can show
+/// -- at most [cap] -- and whether a "there are more" mark of [moreWidth] has to
+/// follow them.
+///
+/// The mark is reserved only when something is actually left out: a strip
+/// whose dots all fit does not lose one to make room for a mark it does not
+/// draw.
+({int shown, bool more}) fitDots({
+  required int count,
+  required int cap,
+  required double pitch,
+  required double width,
+  required double moreWidth,
+}) {
+  final wanted = count < cap ? count : cap;
+  if (!width.isFinite) return (shown: wanted, more: count > wanted);
+  if (count <= cap && wanted * pitch <= width) {
+    return (shown: wanted, more: false);
+  }
+  final room = ((width - moreWidth) / pitch).floor();
+  final shown = room < 0 ? 0 : (room > wanted ? wanted : room);
+  return (shown: shown, more: moreWidth <= width);
+}
+
+/// How wide [text] is in [style] at this screen's text scale.
+double measureTextWidth(BuildContext context, String text, TextStyle style) =>
+    measureText(context, text, style).width;
+
+/// The size of [text] on one line in [style] at this screen's text scale --
+/// what a layout that has to make room for it in advance needs to know.
+Size measureText(BuildContext context, String text, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(
+      text: text,
+      style: DefaultTextStyle.of(context).style.merge(style),
+    ),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final size = Size(
+    painter.width.ceilToDouble(),
+    painter.height.ceilToDouble(),
+  );
+  painter.dispose();
+  return size;
 }
 
 class _Dot extends StatelessWidget {
@@ -228,4 +311,3 @@ String _openWord(int n) {
   }
   return 'открытых';
 }
-

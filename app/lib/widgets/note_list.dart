@@ -225,14 +225,18 @@ class _NoteCard extends ConsumerWidget {
                 // Clipped rather than truncated: markdown cut off mid-source
                 // renders as broken markup (an unclosed `**`, half a list), so
                 // the preview renders the whole note and the *box* is what ends.
-                child: ClipRect(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 180),
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      heightFactor: 1,
-                      child: NoteMarkdown(content: note.content),
-                    ),
+                //
+                // A scroll view that does not scroll, rather than an `Align`
+                // in a 180 px box: the note is laid out at its full height and
+                // the viewport shows the top of it. Squeezed into 180 px, the
+                // markdown's own column reported an overflow (the striped
+                // band in a debug build) on every long note.
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 180),
+                  child: SingleChildScrollView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    primary: false,
+                    child: NoteMarkdown(content: note.content),
                   ),
                 ),
               ),

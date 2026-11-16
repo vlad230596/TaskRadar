@@ -9,10 +9,12 @@ import '../domain/smart_tokens.dart';
 import '../domain/task_age.dart';
 import '../domain/task_groups.dart';
 import '../domain/task_reorder.dart';
+import '../models/checklist_item.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
+import '../providers/attachment_providers.dart';
 import '../providers/focus_providers.dart';
 import '../providers/outbox_providers.dart';
 import '../providers/project_providers.dart';
@@ -446,33 +448,54 @@ class _ListToolbar extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
+        // Both buttons may give way, each ellipsizing its own label: on a
+        // 320 dp phone at a large system font "Категории · 12" and
+        // "Упорядочить" do not fit side by side.
         Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            TextButton.icon(
-              style: style,
-              onPressed: onCategories,
-              icon: const Icon(Icons.label_outline, size: 18),
-              label: Text(
-                categoryCount == 0 ? 'Категории' : 'Категории · $categoryCount',
+            Flexible(
+              child: TextButton.icon(
+                style: style,
+                onPressed: onCategories,
+                icon: const Icon(Icons.label_outline, size: 18),
+                label: Text(
+                  categoryCount == 0
+                      ? 'Категории'
+                      : 'Категории · $categoryCount',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
-            const Spacer(),
             if (arranging)
-              FilledButton.tonalIcon(
-                onPressed: onArrange,
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+              Flexible(
+                child: FilledButton.tonalIcon(
+                  onPressed: onArrange,
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text(
+                    'Готово',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                icon: const Icon(Icons.check, size: 18),
-                label: const Text('Готово'),
               )
             else if (canArrange)
-              TextButton.icon(
-                style: style,
-                onPressed: onArrange,
-                icon: const Icon(Icons.swap_vert, size: 18),
-                label: const Text('Упорядочить'),
+              Flexible(
+                child: TextButton.icon(
+                  style: style,
+                  onPressed: onArrange,
+                  icon: const Icon(Icons.swap_vert, size: 18),
+                  label: const Text(
+                    'Упорядочить',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ),
           ],
         ),
@@ -607,6 +630,38 @@ class TaskRow extends ConsumerWidget {
       findLinks(task.title).isNotEmpty ||
       findLinks(task.description ?? '').isNotEmpty;
 
+  /// How wide the marks after the title are, at this text scale -- a slight
+  /// overestimate, which only ever moves them to their own line a little
+  /// early.
+  double _marksWidth(
+    BuildContext context, {
+    required int? age,
+    required bool current,
+    required int pictures,
+  }) {
+    final chip = AppText.chip;
+    var width = 0.0;
+    if (_hasLink) width += 6 + 16;
+    if (task.location != null) width += 6 + 16;
+    final checklist = task.checklist;
+    if (checklist != null && checklist.isNotEmpty) {
+      width +=
+          6 +
+          14 +
+          3 +
+          measureTextWidth(context, ChecklistItem.progressOf(checklist), chip);
+    }
+    if (pictures > 0) {
+      width += 6 + 14 + 3 + measureTextWidth(context, '$pictures', chip);
+    }
+    final done = task.status == TaskStatus.done;
+    final blocked = task.status == TaskStatus.blocked;
+    if (!current && !blocked && !done && age != null) {
+      width += 10 + 14 + measureTextWidth(context, formatAgeShort(age), chip);
+    }
+    return width;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final blocked = task.status == TaskStatus.blocked;
@@ -653,56 +708,92 @@ class TaskRow extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(child: title),
-                // 🔗: the task holds a link (task-editor spec, section 5).
-                if (_hasLink) ...<Widget>[
-                  const SizedBox(width: 6),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 3),
-                    child: Icon(
-                      Icons.link,
-                      size: 16,
-                      color: AppColors.muted,
-                      semanticLabel: 'есть ссылка',
+            // The marks after the title -- a link, a place, "☑ 2/6", a
+            // picture count, "108 д" -- ride at the end of its first line
+            // when they fit in under half the row, and move to a line of their
+            // own under it when they do not: at a large system font on a
+            // 320 dp phone they are wider than the room beside the title, and
+            // a plain Row pushed the last of them off the edge.
+            LayoutBuilder(
+              builder: (context, box) {
+                final marks = <Widget>[
+                  // 🔗: the task holds a link (task-editor spec, section 5).
+                  if (_hasLink)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6, top: 3),
+                      child: Icon(
+                        Icons.link,
+                        size: 16,
+                        color: AppColors.muted,
+                        semanticLabel: 'есть ссылка',
+                      ),
                     ),
-                  ),
-                ],
-                // 📍: the task has a place reminder (spec, section 7).
-                if (task.location != null) ...<Widget>[
-                  const SizedBox(width: 6),
-                  const Padding(
-                    padding: EdgeInsets.only(top: 3),
-                    child: Icon(
-                      Icons.place_outlined,
-                      size: 16,
-                      color: AppColors.muted,
-                      semanticLabel: 'есть место',
+                  // 📍: the task has a place reminder (spec, section 7).
+                  if (task.location != null)
+                    const Padding(
+                      padding: EdgeInsets.only(left: 6, top: 3),
+                      child: Icon(
+                        Icons.place_outlined,
+                        size: 16,
+                        color: AppColors.muted,
+                        semanticLabel: 'есть место',
+                      ),
                     ),
-                  ),
-                ],
-                // ☑ 2/5: the checklist's progress (spec, section 6).
-                if (task.checklist?.isNotEmpty ?? false)
-                  Padding(
+                  // ☑ 2/5: the checklist's progress (spec, section 6).
+                  if (task.checklist?.isNotEmpty ?? false)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6, top: 4),
+                      child: ChecklistProgressBadge(items: task.checklist),
+                    ),
+                  // 🖼: pictures, the server's and those still in the outbox.
+                  AttachmentCountBadge(
+                    task: task,
                     padding: const EdgeInsets.only(left: 6, top: 4),
-                    child: ChecklistProgressBadge(items: task.checklist),
                   ),
-                // 🖼: pictures, the server's and those still in the outbox.
-                AttachmentCountBadge(
-                  task: task,
-                  padding: const EdgeInsets.only(left: 6, top: 4),
-                ),
-                // No second line to put it on, so it rides at the end of the
-                // title -- and never wraps or shrinks. See `widgets/glance.dart`.
-                // Not on a done row: how long a finished task sat still is not
-                // a question anyone asks.
-                if (!current && !blocked && !done) ...<Widget>[
-                  const SizedBox(width: 10),
-                  AgeChip(days: age, showIcon: false),
-                ],
-              ],
+                  // No second line to put it on, so it rides at the end of
+                  // the title -- and never shrinks. See `widgets/glance.dart`.
+                  // Not on a done row: how long a finished task sat still is
+                  // not a question anyone asks.
+                  if (!current && !blocked && !done)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 10),
+                      child: AgeChip(days: age, showIcon: false),
+                    ),
+                ];
+                final inline =
+                    !box.maxWidth.isFinite ||
+                    _marksWidth(
+                          context,
+                          age: age,
+                          current: current,
+                          pictures: attachmentCount(
+                            task,
+                            ref.watch(pendingAttachmentCountsProvider),
+                          ),
+                        ) <=
+                        box.maxWidth * 0.45;
+                if (inline) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Expanded(child: title),
+                      ...marks,
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    title,
+                    Transform.translate(
+                      // The first mark's left padding is for a title beside
+                      // it; on its own line the marks start at the margin.
+                      offset: const Offset(-6, 0),
+                      child: Wrap(runSpacing: 4, children: marks),
+                    ),
+                  ],
+                );
+              },
             ),
             if (current) ...<Widget>[
               const SizedBox(height: 6),
@@ -976,7 +1067,8 @@ class FocusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 30,
+      // At least 30: at a large system font the word is taller than that.
+      constraints: const BoxConstraints(minHeight: 30),
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: const ShapeDecoration(
         color: AppColors.indigo,
@@ -989,6 +1081,8 @@ class FocusPill extends StatelessWidget {
           const SizedBox(width: 5),
           Text(
             'В работе',
+            maxLines: 1,
+            softWrap: false,
             style: AppText.chip.copyWith(color: AppColors.onInk),
           ),
         ],

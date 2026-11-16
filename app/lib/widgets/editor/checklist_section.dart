@@ -555,9 +555,9 @@ class _ChecklistSectionState extends State<ChecklistSection> {
       key: const ValueKey<String>('checklist-add'),
       borderRadius: BorderRadius.circular(Radii.row),
       onTap: _addItem,
-      child: const SizedBox(
-        height: Targets.minimum,
-        child: Row(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: Targets.minimum),
+        child: const Row(
           children: <Widget>[
             SizedBox(
               width: Targets.minimum,

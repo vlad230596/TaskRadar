@@ -12,6 +12,7 @@ import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/glance.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mode_title.dart';
 import '../widgets/mutation_feedback.dart';
@@ -60,7 +61,8 @@ class WorkScreen extends ConsumerWidget {
       AsyncError(:final error) => _Failed(error: error),
       _ => const _Filler(
         title: 'Загружаем набор…',
-        body: 'Набор живёт на сервере — его собирают за столом, а '
+        body:
+            'Набор живёт на сервере — его собирают за столом, а '
             'отрабатывают отсюда.',
       ),
     };
@@ -101,23 +103,41 @@ class WorkHeader extends ConsumerWidget {
         children: <Widget>[
           // Название и точки набора делят то, что осталось от кнопок справа;
           // не влезает — сжимается название, а не переносится посреди слова.
+          // Название берёт свою ширину первым, точки — то, что осталось:
+          // поровну они делили место, и на узком телефоне с крупным шрифтом
+          // название сжималось до мелкого шрифта ради одной точки.
           Expanded(
-            child: Row(
-              children: <Widget>[
-                Flexible(child: ModeTitle(AppMode.work.title)),
-                const SizedBox(width: 12),
-                // Пустой набор не рисует ряд пустых слотов: точки описывают
-                // набор, а его пока нет, и об этом говорит само тело экрана.
-                if (tasks.isNotEmpty)
-                  FocusSlots(
-                    taken: tasks.length,
-                    current: tasks.indexWhere(
-                      (task) => task.id == _headOf(tasks).id,
-                    ),
-                    size: wide ? 12 : 11,
-                    gap: wide ? 7 : 6,
-                  ),
-              ],
+            child: LayoutBuilder(
+              builder: (context, box) {
+                final title = measureTextWidth(
+                  context,
+                  AppMode.work.title,
+                  AppText.mode,
+                );
+                final room = box.maxWidth - title - 12;
+                return Row(
+                  children: <Widget>[
+                    Flexible(child: ModeTitle(AppMode.work.title)),
+                    // Пустой набор не рисует ряд пустых слотов: точки
+                    // описывают набор, а его пока нет, и об этом говорит само
+                    // тело экрана.
+                    if (tasks.isNotEmpty && room > 0) ...<Widget>[
+                      const SizedBox(width: 12),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: room),
+                        child: FocusSlots(
+                          taken: tasks.length,
+                          current: tasks.indexWhere(
+                            (task) => task.id == _headOf(tasks).id,
+                          ),
+                          size: wide ? 12 : 11,
+                          gap: wide ? 7 : 6,
+                        ),
+                      ),
+                    ],
+                  ],
+                );
+              },
             ),
           ),
           _PickButton(empty: tasks.isEmpty),
@@ -148,7 +168,9 @@ class _PickButton extends StatelessWidget {
           backgroundColor: Colors.transparent,
           side: const BorderSide(color: AppColors.lineStrong),
           padding: EdgeInsets.symmetric(horizontal: wide ? 18 : 14),
-          textStyle: wide ? AppText.action : AppText.chip.copyWith(fontSize: 14),
+          textStyle: wide
+              ? AppText.action
+              : AppText.chip.copyWith(fontSize: 14),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(wide ? Radii.card : 18),
           ),
@@ -193,42 +215,75 @@ class FocusSlots extends StatelessWidget {
   Widget build(BuildContext context) {
     // Набор из шести (его можно собрать curl-ом — предела на сервере нет)
     // рисует шесть точек, а не пять: слоты описывают набор, а не наоборот.
-    final total = showFree ? (taken > kFocusSlots ? taken : kFocusSlots) : taken;
+    final total = showFree
+        ? (taken > kFocusSlots ? taken : kFocusSlots)
+        : taken;
+
+    final more = AppText.chip.copyWith(color: AppColors.muted);
 
     return Semantics(
       label: current == null
           ? 'В наборе $taken из $kFocusSlots'
           : 'Задача ${current! + 1} из $taken',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (var i = 0; i < total; i++)
-            Padding(
-              padding: EdgeInsets.only(right: i == total - 1 ? 0 : gap),
-              child: Container(
-                width: size,
-                height: size,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: switch ((i < taken, i == current, current == null)) {
-                    // Занятый слот на экране сбора.
-                    (true, _, true) => AppColors.ink,
-                    // Та самая задача — и остальные задачи набора.
-                    (_, true, false) => AppColors.ink,
-                    (true, false, false) => AppColors.lineStrong,
-                    // Свободный слот.
-                    _ => Colors.transparent,
-                  },
-                  border: i < taken
-                      ? null
-                      : Border.all(color: AppColors.lineStrong, width: 2),
+      // Сколько влезает, столько и точек, остальное — «+N». Предела на сервере
+      // нет, и набор из шестнадцати рисовал шестнадцать точек поверх кнопки
+      // «Набор» и за край экрана.
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final fit = fitDots(
+            count: total,
+            cap: total,
+            pitch: size + gap,
+            // The last dot has no gap after it.
+            width: constraints.maxWidth + gap,
+            moreWidth: measureTextWidth(context, '+$total', more) + gap,
+          );
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (var i = 0; i < fit.shown; i++)
+                Padding(
+                  padding: EdgeInsets.only(
+                    right: i == fit.shown - 1 && !fit.more ? 0 : gap,
+                  ),
+                  child: _slot(i),
                 ),
-              ),
-            ),
-        ],
+              if (fit.more)
+                Flexible(
+                  child: Text(
+                    '+${total - fit.shown}',
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.fade,
+                    style: more,
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
+
+  Widget _slot(int i) => Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: switch ((i < taken, i == current, current == null)) {
+        // Занятый слот на экране сбора.
+        (true, _, true) => AppColors.ink,
+        // Та самая задача — и остальные задачи набора.
+        (_, true, false) => AppColors.ink,
+        (true, false, false) => AppColors.lineStrong,
+        // Свободный слот.
+        _ => Colors.transparent,
+      },
+      border: i < taken
+          ? null
+          : Border.all(color: AppColors.lineStrong, width: 2),
+    ),
+  );
 }
 
 /// Набор, который есть: одна задача крупно и остальные следом.
@@ -484,7 +539,9 @@ class _SecondaryButton extends StatelessWidget {
         side: const BorderSide(color: AppColors.line),
         minimumSize: Size(0, wide ? 76 : 52),
         padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 12),
-        textStyle: wide ? AppText.action.copyWith(fontSize: 16) : _secondaryLabel,
+        textStyle: wide
+            ? AppText.action.copyWith(fontSize: 16)
+            : _secondaryLabel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(wide ? Radii.large : 18),
         ),
@@ -560,7 +617,9 @@ class _NextRow extends ConsumerWidget {
     return Container(
       decoration: BoxDecoration(
         color: blocked ? AppColors.waitingFill : AppColors.card,
-        border: Border.all(color: blocked ? AppColors.waitingLine : AppColors.line),
+        border: Border.all(
+          color: blocked ? AppColors.waitingLine : AppColors.line,
+        ),
         borderRadius: BorderRadius.circular(wide ? Radii.panel : 18),
       ),
       padding: EdgeInsets.all(wide ? 4 : 0),
@@ -568,7 +627,9 @@ class _NextRow extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Tooltip(
-            message: blocked ? 'Блокер — отметить сделанной' : 'Отметить сделанной',
+            message: blocked
+                ? 'Блокер — отметить сделанной'
+                : 'Отметить сделанной',
             child: InkWell(
               onTap: () => unawaited(
                 runMutation(
@@ -713,11 +774,7 @@ Future<void> openPickScreen(BuildContext context) {
 
 void _open(BuildContext context, FocusTask task) {
   unawaited(
-    AppRoutes.openTask(
-      context,
-      projectId: task.projectId,
-      taskId: task.id,
-    ),
+    AppRoutes.openTask(context, projectId: task.projectId, taskId: task.id),
   );
 }
 

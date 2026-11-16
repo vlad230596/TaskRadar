@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -349,7 +350,13 @@ class _ViewSwitch extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 10, Insets.gutter, 0),
       child: Container(
-        height: 36,
+        // 36 as drawn in the reference, or taller when the label is: at a
+        // large system font "Задачи · 3/12" no longer fits a 30 px segment and
+        // was cut through the middle.
+        height: math.max(
+          36,
+          measureText(context, 'Ag', _Segment.style).height + 14,
+        ),
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
           color: AppColors.lineFaint,
@@ -386,6 +393,8 @@ class _Segment extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
 
+  static final TextStyle style = AppText.caption.copyWith(fontSize: 13);
+
   @override
   Widget build(BuildContext context) {
     return Expanded(
@@ -403,8 +412,7 @@ class _Segment extends StatelessWidget {
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: AppText.caption.copyWith(
-                  fontSize: 13,
+                style: style.copyWith(
                   color: selected ? AppColors.ink : AppColors.muted,
                 ),
               ),

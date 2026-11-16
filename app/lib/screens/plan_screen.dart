@@ -17,6 +17,7 @@ import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/fit_lines_text.dart';
 import '../widgets/glance.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mode_title.dart';
@@ -179,8 +180,8 @@ class _ScopePill extends ConsumerWidget {
           PopupMenuItem<String>(value: scope.id, child: Text(scope.name)),
       ],
       child: Container(
-        height: 30,
-        padding: const EdgeInsets.fromLTRB(12, 0, 10, 0),
+        constraints: const BoxConstraints(minHeight: 30),
+        padding: const EdgeInsets.fromLTRB(12, 3, 10, 3),
         decoration: BoxDecoration(
           color: AppColors.card,
           border: Border.all(color: AppColors.line),
@@ -328,22 +329,31 @@ class _Board extends ConsumerWidget {
     Widget grid(List<BoardProject> rows, {required bool withSandbox}) =>
         SliverPadding(
           padding: const EdgeInsets.symmetric(horizontal: Insets.gutter),
-          sliver: SliverGrid.count(
-            crossAxisCount: isWideLayout(context) ? 4 : 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            // 168 px tall at 179 px wide on a 390 px phone, which is what the
-            // reference specifies as `grid-auto-rows: 168px`.
-            childAspectRatio: 179 / 168,
-            children: <Widget>[
-              if (withSandbox) const _SandboxTile(),
-              for (final entry in rows)
-                _ProjectTile(
-                  key: ValueKey<String>(entry.project.id),
-                  entry: entry,
-                  badgeColor: badgeColours[entry.project.name],
+          sliver: SliverLayoutBuilder(
+            builder: (context, constraints) {
+              final shape = _TileGridShape.of(
+                context,
+                width: constraints.crossAxisExtent,
+                columns: isWideLayout(context) ? 4 : 2,
+              );
+              return SliverGrid(
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: shape.columns,
+                  mainAxisSpacing: _TileGridShape.spacing,
+                  crossAxisSpacing: _TileGridShape.spacing,
+                  mainAxisExtent: shape.extent,
                 ),
-            ],
+                delegate: SliverChildListDelegate(<Widget>[
+                  if (withSandbox) const _SandboxTile(),
+                  for (final entry in rows)
+                    _ProjectTile(
+                      key: ValueKey<String>(entry.project.id),
+                      entry: entry,
+                      badgeColor: badgeColours[entry.project.name],
+                    ),
+                ]),
+              );
+            },
           ),
         );
 
@@ -477,6 +487,77 @@ class _ScopeHeading extends StatelessWidget {
   }
 }
 
+/// How many tiles a row of the grid takes and how tall each one is.
+///
+/// ## Why not a fixed aspect ratio any more
+///
+/// The reference's `grid-auto-rows: 168px` at 179 px wide is a 179 / 168 tile
+/// at the reference font size. The tile's contents, though, are text: at a
+/// system font of 130 % the badge row, the name, two lines of the task and the
+/// dots no longer fit in 168 px, and the fixed ratio left the task line to be
+/// clipped through the middle and the dots to be drawn over the age. So the
+/// ratio is now the *least* height, and the tile grows by exactly what its text
+/// needs at this text scale.
+///
+/// Likewise the column count is a wish: two tiles to a row unless the badge
+/// row -- badge, note count, task count -- no longer fits in half the width,
+/// which happens on a 320-360 dp phone with a large font. One wide tile reads
+/// better there than two whose numbers run into each other.
+class _TileGridShape {
+  const _TileGridShape({required this.columns, required this.extent});
+
+  static const double spacing = 12;
+
+  final int columns;
+  final double extent;
+
+  static _TileGridShape of(
+    BuildContext context, {
+    required double width,
+    required int columns,
+  }) {
+    final chip = measureText(context, '99', AppText.chip);
+    final number = measureText(context, '88', AppText.number);
+    final minWidth =
+        2 * Insets.card + 40 + 8 + 14 + 3 + chip.width + 8 + number.width + 4;
+
+    var count = columns;
+    double tileWidth() => (width - spacing * (count - 1)) / count;
+    while (count > 1 && tileWidth() < minWidth) {
+      count--;
+    }
+
+    final name = measureText(context, 'Ag', AppText.action).height;
+    final hint = measureText(
+      context,
+      'Ag',
+      AppText.hint.copyWith(fontSize: 12.5),
+    ).height;
+    final footer = measureText(
+      context,
+      'Ag',
+      AppText.caption.copyWith(fontSize: 11.5),
+    ).height;
+    final needed =
+        2 * Insets.card +
+        (number.height > 40 ? number.height : 40) +
+        10 +
+        name +
+        6 +
+        2 * hint +
+        (footer > 8 ? footer : 8) +
+        2;
+
+    final reference = tileWidth() * 168 / 179;
+    // A single column is a wide card, not a 360 px square.
+    final least = count == 1 ? 0.0 : reference;
+    return _TileGridShape(
+      columns: count,
+      extent: needed > least ? needed : least,
+    );
+  }
+}
+
 /// "В работе", with a dot per task in the set.
 ///
 /// Точки — из `design/reference/Main.html`: девять пикселей янтаря на чернилах,
@@ -497,7 +578,9 @@ class _FocusBar extends ConsumerWidget {
     final taken = ref.watch(focusedTaskIdsProvider).length;
     // "пусто" only when the server (or its local copy) said so; a set that
     // never loaded is not an empty one.
-    final unknown = ref.watch(focusSetProvider.select((set) => !set.hasValue && set.hasError));
+    final unknown = ref.watch(
+      focusSetProvider.select((set) => !set.hasValue && set.hasError),
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 0, Insets.gutter, 10),
@@ -509,14 +592,16 @@ class _FocusBar extends ConsumerWidget {
               ref.read(shellModeProvider.notifier).select(AppMode.work),
           borderRadius: BorderRadius.circular(Radii.row),
           child: Container(
-            height: 52,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            constraints: const BoxConstraints(minHeight: 52),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             child: Row(
               children: <Widget>[
                 const Icon(Icons.adjust, size: 20, color: AppColors.onInk),
                 const SizedBox(width: 10),
                 Text(
                   'В работе',
+                  maxLines: 1,
+                  softWrap: false,
                   style: AppText.action.copyWith(color: AppColors.onInk),
                 ),
                 const SizedBox(width: 10),
@@ -557,24 +642,52 @@ class _FocusDots extends StatelessWidget {
 
   final int taken;
 
+  static const double _dot = 9;
+  static const double _gap = 5;
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
-        for (var i = 0; i < taken; i++)
-          Padding(
-            padding: const EdgeInsets.only(right: 5),
-            child: Container(
-              width: 9,
-              height: 9,
-              decoration: const BoxDecoration(
-                color: AppColors.waitingDotOnInk,
-                shape: BoxShape.circle,
+    // As many dots as the strip has room for, then "+N" for the rest. The set
+    // has no upper limit on the server, and fifteen dots ran past the chevron
+    // and off the strip's rounded end on a 412 dp phone.
+    final style = AppText.chip.copyWith(color: AppColors.waitingDotOnInk);
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final fit = fitDots(
+          count: taken,
+          cap: taken,
+          pitch: _dot + _gap,
+          width: constraints.maxWidth,
+          moreWidth: measureTextWidth(context, '+$taken', style) + _gap,
+        );
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (var i = 0; i < fit.shown; i++)
+              Padding(
+                padding: const EdgeInsets.only(right: _gap),
+                child: Container(
+                  width: _dot,
+                  height: _dot,
+                  decoration: const BoxDecoration(
+                    color: AppColors.waitingDotOnInk,
+                    shape: BoxShape.circle,
+                  ),
+                ),
               ),
-            ),
-          ),
-      ],
+            if (fit.more)
+              Flexible(
+                child: Text(
+                  '+${taken - fit.shown}',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.fade,
+                  style: style,
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -604,8 +717,10 @@ class _SandboxRow extends ConsumerWidget {
           onTap: () => AppRoutes.openInbox(context),
           borderRadius: BorderRadius.circular(Radii.row),
           child: Container(
-            height: 60,
-            padding: const EdgeInsets.symmetric(horizontal: 14),
+            // At least 60: two lines of text at a large system font are
+            // taller than that, and a fixed 60 drew them past the border.
+            constraints: const BoxConstraints(minHeight: 60),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               border: Border.all(color: AppColors.line),
               borderRadius: BorderRadius.circular(Radii.row),
@@ -711,13 +826,11 @@ class _SandboxTile extends ConsumerWidget {
               if (newest != null && newest.isNotEmpty) ...<Widget>[
                 const SizedBox(height: 6),
                 Expanded(
-                  child: Text(
+                  // Two, not three: a 168 px tile holds a 40 px badge, a
+                  // name, a footer and its padding, and the third line of
+                  // preview is the one that overruns them.
+                  child: FitLinesText(
                     newest.first.text,
-                    // Two, not three: a 168 px tile holds a 40 px badge, a
-                    // name, a footer and its padding, and the third line of
-                    // preview is the one that overruns them.
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                     style: AppText.hint.copyWith(
                       fontSize: 12.5,
                       color: AppColors.voiceMuted,
@@ -918,10 +1031,8 @@ class _ProjectTile extends StatelessWidget {
               ),
               const SizedBox(height: 6),
               Expanded(
-                child: Text(
+                child: FitLinesText(
                   _currentLine(summary),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
                   style: AppText.hint.copyWith(fontSize: 12.5),
                 ),
               ),

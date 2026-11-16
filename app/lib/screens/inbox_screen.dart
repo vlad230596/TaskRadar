@@ -888,9 +888,13 @@ class _ClosedLine extends StatelessWidget {
                             ),
                             SizedBox(width: 4),
                           ],
-                          Text(
-                            '${formatDays(age)} в песочнице',
-                            style: AppText.caption,
+                          Flexible(
+                            child: Text(
+                              '${formatDays(age)} в песочнице',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.caption,
+                            ),
                           ),
                         ],
                       ),

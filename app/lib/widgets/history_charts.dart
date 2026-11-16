@@ -7,6 +7,7 @@ import '../models/history_snapshot.dart';
 import '../models/history_task_event.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import 'glance.dart';
 
 /// Графика режима «История»: столбики недели, полоски долей, подписи разделов
 /// (F13).
@@ -259,14 +260,36 @@ class ClosedByDayBars extends StatelessWidget {
       if (day.count > maxCount) maxCount = day.count;
     }
 
-    final scale = maxCount == 0
-        ? unit
-        : math.min(unit, (areaHeight - _zeroHeight) / maxCount);
-
     final today = _key((now ?? DateTime.now()).toLocal());
     final dense = days.length > _labelEvery;
     final columnGap = dense ? 2.0 : gap;
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // The bars give way to the labels, not the other way round: at a large
+        // system font the labels are taller than the box was drawn for, and
+        // a fixed [areaHeight] above them ran the column out of the card.
+        final label = measureText(context, 'пн', labelStyle(false));
+        final room = constraints.maxHeight - 6 - label.height;
+        final area = constraints.maxHeight.isFinite
+            ? math.max(_zeroHeight + 6, math.min(areaHeight, room))
+            : areaHeight;
+        final scale = maxCount == 0
+            ? unit
+            : math.min(unit, (area - _zeroHeight) / maxCount);
+        return _bars(scale, today, dense, columnGap);
+      },
+    );
+  }
+
+  /// The label's style; today's is bolder and indigo.
+  TextStyle labelStyle(bool isToday) => AppText.caption.copyWith(
+    fontSize: labelSize,
+    fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
+    color: isToday ? AppColors.indigoInk : AppColors.muted,
+  );
+
+  Widget _bars(double scale, String today, bool dense, double columnGap) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: <Widget>[
@@ -280,7 +303,7 @@ class ClosedByDayBars extends StatelessWidget {
                   ? _zeroHeight
                   : math.max(6, days[i].count * scale),
               radius: radius,
-              labelSize: labelSize,
+              labelStyle: labelStyle(days[i].date == today),
               // Плотная шкала подписывает каждый седьмой столбик, считая от
               // сегодняшнего: так крайняя правая подпись всегда есть, а
               // расстояние между ними — неделя.
@@ -318,7 +341,7 @@ class _Column extends StatelessWidget {
     required this.isToday,
     required this.height,
     required this.radius,
-    required this.labelSize,
+    required this.labelStyle,
     required this.label,
   });
 
@@ -326,7 +349,7 @@ class _Column extends StatelessWidget {
   final bool isToday;
   final double height;
   final double radius;
-  final double labelSize;
+  final TextStyle labelStyle;
   final String? label;
 
   @override
@@ -354,15 +377,16 @@ class _Column extends StatelessWidget {
             ),
           ),
           SizedBox(height: label == null ? 0 : 6),
-          Text(
-            label ?? '',
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.clip,
-            style: AppText.caption.copyWith(
-              fontSize: labelSize,
-              fontWeight: isToday ? FontWeight.w700 : FontWeight.w600,
-              color: isToday ? AppColors.indigoInk : AppColors.muted,
+          // Scaled down rather than clipped when the column is narrower than
+          // "пн": a 320 dp phone at a large font left 10 px a column, and the
+          // labels were cut to their first letter.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label ?? '',
+              maxLines: 1,
+              softWrap: false,
+              style: labelStyle,
             ),
           ),
         ],
@@ -382,14 +406,43 @@ class HistoryHeading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: <Widget>[
-        Text(label.toUpperCase(), style: AppText.sectionLabel),
-        const SizedBox(width: 8),
-        if (trailing == null)
-          const Expanded(child: ColoredBox(color: AppColors.line, child: SizedBox(height: 1)))
-        else ...<Widget>[const Spacer(), trailing!],
-      ],
+    // The label ellipsizes rather than running off the card at a large
+    // system font; otherwise it keeps its natural width, and the line (or the
+    // legend, pushed to the end) takes the rest, as drawn.
+    final text = Text(
+      label.toUpperCase(),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: AppText.sectionLabel,
+    );
+    final legend = trailing;
+    if (legend != null) {
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          Flexible(child: text),
+          Padding(padding: const EdgeInsets.only(left: 8), child: legend),
+        ],
+      );
+    }
+    return LayoutBuilder(
+      builder: (context, box) => Row(
+        children: <Widget>[
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: box.maxWidth > 32 ? box.maxWidth - 32 : 0,
+            ),
+            child: text,
+          ),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: ColoredBox(
+              color: AppColors.line,
+              child: SizedBox(height: 1),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

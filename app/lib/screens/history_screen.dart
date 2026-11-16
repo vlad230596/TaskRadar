@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +14,7 @@ import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/glance.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mode_title.dart';
@@ -117,22 +120,50 @@ class HistoryHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final offline = ref.watch(historyShowsOutboxProvider);
 
+    final wide = isWideLayout(context);
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
-      child: Row(
-        children: <Widget>[
-          Expanded(child: ModeTitle(AppMode.history.title)),
-          const _OfflinePill(),
-          const SizedBox(width: 8),
-          // The range belongs to the charts; the outbox is one week anyway.
-          if (offline)
-            const SizedBox.shrink()
-          else if (isWideLayout(context))
-            const _RangeSegments()
-          else
-            const _RangePill(),
-          const ShellOverflowButton(),
-        ],
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // "Офлайн" loses its word, keeping the icon and the count, when the
+          // title would otherwise be left less than ~70 px: on a 320 dp phone
+          // at a large system font the two pills and the menu were wider
+          // than the header and ran off its end.
+          final pill = AppText.action.copyWith(fontSize: 14);
+          final needed =
+              (10 +
+                  17 +
+                  6 +
+                  measureTextWidth(context, 'Офлайн · 99', pill) +
+                  12) +
+              8 +
+              (offline || wide
+                  ? 0
+                  : 14 +
+                        measureTextWidth(context, '30 дней', pill) +
+                        6 +
+                        15 +
+                        10) +
+              48;
+          final compact = !wide && box.maxWidth - needed < 70;
+
+          return Row(
+            children: <Widget>[
+              Expanded(child: ModeTitle(AppMode.history.title)),
+              _OfflinePill(compact: compact),
+              const SizedBox(width: 8),
+              // The range belongs to the charts; the outbox is one week anyway.
+              if (offline)
+                const SizedBox.shrink()
+              else if (wide)
+                const _RangeSegments()
+              else
+                const _RangePill(),
+              const ShellOverflowButton(),
+            ],
+          );
+        },
       ),
     );
   }
@@ -145,7 +176,10 @@ class HistoryHeader extends ConsumerWidget {
 /// Otherwise a quiet outline -- amber only when something waits for a
 /// decision, which is the one state worth pulling the eye.
 class _OfflinePill extends ConsumerWidget {
-  const _OfflinePill();
+  const _OfflinePill({this.compact = false});
+
+  /// The icon and the count without the word, for a header with no room.
+  final bool compact;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -161,6 +195,7 @@ class _OfflinePill extends ConsumerWidget {
     return Semantics(
       button: true,
       selected: on,
+      label: compact ? 'Офлайн' : null,
       child: Material(
         color: on
             ? AppColors.ink
@@ -174,8 +209,8 @@ class _OfflinePill extends ConsumerWidget {
           customBorder: const StadiumBorder(),
           onTap: () => ref.read(historyShowsOutboxProvider.notifier).show(!on),
           child: Container(
-            height: 36,
-            padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+            constraints: const BoxConstraints(minHeight: 36),
+            padding: EdgeInsets.fromLTRB(10, 4, compact ? 10 : 12, 4),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
@@ -186,11 +221,19 @@ class _OfflinePill extends ConsumerWidget {
                   size: 17,
                   color: ink,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  total == 0 ? 'Офлайн' : 'Офлайн · $total',
-                  style: AppText.action.copyWith(fontSize: 14, color: ink),
-                ),
+                if (!compact || total > 0) ...<Widget>[
+                  const SizedBox(width: 6),
+                  Text(
+                    compact
+                        ? '$total'
+                        : total == 0
+                        ? 'Офлайн'
+                        : 'Офлайн · $total',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: AppText.action.copyWith(fontSize: 14, color: ink),
+                  ),
+                ],
               ],
             ),
           ),
@@ -282,60 +325,91 @@ class _ClosedCard extends StatelessWidget {
 
   final HistorySnapshot data;
 
+  static final TextStyle _numberStyle = AppText.number.copyWith(
+    fontSize: 44,
+    height: 1,
+    color: AppColors.done,
+  );
+
   @override
   Widget build(BuildContext context) {
+    final Widget summary;
+    if (data.closedTotal == 0) {
+      // Ноль не рисуется числом: см. заголовок файла.
+      summary = Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          'Ни одной закрытой задачи ${data.range.caption}.',
+          style: AppText.body,
+        ),
+      );
+    } else {
+      summary = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text('${data.closedTotal}', style: _numberStyle),
+          const SizedBox(height: 6),
+          Text(
+            'сделано',
+            style: AppText.caption.copyWith(
+              fontSize: 13,
+              color: AppColors.inkSoft,
+            ),
+          ),
+          Text(
+            data.range.caption,
+            style: AppText.caption.copyWith(fontWeight: FontWeight.w500),
+          ),
+        ],
+      );
+    }
+
     return _Card(
       margin: const EdgeInsets.fromLTRB(Insets.gutter, 4, Insets.gutter, 0),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: <Widget>[
-          if (data.closedTotal == 0)
-            // Ноль не рисуется числом: см. заголовок файла.
-            Flexible(
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  'Ни одной закрытой задачи ${data.range.caption}.',
-                  style: AppText.body,
-                ),
-              ),
-            )
-          else
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  '${data.closedTotal}',
-                  style: AppText.number.copyWith(
-                    fontSize: 44,
-                    height: 1,
-                    color: AppColors.done,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'сделано',
-                  style: AppText.caption.copyWith(
-                    fontSize: 13,
-                    color: AppColors.inkSoft,
-                  ),
-                ),
-                Text(
-                  data.range.caption,
-                  style: AppText.caption.copyWith(fontWeight: FontWeight.w500),
-                ),
-              ],
+      child: LayoutBuilder(
+        builder: (context, box) {
+          // The box grows with the day labels (see [ClosedByDayBars]), and the
+          // bars go under the number instead of beside it when beside it
+          // they would be narrower than their labels: "185" at 44 px times a
+          // large system font leaves a 320 dp phone 70 px for seven days.
+          final label = measureText(
+            context,
+            'пн',
+            AppText.caption.copyWith(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
             ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: SizedBox(
-              height: _kBarsBox,
-              child: ClosedByDayBars(days: data.closedByDay),
-            ),
-          ),
-        ],
+          );
+          final barsHeight = math.max(_kBarsBox, 73 + 6 + label.height);
+          final bars = SizedBox(
+            height: barsHeight,
+            child: ClosedByDayBars(days: data.closedByDay),
+          );
+          final numberWidth = data.closedTotal == 0
+              ? 0.0
+              : measureText(context, '${data.closedTotal}', _numberStyle).width;
+          final days = data.closedByDay.length.clamp(1, 7);
+          final stacked =
+              data.closedTotal != 0 &&
+              box.maxWidth - numberWidth - 16 < days * (label.width + 6);
+
+          if (stacked) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[summary, const SizedBox(height: 12), bars],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: <Widget>[
+              if (data.closedTotal == 0) Flexible(child: summary) else summary,
+              const SizedBox(width: 16),
+              Expanded(child: bars),
+            ],
+          );
+        },
       ),
     );
   }
@@ -435,23 +509,26 @@ class _ProjectRow extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
+        // The counts go under the name when the two do not fit on one line
+        // -- a long project name, four-digit counts, a large system font --
+        // rather than off the card's edge: a number is never the thing that
+        // gives way.
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.end,
+          spacing: 10,
+          runSpacing: 2,
           children: <Widget>[
-            Expanded(
-              child: Text(
-                project.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.action,
-              ),
+            Text(
+              project.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.action,
             ),
-            const SizedBox(width: 10),
             Text(
               _movementLine(project),
               maxLines: 1,
-              softWrap: false,
+              overflow: TextOverflow.ellipsis,
               style: AppText.caption.copyWith(fontSize: 12.5),
             ),
           ],
@@ -772,41 +849,50 @@ class _WideStaleRow extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  task.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.taskTitle,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                task.projectName,
-                maxLines: 1,
-                softWrap: false,
-                style: AppText.caption.copyWith(fontSize: 12.5),
-              ),
-              const SizedBox(width: 12),
-              SizedBox(
-                width: 44,
-                child: Text(
-                  formatSpanShort(task.ageMs),
-                  textAlign: TextAlign.right,
-                  maxLines: 1,
-                  softWrap: false,
-                  style: AppText.chip.copyWith(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: staleAgeColour(task, onWide: true),
+          // The project's name gets at most a third of the row and the age
+          // at least its 44 px column, growing with the font: a long project
+          // name used to take whatever it wanted and the age, boxed in 44 px,
+          // was cut to "40".
+          LayoutBuilder(
+            builder: (context, box) => Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    task.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.taskTitle,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: box.maxWidth / 3),
+                  child: Text(
+                    task.projectName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.caption.copyWith(fontSize: 12.5),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 44),
+                  child: Text(
+                    formatSpanShort(task.ageMs),
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: AppText.chip.copyWith(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: staleAgeColour(task, onWide: true),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(height: 8),
           StaleSpanBar(task: task, scaleMs: scaleMs, height: 10),
@@ -962,8 +1048,8 @@ class _RangePill extends ConsumerWidget {
           PopupMenuItem<HistoryRange>(value: value, child: Text(value.label)),
       ],
       child: Container(
-        height: 36,
-        padding: const EdgeInsets.fromLTRB(14, 0, 10, 0),
+        constraints: const BoxConstraints(minHeight: 36),
+        padding: const EdgeInsets.fromLTRB(14, 4, 10, 4),
         decoration: BoxDecoration(
           color: AppColors.card,
           border: Border.all(color: AppColors.lineStrong),
@@ -972,11 +1058,15 @@ class _RangePill extends ConsumerWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Text(
-              range.label,
-              style: AppText.action.copyWith(
-                fontSize: 14,
-                color: AppColors.inkSoft,
+            Flexible(
+              child: Text(
+                range.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppText.action.copyWith(
+                  fontSize: 14,
+                  color: AppColors.inkSoft,
+                ),
               ),
             ),
             const SizedBox(width: 6),

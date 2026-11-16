@@ -189,11 +189,7 @@ class EditorSecondaryButton extends StatelessWidget {
             child: Icon(icon, size: 24),
           )
         : icon == null
-        ? OutlinedButton(
-            style: style,
-            onPressed: onPressed,
-            child: Text(label),
-          )
+        ? OutlinedButton(style: style, onPressed: onPressed, child: Text(label))
         : OutlinedButton.icon(
             style: style,
             onPressed: onPressed,
@@ -265,9 +261,11 @@ class EditorPill extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         customBorder: const StadiumBorder(),
-        child: SizedBox(
-          height: _height,
+        // At least [_height]: a label at a large system font is taller.
+        child: Container(
+          constraints: const BoxConstraints(minHeight: _height),
           width: label == null ? _height + 6 : null,
+          alignment: label == null ? Alignment.center : null,
           child: label == null
               ? Icon(icon, size: 17, color: ink)
               : Padding(
@@ -279,6 +277,8 @@ class EditorPill extends StatelessWidget {
                       const SizedBox(width: 5),
                       Text(
                         label,
+                        maxLines: 1,
+                        softWrap: false,
                         style: EditorText.chip.copyWith(
                           fontSize: 12.5,
                           color: ink,

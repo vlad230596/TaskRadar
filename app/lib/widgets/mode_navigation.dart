@@ -162,20 +162,30 @@ class _BarItem extends StatelessWidget {
           borderRadius: BorderRadius.circular(Radii.card),
           child: SizedBox(
             height: Targets.navItem,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                OutboxBadge(
-                  enabled: outbox,
-                  child: Icon(icon, size: voice ? 22 : 21, color: foreground),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  style: (active ? AppText.navActive : AppText.navIdle)
-                      .copyWith(color: foreground),
-                ),
-              ],
+            // Scaled down rather than wrapped or cut: the bar's height is
+            // fixed, a quarter of a 320 dp phone is 70 px, and "История" at a
+            // large system font is wider than that. A label that shrinks a
+            // little is still the label; one that wraps pushes the icon out of
+            // the item.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  OutboxBadge(
+                    enabled: outbox,
+                    child: Icon(icon, size: voice ? 22 : 21, color: foreground),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: (active ? AppText.navActive : AppText.navIdle)
+                        .copyWith(color: foreground),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -296,20 +306,26 @@ class _RailItem extends StatelessWidget {
           child: SizedBox(
             width: Targets.railItem,
             height: Targets.railItem,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: <Widget>[
-                OutboxBadge(
-                  enabled: outbox,
-                  child: Icon(icon, size: 22, color: foreground),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  style: (active ? AppText.railActive : AppText.railIdle)
-                      .copyWith(color: foreground),
-                ),
-              ],
+            // See the bottom bar's item: scaled to the square, never wrapped.
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  OutboxBadge(
+                    enabled: outbox,
+                    child: Icon(icon, size: 22, color: foreground),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    label,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: (active ? AppText.railActive : AppText.railIdle)
+                        .copyWith(color: foreground),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

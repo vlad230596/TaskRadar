@@ -140,8 +140,10 @@ class _AttributeChipState extends State<AttributeChip>
           ),
         );
       },
-      child: SizedBox(
-        height: AttributeChip.height,
+      // At least [AttributeChip.height]: at a large system font the label is
+      // taller, and a fixed height cut it through the middle.
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: AttributeChip.height),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -169,10 +171,7 @@ class _AttributeChipState extends State<AttributeChip>
                       ),
                       if (widget.note case final note?) ...<Widget>[
                         const SizedBox(width: 6),
-                        Text(
-                          note,
-                          style: EditorText.note.copyWith(color: ink),
-                        ),
+                        Text(note, style: EditorText.note.copyWith(color: ink)),
                       ],
                       if (widget.aiMark) ...<Widget>[
                         const SizedBox(width: 5),
