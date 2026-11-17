@@ -121,6 +121,15 @@ jobs:
 
           test -n "$TASKRADAR_API_URL"
 
+      # Pin the JDK instead of taking the runner's default. ubuntu-latest moved
+      # to 26.04 in Nov 2026, whose default JDK is 25, and Gradle 8.14 (the
+      # wrapper in app/android) fails on it with nothing but "25.0.5" -- the
+      # 0.21.0 APK build died that way. 17 matches the app's Java target.
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
         with:
           flutter-version: ${{ inputs.flutter_version }}
