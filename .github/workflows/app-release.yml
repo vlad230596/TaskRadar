@@ -18,9 +18,11 @@ name: Release TaskRadar native clients
 # existing release tag, so "which code is on the phone" has the same answer as
 # "which code is on the server".
 #
-# Separate from release.yml on purpose: the backend must be deployable without
-# waiting for a native client build, and a native client build must not be able
-# to block a server fix.
+# Called by release.yml for every release, right after the tag is created, so
+# every release gets its APK and zip without a second command. It runs next to
+# the server half, not in front of it: deploy does not wait for it, so a native
+# client build still cannot block a server fix -- it only turns the release run
+# red. Dispatching it by hand stays possible, to rebuild a tag's clients.
 #
 # Signing: `app/android/app/build.gradle.kts` reads the release key from
 # `android/key.properties` or from TASKRADAR_ANDROID_* environment variables, and
@@ -30,6 +32,17 @@ name: Release TaskRadar native clients
 # can never be lost or replaced.
 
 on:
+  workflow_call:
+    inputs:
+      version:
+        description: Existing SemVer tag to build the clients from
+        required: true
+        type: string
+      flutter_version:
+        description: Exact Flutter version to build with (empty = latest stable)
+        required: false
+        type: string
+        default: '3.41.8'
   workflow_dispatch:
     inputs:
       version:
@@ -202,7 +215,7 @@ jobs:
               --clobber
           else
             # --verify-tag: refuse to invent a tag here. Tags are created only by
-            # the approved backend release workflow.
+            # the release workflow.
             gh release create "$VERSION" \
               "taskradar-$VERSION.apk" \
               "taskradar-$VERSION.apk.sha256" \

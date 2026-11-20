@@ -8,9 +8,10 @@ name: Release TaskRadar
 # about the shapes they exchange. Releasing them together makes that true by
 # construction, and makes a rollback one operation instead of two.
 #
-# The Android client is the opposite case and stays in app-release.yml: it is
-# sideloaded onto a phone, it can lag a release without anything breaking, and
-# an unsignable APK must never be able to block a backend fix.
+# The native clients (APK, Windows zip) are built by app-release.yml, which
+# this workflow calls as the job `native` once the tag exists. Deploy does not
+# wait for it: an unsignable APK must never be able to block a backend fix --
+# it turns the run red instead.
 
 on:
   workflow_dispatch:
@@ -139,6 +140,17 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git tag --annotate "$VERSION" "$RELEASE_SHA" --message "TaskRadar $VERSION"
           git push origin "refs/tags/$VERSION"
+
+  native:
+    needs: [prepare, tag]
+    uses: ./.github/workflows/app-release.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
 
   publish:
     needs: [prepare, tag]

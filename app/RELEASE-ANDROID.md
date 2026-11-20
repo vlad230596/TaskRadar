@@ -151,7 +151,7 @@ apksigner verify --print-certs build\app\outputs\flutter-apk\app-release.apk
 ## 3. Завести секреты в GitHub Actions
 
 Workflow `.github/workflows/app-release.yml` собирает release-APK и прикладывает
-его к GitHub Release. Ему нужны четыре секрета репозитория
+его к GitHub Release; вызывается из каждого релиза (`release.yml`, job `native`). Ему нужны четыре секрета репозитория
 (*Settings → Secrets and variables → Actions → New repository secret*):
 
 | Секрет | Что положить |
