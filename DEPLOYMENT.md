@@ -64,8 +64,9 @@ Postgres реально доступен и миграции применены)
 
 Настроено в GitHub: секреты `VPS_HOST`, `VPS_USER`, `VPS_SSH_PRIVATE_KEY`,
 `VPS_SSH_KNOWN_HOSTS`; переменные `VPS_PORT=22`,
-`PRODUCTION_URL=https://task-radar.duckdns.org:8443`; окружения `production` и
-`release-approval` (последнее — с владельцем как обязательным ревьюером).
+`PRODUCTION_URL=https://task-radar.duckdns.org:8443`; окружение `production`.
+Окружение `release-approval` (ручной аппрув) с 21.11.2026 workflow не
+использует.
 
 На сервере ключ CI лежит у `taskradar-deploy` с префиксом `restrict`. Ключ
 первичной настройки `taskradar-vds-setup` временно добавлен в `authorized_keys`
@@ -532,8 +533,9 @@ bcrypt-хеш). Новому пользователю сразу создаёт�
 SemVer-тега на `origin` и пишет в summary запуска. Явный `version` — только
 по прямому указанию владельца, и он обязан быть новее последнего тега. Правила
 для агентов — в `CLAUDE.md`.
-Шаги: полный прогон CI на конкретном коммите → ожидание в защищённом
-Environment `release-approval` → только после подтверждения создаётся
+Шаги: полный прогон CI на конкретном коммите → если хоть одна проверка
+упала, дальше ничего не идёт (ни тега, ни образов, ни деплоя); ручного
+аппрува нет — решение принимается запуском → job `tag` создаёт
 аннотированный тег → **параллельно** собираются и публикуются два образа
 (`publish` — бэкенд; `publish_web` — `flutter build web` внутрь nginx-образа),
 оба с attestation → вызов root-скрипта на сервере, который:
@@ -587,8 +589,7 @@ GitHub Environment `production` требует:
 | `VPS_PORT` (`22`) | variable |
 | `PRODUCTION_URL` | variable |
 
-Environment `release-approval` — с владельцем как обязательным ревьюером; тегов
-он не создаёт, теги создаёт job `approve` после подтверждения.
+Ручного аппрува нет: тег создаёт job `tag` сразу после зелёного `quality`.
 
 `latest` в проде не используется никогда: деплой принимает только digest.
 

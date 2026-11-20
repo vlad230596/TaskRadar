@@ -1,6 +1,6 @@
 name: Release TaskRadar
 
-# Manual, approved release of everything this origin serves: the API image and
+# Manual release of everything this origin serves: the API image and
 # the web client image, under one version and one deploy.
 #
 # The web client is here rather than in its own workflow because it is served by
@@ -111,14 +111,13 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.sha }}
 
-  approve:
+  tag:
     needs: [prepare, quality]
     runs-on: ubuntu-latest
-    # Protected Environment with the owner as required reviewer: the tag only
-    # comes into existence after a human says yes, so an accidental dispatch
-    # leaves no trace in the repository.
-    environment:
-      name: release-approval
+    # No human approval: starting the workflow is the decision. The gate is
+    # `quality` -- if any check fails on the commit being released, this job
+    # and everything after it are skipped, so a failed check leaves no tag,
+    # no image and no deploy.
     permissions:
       contents: write
     steps:
@@ -126,14 +125,14 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
-      - name: Create approved release tag
+      - name: Create release tag
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
           if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
-            echo "Tag $VERSION was created while approval was pending." >&2
+            echo "Tag $VERSION was created while the checks were running." >&2
             exit 65
           fi
           git config user.name github-actions[bot]
@@ -142,7 +141,7 @@ jobs:
           git push origin "refs/tags/$VERSION"
 
   publish:
-    needs: [prepare, approve]
+    needs: [prepare, tag]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -251,7 +250,7 @@ jobs:
           push-to-registry: true
 
   publish_web:
-    needs: [prepare, approve]
+    needs: [prepare, tag]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -378,7 +377,7 @@ jobs:
           printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/taskradar-production
           printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/taskradar-production ~/.ssh/known_hosts
-      - name: Deploy the approved image
+      - name: Deploy the released images
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # The registry token goes over stdin rather than in the command line:
