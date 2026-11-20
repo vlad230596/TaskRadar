@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_error_message.dart';
 import '../api/dictation_api.dart';
 import '../domain/ai_level.dart';
 import '../models/board_project.dart';
@@ -172,6 +173,13 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// rebuild cannot start a second save or a second recording.
   bool _leaving = false;
 
+  /// True from the moment "Готово" starts a save until it has either left or
+  /// failed. A save can take seconds -- with a bad signal the request waits
+  /// for its timeout before the task goes to the outbox -- and every extra
+  /// press in that time used to start one more save: the owner found four
+  /// copies of one dictated task.
+  bool _saving = false;
+
   /// True while the server's model is working on the words (F14). Shown as
   /// its own stage, and keeps "Готово" from saving twice.
   bool _tidying = false;
@@ -285,7 +293,7 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
 
   /// The one button. See the note on the class.
   Future<void> _done() async {
-    if (_leaving) return;
+    if (_leaving || _saving) return;
     final dictation = ref.read(voiceDictationProvider.notifier);
 
     if (ref.read(voiceDictationProvider) is DictationRecording) {
@@ -310,6 +318,16 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   }
 
   Future<void> _save() async {
+    if (_saving || _leaving) return;
+    setState(() => _saving = true);
+    try {
+      await _saveOnce();
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _saveOnce() async {
     final text = _text.text.trim();
     if (text.isEmpty) {
       // Nothing to save is not a failure worth a dialog: leaving is what the
@@ -358,37 +376,59 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
         final description = parsed ? _description.text.trim() : '';
         final remindDate = proposal is ParsedDictation ? _remindDate : null;
         final remindTime = remindDate == null ? null : _remindTime;
-        // Resolved before the await, for the reason `runMutation` gives.
-        final messenger = ScaffoldMessenger.of(context);
-        WriteOutcome? outcome;
-        final ok = await runMutation(
-          context,
-          () async => outcome = await _createTask(
-            projectId,
-            title.isEmpty ? text : title,
-            description: description.isEmpty ? null : description,
-            remindAt: remindDate,
-            remindTime: remindTime,
-            // Only when the proposal is what is being saved: after "Как
-            // надиктовано" the task is the raw words, and labelling the sample
-            // with them would score the model against an answer it never gave.
-            dictationParseId: proposal?.parseId,
-          ),
-          failure: 'Не удалось добавить задачу.',
+        // The screen goes at once and the write finishes behind it: the task
+        // is drawn in the project's list straight away, with the "not sent
+        // yet" mark while it is on its way, so there is nothing here worth
+        // waiting for -- and a screen that sat still for the five seconds a
+        // bad signal takes was pressed again and again.
+        final messenger = _messenger;
+        final container = ProviderScope.containerOf(context, listen: false);
+        final write = _createTask(
+          container,
+          projectId,
+          title.isEmpty ? text : title,
+          description: description.isEmpty ? null : description,
+          remindAt: remindDate,
+          remindTime: remindTime,
+          // Only when the proposal is what is being saved: after "Как
+          // надиктовано" the task is the raw words, and labelling the sample
+          // with them would score the model against an answer it never gave.
+          dictationParseId: proposal?.parseId,
         );
-        if (ok) {
+        await _leave(null);
+
+        void say(String message) {
+          if (!(messenger?.mounted ?? false)) return;
+          messenger!
+            ..clearSnackBars()
+            ..showSnackBar(SnackBar(content: Text(message)));
+        }
+
+        try {
+          final outcome = await write;
           // No network is not a failure any more: the task is on the phone
           // and in the project's list, marked as not sent yet.
-          final said = outcome == WriteOutcome.queued
-              ? 'Задача в «$name» сохранена на телефоне — уйдёт при связи.'
-              : remindDate == null
-              ? 'Задача добавлена в «$name».'
-              : 'Задача добавлена в «$name», напомню '
-                    '${_shortDate(remindDate, remindTime)}.';
-          messenger
-            ..clearSnackBars()
-            ..showSnackBar(SnackBar(content: Text(said)));
-          await _leave(null);
+          say(
+            outcome.isQueued
+                ? 'Задача в «$name» сохранена на телефоне — уйдёт при связи.'
+                : remindDate == null
+                ? 'Задача добавлена в «$name».'
+                : 'Задача добавлена в «$name», напомню '
+                      '${_shortDate(remindDate, remindTime)}.',
+          );
+        } catch (error) {
+          // The server said no. The screen is gone, so the words cannot stay
+          // on it for another try -- they go to the sandbox, the one place
+          // that always takes them, rather than nowhere.
+          try {
+            await container.read(captureQueueProvider.notifier).capture(text);
+            say(
+              'Не удалось добавить задачу в «$name». '
+              '${describeApiError(error)} Слова — в песочнице.',
+            );
+          } catch (_) {
+            say('Не удалось добавить задачу. ${describeApiError(error)}');
+          }
         }
     }
   }
@@ -640,7 +680,11 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   /// earlier, which used to answer every later "Готово" with that old "Нет
   /// связи" (see `ProjectTasks._mutate`) -- and with no network at all puts
   /// the task in the outbox: [WriteOutcome.queued].
-  Future<WriteOutcome> _createTask(
+  ///
+  /// Through the [container] rather than `ref`: the screen leaves before the
+  /// write ends, and a subscription of this widget's would end with it.
+  static Future<WriteOutcome> _createTask(
+    ProviderContainer container,
     String projectId,
     String title, {
     String? description,
@@ -649,9 +693,9 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
     String? dictationParseId,
   }) async {
     final provider = projectTasksProvider(projectId);
-    final keepAlive = ref.listenManual(provider, (_, _) {});
+    final keepAlive = container.listen(provider, (_, _) {});
     try {
-      return await ref
+      return await container
           .read(provider.notifier)
           .create(
             title,
@@ -1241,7 +1285,10 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
   Widget _buttons(DictationState state, {required bool compact}) {
     final failed = state is DictationFailed;
     final busy =
-        _tidying || state is DictationRecognising || state is DictationStarting;
+        _tidying ||
+        _saving ||
+        state is DictationRecognising ||
+        state is DictationStarting;
 
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 12, 20, compact ? 12 : 22),

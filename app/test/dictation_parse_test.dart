@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1109,6 +1110,73 @@ void main() {
         findsOneWidget,
       );
       expect(find.byType(DictationScreen), findsNothing);
+    });
+  });
+
+  // The owner's report: with a bad signal "Готово" sat still for five
+  // seconds, was pressed four times, and the project got four copies.
+  group('"Готово" into a project', () {
+    testWidgets('leaves at once and creates one task, however often pressed', (
+      tester,
+    ) async {
+      final hold = Completer<void>();
+      backend.delay = (options) async {
+        if (options.method == 'POST' &&
+            options.path == '/projects/prj_1/tasks') {
+          await hold.future;
+        }
+      };
+      await dictate(tester, projectBehind: true);
+
+      final done = find.text('Готово');
+      await tester.tap(done);
+      await tester.pump();
+      if (done.evaluate().isNotEmpty) {
+        await tester.tap(done, warnIfMissed: false);
+        await tester.tap(done, warnIfMissed: false);
+      }
+      await settle(tester);
+
+      // Gone while the request is still open.
+      expect(find.byType(DictationScreen), findsNothing);
+      expect(server.tasks, isEmpty);
+
+      hold.complete();
+      await settle(tester);
+
+      expect(
+        backend.requests.where(
+          (r) => r.method == 'POST' && r.path == '/projects/prj_1/tasks',
+        ),
+        hasLength(1),
+      );
+      expect(server.tasks.single['title'], 'Купить кабель');
+      expect(find.text('Задача добавлена в «Дом».'), findsOneWidget);
+    });
+
+    testWidgets('a refusal after leaving puts the words in the sandbox', (
+      tester,
+    ) async {
+      await dictate(tester, projectBehind: true);
+      // The server is there and refuses the task; the sandbox line has no
+      // signal and stays on the phone.
+      backend.responder = (options) {
+        if (options.path.startsWith('/inbox')) {
+          throw DioException.connectionError(
+            requestOptions: options,
+            reason: 'simulated',
+          );
+        }
+        return jsonResponse(<String, dynamic>{
+          'error': 'Bad Request',
+          'message': 'simulated refusal',
+        }, statusCode: 400);
+      };
+      await save(tester);
+
+      expect(find.byType(DictationScreen), findsNothing);
+      expect(server.tasks, isEmpty);
+      expect(find.textContaining('Слова — в песочнице.'), findsOneWidget);
     });
   });
 }
