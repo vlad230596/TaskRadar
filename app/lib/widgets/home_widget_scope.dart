@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../home_widget/home_widget_gateway.dart';
 import '../home_widget/home_widget_snapshot.dart';
 import '../models/focus_task.dart';
+import '../navigation/app_routes.dart';
 import '../providers/focus_providers.dart';
 import '../providers/home_widget_providers.dart';
 import '../providers/notification_link_providers.dart';
@@ -137,6 +138,11 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
         case HomeWidgetRefresh():
           _lastFresh = null;
           await ref.read(focusSetProvider.notifier).syncQuietly();
+        case HomeWidgetDictate():
+          // Not awaited: the screen stays open for as long as the user
+          // speaks, and a second tap meanwhile should still be taken.
+          // The sandbox is the default destination.
+          unawaited(AppRoutes.openDictation(context));
       }
     }
   }

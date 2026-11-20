@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 /// Something the user did on the home-screen widget that the app has to
-/// finish: open a task, or refresh the set.
+/// finish: open a task, refresh the set, or dictate into the sandbox.
 ///
 /// Collapse and expand are **not** here: those are handled natively in the
 /// widget and never wake the app.
@@ -27,6 +27,8 @@ sealed class HomeWidgetAction {
         );
       case 'refresh':
         return const HomeWidgetRefresh();
+      case 'dictate':
+        return const HomeWidgetDictate();
       default:
         return null;
     }
@@ -48,6 +50,18 @@ class HomeWidgetOpenTask extends HomeWidgetAction {
 
   @override
   int get hashCode => Object.hash(taskId, projectId);
+}
+
+/// The microphone in the widget's header was tapped: a thought to the
+/// sandbox, from the home screen, without finding the app's own microphone.
+class HomeWidgetDictate extends HomeWidgetAction {
+  const HomeWidgetDictate();
+
+  @override
+  bool operator ==(Object other) => other is HomeWidgetDictate;
+
+  @override
+  int get hashCode => (HomeWidgetDictate).hashCode;
 }
 
 /// The refresh arrow in the widget's header was tapped.

@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/domain/project_badge.dart';
@@ -9,9 +9,11 @@ import 'package:taskradar/home_widget/home_widget_gateway.dart';
 import 'package:taskradar/home_widget/home_widget_snapshot.dart';
 import 'package:taskradar/models/focus_task.dart';
 import 'package:taskradar/models/task_status.dart';
+import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/focus_providers.dart';
 import 'package:taskradar/providers/home_widget_providers.dart';
 import 'package:taskradar/providers/notification_link_providers.dart';
+import 'package:taskradar/screens/dictation_screen.dart';
 import 'package:taskradar/widgets/home_widget_scope.dart';
 
 /// The Android home-screen widget «В работе»: the snapshot the app pushes to
@@ -256,6 +258,10 @@ void main() {
         HomeWidgetAction.fromMap(<Object?, Object?>{'action': 'refresh'}),
         const HomeWidgetRefresh(),
       );
+      expect(
+        HomeWidgetAction.fromMap(<Object?, Object?>{'action': 'dictate'}),
+        const HomeWidgetDictate(),
+      );
     });
 
     test('ignores what it does not understand', () {
@@ -355,6 +361,38 @@ void main() {
         HomeWidgetSnapshot.decode(gateway.published.last).signedIn,
         isFalse,
       );
+    });
+
+    testWidgets('the microphone opens the dictation screen', (tester) async {
+      final gateway = _RecordingGateway();
+      final focus = _FakeFocusSet(<FocusTask>[row('t1', project: 'p1')]);
+      final pushed = <String?>[];
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            homeWidgetGatewayProvider.overrideWithValue(gateway),
+            focusSetProvider.overrideWith(() => focus),
+          ],
+          child: MaterialApp(
+            home: const HomeWidgetScope(child: SizedBox()),
+            onGenerateRoute: (settings) {
+              pushed.add(settings.name);
+              return MaterialPageRoute<FieldDictation?>(
+                settings: settings,
+                builder: (_) => const SizedBox(),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      gateway.actions.add(const HomeWidgetDictate());
+      gateway.listener!();
+      await tester.pump();
+      await tester.pump();
+
+      expect(pushed, <String?>[AppRoutes.dictation]);
     });
 
     testWidgets('does nothing at all where there is no widget', (tester) async {

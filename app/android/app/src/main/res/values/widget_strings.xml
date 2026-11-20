@@ -4,6 +4,7 @@
     <string name="widget_description">Задачи в работе, по проектам</string>
     <string name="widget_title">В работе</string>
     <string name="widget_refresh">Обновить</string>
+    <string name="widget_dictate">Надиктовать в песочницу</string>
     <string name="widget_empty">Нет задач в работе</string>
     <string name="widget_no_snapshot">Откройте TaskRadar, чтобы здесь появились задачи</string>
     <string name="widget_signed_out">Войдите в TaskRadar</string>

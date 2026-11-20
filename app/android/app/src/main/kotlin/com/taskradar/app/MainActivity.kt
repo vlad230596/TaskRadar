@@ -92,6 +92,7 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 ACTION_WIDGET_REFRESH -> mapOf("action" to "refresh")
+                ACTION_WIDGET_DICTATE -> mapOf("action" to "dictate")
                 else -> return false
             }
         pendingWidgetAction = action
@@ -107,6 +108,7 @@ class MainActivity : FlutterActivity() {
         const val ACTION_WIDGET_OPEN_TASK = "com.taskradar.app.widget.OPEN_TASK"
         const val ACTION_WIDGET_REFRESH = "com.taskradar.app.widget.REFRESH"
         const val ACTION_WIDGET_OPEN_APP = "com.taskradar.app.widget.OPEN_APP"
+        const val ACTION_WIDGET_DICTATE = "com.taskradar.app.widget.DICTATE"
         const val EXTRA_WIDGET_TASK_ID = "com.taskradar.app.widget.TASK_ID"
         const val EXTRA_WIDGET_PROJECT_ID = "com.taskradar.app.widget.PROJECT_ID"
 
@@ -121,6 +123,9 @@ class MainActivity : FlutterActivity() {
                 .apply { if (projectId != null) putExtra(EXTRA_WIDGET_PROJECT_ID, projectId) }
 
         fun refreshIntent(context: Context): Intent = base(context, ACTION_WIDGET_REFRESH)
+
+        /** The widget's microphone: the dictation screen, aimed at the sandbox. */
+        fun dictateIntent(context: Context): Intent = base(context, ACTION_WIDGET_DICTATE)
 
         /** The widget's title: just bring the app forward. */
         fun openAppIntent(context: Context): Intent = base(context, ACTION_WIDGET_OPEN_APP)

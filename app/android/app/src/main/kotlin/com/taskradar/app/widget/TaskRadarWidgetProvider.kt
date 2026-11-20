@@ -40,7 +40,9 @@ import java.util.Locale
  *   which Dart resolves through the same path a reminder tap takes.
  *
  * The header's refresh arrow and title are activity intents of their own: they
- * open the app, which re-reads the set and pushes a new snapshot.
+ * open the app, which re-reads the set and pushes a new snapshot. The
+ * microphone next to them opens the app on the dictation screen, aimed at the
+ * sandbox.
  */
 class TaskRadarWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
@@ -127,6 +129,16 @@ class TaskRadarWidgetProvider : AppWidgetProvider() {
                     context,
                     2,
                     MainActivity.refreshIntent(context),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+
+            views.setOnClickPendingIntent(
+                R.id.widget_dictate,
+                PendingIntent.getActivity(
+                    context,
+                    3,
+                    MainActivity.dictateIntent(context),
                     PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
                 ),
             )
