@@ -127,7 +127,13 @@ jobs:
           ref: ${{ needs.prepare.outputs.sha }}
           fetch-depth: 0
       - name: Create release tag
+        # Through the REST API, not `git push`: GitHub refuses a push by the
+        # Actions token of any ref whose commits touch .github/workflows/ (the
+        # token cannot have the `workflows` permission), and 0.22.0 died on
+        # exactly that. Creating the tag object and the ref through the API is
+        # not subject to that check.
         env:
+          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.prepare.outputs.version }}
           RELEASE_SHA: ${{ needs.prepare.outputs.sha }}
         run: |
@@ -136,10 +142,8 @@ jobs:
             echo "Tag $VERSION was created while the checks were running." >&2
             exit 65
           fi
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git tag --annotate "$VERSION" "$RELEASE_SHA" --message "TaskRadar $VERSION"
-          git push origin "refs/tags/$VERSION"
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/tags" -f tag="$VERSION" -f message="TaskRadar $VERSION" -f object="$RELEASE_SHA" -f type=commit -f 'tagger[name]=github-actions[bot]' -f 'tagger[email]=41898282+github-actions[bot]@users.noreply.github.com' --jq .sha)"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$tag_sha" >/dev/null
 
   native:
     needs: [prepare, tag]
