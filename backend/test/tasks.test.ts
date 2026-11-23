@@ -33,6 +33,7 @@ const prismaMock = vi.hoisted(() => ({
   project: { findFirst: vi.fn() },
   task: {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     aggregate: vi.fn(),
@@ -43,6 +44,10 @@ const prismaMock = vi.hoisted(() => ({
   taskEvent: { findMany: vi.fn(), create: vi.fn() },
   // Task editor: the pictures a 409 shows with the task. None in this file's seed.
   taskAttachment: { findMany: vi.fn(async (): Promise<unknown[]> => []) },
+  // Goals: the goals a 409 shows with the task. None in this file's seed.
+  goalTask: { findMany: vi.fn(async (): Promise<unknown[]> => []) },
+  // Contours: whose working set (design/goals-ideas-contract.md).
+  contour: { findFirst: vi.fn(), create: vi.fn() },
   inboxItem: { create: vi.fn() },
   dictationParse: { updateMany: vi.fn(), findFirst: vi.fn(async (): Promise<unknown> => null) },
   $transaction: vi.fn(),
@@ -71,6 +76,8 @@ interface TaskRow {
   remindAt: Date | null;
   remindTime: string | null;
   focusedAt: Date | null;
+  /** Whose working set (a contour id), set and cleared with `focusedAt`. */
+  focusContourId?: string | null;
   /** The client's idempotency key for an offline create, if it sent one. */
   createKey?: string | null;
   createdAt: Date;
@@ -122,6 +129,7 @@ let events: EventRow[] = [];
 /** Lines put back into the sandbox by `POST /tasks/:id/unfile`. */
 let inbox: { id: string; userId: string; text: string }[] = [];
 let nextId = 0;
+let contours: { id: string; userId: string; position: number }[] = [];
 
 function task(row: Partial<TaskRow> & Pick<TaskRow, "id" | "projectId" | "title">): TaskRow {
   return {
@@ -271,6 +279,15 @@ function taskMatches(t: TaskRow, where: Record<string, unknown>): boolean {
         if (JSON.stringify(value) !== '{"not":null}') throw new Error("unexpected focusedAt filter");
         if (t.focusedAt === null) return false;
         break;
+      case "focusContourId":
+        if (value !== null && typeof value !== "string") {
+          throw new Error("unexpected focusContourId filter");
+        }
+        if ((t.focusContourId ?? null) !== value) return false;
+        break;
+      case "OR":
+        if (!(value as Record<string, unknown>[]).some((one) => taskMatches(t, one))) return false;
+        break;
       case "status":
         if (JSON.stringify(value) !== '{"not":"done"}') throw new Error("unexpected status filter");
         if (t.status === "done") return false;
@@ -356,6 +373,37 @@ beforeEach(() => {
   prismaMock.task.findFirst.mockImplementation(
     (args: { where: Record<string, unknown> }) =>
       tasks.find((t) => taskMatches(t, args.where)) ?? null,
+  );
+
+  prismaMock.task.findUniqueOrThrow.mockImplementation((args: { where: { id: string } }) => {
+    const row = tasks.find((t) => t.id === args.where.id);
+    if (!row) throw new Error("findUniqueOrThrow against no row");
+    return { ...row };
+  });
+
+  /*
+   * Contours: `{ userId }` (the default, first by position) or `{ id, userId }`
+   * (one of the user's). Evaluated, so another user's contour is not found.
+   */
+  contours = [
+    { id: "ctr-a-main", userId: USER_A.id, position: 1000 },
+    { id: "ctr-a-home", userId: USER_A.id, position: 2000 },
+    { id: "ctr-b-main", userId: USER_B.id, position: 1000 },
+  ];
+  prismaMock.contour.findFirst.mockReset();
+  prismaMock.contour.findFirst.mockImplementation(
+    (args: { where: { id?: string; userId: string } }) => {
+      const keys = Object.keys(args.where).sort().join();
+      if (keys !== "userId" && keys !== "id,userId") {
+        throw new Error(`contour.findFirst: unexpected where ${JSON.stringify(args.where)}`);
+      }
+      return (
+        contours
+          .filter((c) => c.userId === args.where.userId)
+          .sort((a, b) => a.position - b.position)
+          .find((c) => args.where.id === undefined || c.id === args.where.id) ?? null
+      );
+    },
   );
 
   /*
@@ -1128,6 +1176,60 @@ describe("DELETE /tasks/:id", () => {
 });
 
 describe("the working set", () => {
+  it("goes into the default contour's set when no contour is named", async () => {
+    await call("POST", "/tasks/tsk-1/focus");
+    expect(tasks.find((t) => t.id === "tsk-1")!.focusContourId).toBe("ctr-a-main");
+  });
+
+  it("keeps one set per contour, and GET /focus?contourId= shows one of them", async () => {
+    const res = await call("POST", "/tasks/tsk-1/focus", { contourId: "ctr-a-home" });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { focusContourId: string }).focusContourId).toBe("ctr-a-home");
+    await call("POST", "/tasks/tsk-3/focus", { contourId: "ctr-a-main" });
+
+    const home = (await call("GET", "/focus?contourId=ctr-a-home")).json() as { id: string }[];
+    expect(home.map((t) => t.id)).toEqual(["tsk-1"]);
+    // The default contour's set also holds a task focused with no contour at all
+    // (tsk-2 in the seed, as a backend from before contours would leave it).
+    const main = (await call("GET", "/focus?contourId=ctr-a-main")).json() as { id: string }[];
+    expect(main.map((t) => t.id).sort()).toEqual(["tsk-2", "tsk-3"]);
+    // Without a contour: every set, each task saying whose it is.
+    const all = (await call("GET", "/focus")).json() as { id: string; focusContourId: string }[];
+    expect(all.map((t) => t.id).sort()).toEqual(["tsk-1", "tsk-2", "tsk-3"]);
+  });
+
+  it("moves a task between contours' sets without re-picking it", async () => {
+    await call("POST", "/tasks/tsk-1/focus", { contourId: "ctr-a-main" });
+    const picked = tasks.find((t) => t.id === "tsk-1")!.focusedAt;
+    prismaMock.taskEvent.create.mockClear();
+
+    const res = await call("POST", "/tasks/tsk-1/focus", { contourId: "ctr-a-home" });
+
+    expect(res.statusCode).toBe(200);
+    const row = tasks.find((t) => t.id === "tsk-1")!;
+    expect(row.focusContourId).toBe("ctr-a-home");
+    expect(row.focusedAt).toEqual(picked);
+    expect(prismaMock.taskEvent.create).not.toHaveBeenCalled();
+  });
+
+  it("refuses a contour that is not the user's, with a 400", async () => {
+    const res = await call("POST", "/tasks/tsk-1/focus", { contourId: "ctr-b-main" });
+    expect(res.statusCode).toBe(400);
+    expect(tasks.find((t) => t.id === "tsk-1")!.focusedAt).toBeNull();
+  });
+
+  it("leaves the contour's set when the task leaves the set", async () => {
+    await call("POST", "/tasks/tsk-1/focus", { contourId: "ctr-a-home" });
+    await call("DELETE", "/tasks/tsk-1/focus");
+    expect(tasks.find((t) => t.id === "tsk-1")!.focusContourId).toBeNull();
+
+    await call("POST", "/tasks/tsk-1/focus", { contourId: "ctr-a-home" });
+    await call("PATCH", "/tasks/tsk-1", { status: "done" });
+    const row = tasks.find((t) => t.id === "tsk-1")!;
+    expect(row.focusedAt).toBeNull();
+    expect(row.focusContourId).toBeNull();
+  });
+
   it("lists it in the order it was built, with project names", async () => {
     await call("POST", "/tasks/tsk-1/focus");
 

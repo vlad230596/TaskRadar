@@ -23,6 +23,7 @@
  */
 import { prisma } from "../lib/prisma";
 import { OWNER_SUBJECT } from "../lib/authConfig";
+import { DEFAULT_CONTOUR } from "../domain/contours";
 import {
   DEFAULT_SCOPE_NAME,
   generatePassword,
@@ -47,6 +48,9 @@ async function create(emailArg: string | undefined, nameArg: string | undefined)
       name,
       passwordHash,
       scopes: { create: { name: DEFAULT_SCOPE_NAME, position: 1000 } },
+      // Every user has a contour (goals, src/domain/contours.ts): it is where
+      // their working set and their goals live.
+      contours: { create: { ...DEFAULT_CONTOUR } },
     },
     select: { id: true },
   });

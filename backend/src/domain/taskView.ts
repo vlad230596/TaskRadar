@@ -42,12 +42,31 @@ export const attachmentMetaSelect = {
   createdAt: true,
 } as const satisfies Prisma.TaskAttachmentSelect;
 
+/** What a task carries about each goal it serves -- the source of the crown. */
+export interface TaskGoalRef {
+  id: string;
+  title: string;
+  contourId: string;
+}
+
 /**
  * The `include` every task read uses, so that `taskView` has the pictures to
- * show. Oldest first: the strip on the editor grows to the right.
+ * show (oldest first: the strip on the editor grows to the right) and the
+ * goals the task serves.
+ *
+ * Goals that are achieved are left out here, in the query: a crown means "this
+ * moves something you are pushing for", and an achieved goal is no longer
+ * pushed. Both relations are an `include`, so a board of fifteen projects is
+ * still a fixed number of queries -- one `IN (...)` per relation for all the
+ * tasks at once, never one per task.
  */
 export const taskInclude = {
   attachments: { select: attachmentMetaSelect, orderBy: { createdAt: "asc" } },
+  goalLinks: {
+    where: { goal: { achievedAt: null } },
+    orderBy: { createdAt: "asc" },
+    select: { goal: { select: { id: true, title: true, contourId: true } } },
+  },
 } as const satisfies Prisma.TaskInclude;
 
 export type AttachmentMeta = Prisma.TaskAttachmentGetPayload<{
@@ -62,6 +81,13 @@ interface TaskRowLike {
   locRadius?: number | null;
   locLabel?: string | null;
   attachments?: AttachmentMeta[];
+  focusContourId?: string | null;
+  goalLinks?: { goal: TaskGoalRef }[];
+}
+
+/** The goals of a row read with `taskInclude`; none for a row read without it. */
+export function goalsOf(row: TaskRowLike): TaskGoalRef[] {
+  return (row.goalLinks ?? []).map((link) => link.goal);
 }
 
 /** The four columns as one object, or null when the task has no place. */
@@ -88,22 +114,34 @@ export function checklistOf(row: TaskRowLike): ChecklistItem[] | null {
 
 export type TaskView<T> = Omit<
   T,
-  "locLat" | "locLng" | "locRadius" | "locLabel" | "checklist" | "attachments"
+  "locLat" | "locLng" | "locRadius" | "locLabel" | "checklist" | "attachments" | "goalLinks"
 > & {
   checklist: ChecklistItem[] | null;
   location: TaskLocation | null;
   attachments: AttachmentMeta[];
+  focusContourId: string | null;
+  goals: TaskGoalRef[];
 };
 
-/** A task row as the API answers with it. */
+/**
+ * A task row as the API answers with it.
+ *
+ * `goals` and `focusContourId` (design/goals-ideas-contract.md) are always
+ * present, empty or null when the row was read without them, so the client
+ * can treat both as required fields of every task it is sent.
+ */
 export function taskView<T extends TaskRowLike>(row: T): TaskView<T> {
   const rest = { ...row } as Record<string, unknown>;
-  for (const column of ["locLat", "locLng", "locRadius", "locLabel"]) delete rest[column];
+  for (const column of ["locLat", "locLng", "locRadius", "locLabel", "goalLinks"]) {
+    delete rest[column];
+  }
   return {
     ...rest,
     checklist: checklistOf(row),
     location: locationOf(row),
     attachments: row.attachments ?? [],
+    focusContourId: row.focusContourId ?? null,
+    goals: goalsOf(row),
   } as TaskView<T>;
 }
 

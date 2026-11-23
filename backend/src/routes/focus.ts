@@ -1,9 +1,12 @@
 import { FastifyInstance } from "fastify";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
-import { idParamSchema } from "../schemas";
+import { ValidationError } from "../lib/errors";
+import { focusQuerySchema, focusTaskSchema, idParamSchema } from "../schemas";
 import { getTaskOrThrow } from "./tasks";
 import { taskInclude, taskView } from "../domain/taskView";
+import { defaultContour, ownedContour } from "../domain/contours";
 
 /*
  * The working set (F11): the two to five tasks the "work" mode shows, one of
@@ -29,6 +32,14 @@ import { taskInclude, taskView } from "../domain/taskView";
  * Both writes below go through a transaction with their journal row, for the
  * same reason every other task write does: `focusedAt` with no `focused` event
  * to explain it is a task that entered the set at a time nobody recorded.
+ *
+ * ONE SET PER CONTOUR (design/goals-ideas-contract.md)
+ *
+ * Since contours, "the set" is the set of one contour: `Task.focusContourId`
+ * says whose. "Работа" and "Личное" each keep their own handful, and the work
+ * screen shows the active contour's. A task is in at most one set -- it has
+ * one `focusContourId` -- and taking it into another contour's set moves it
+ * there rather than adding a second membership.
  */
 export async function focusRoutes(app: FastifyInstance): Promise<void> {
   /*
@@ -44,10 +55,34 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
    * the set does not silently vanish from the one screen they will be looking
    * at because the project around it was tidied away; the archive hides
    * projects from the board, which is a different question.
+   *
+   * `?contourId=` narrows it to one contour's set. Without it, every set at
+   * once, as before contours -- an older app keeps working, and each task says
+   * which set it is in (`focusContourId`). Someone else's contour id is not
+   * refused; it simply matches none of this user's tasks. The owner filter is
+   * what keeps people apart, not the id.
    */
   app.get("/focus", async (request, reply) => {
+    const userId = userIdOf(request);
+    const { contourId } = focusQuerySchema.parse(request.query);
+    /*
+     * A task in the set with no contour (picked by a backend from before
+     * contours, e.g. during a rollback) belongs to the default contour, which
+     * is where it would have gone -- so it is not invisible on every screen.
+     */
+    let contourFilter: Prisma.TaskWhereInput = {};
+    if (contourId !== undefined) {
+      const isDefault = (await defaultContour(prisma, userId)).id === contourId;
+      contourFilter = isDefault
+        ? { OR: [{ focusContourId: contourId }, { focusContourId: null }] }
+        : { focusContourId: contourId };
+    }
     const tasks = await prisma.task.findMany({
-      where: { focusedAt: { not: null }, project: { scope: { userId: userIdOf(request) } } },
+      where: {
+        focusedAt: { not: null },
+        ...contourFilter,
+        project: { scope: { userId } },
+      },
       orderBy: { focusedAt: "asc" },
       include: { project: { select: { id: true, name: true } }, ...taskInclude },
     });
@@ -62,32 +97,63 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
    * would move it to the end of the set -- the order is `focusedAt` -- so a
    * double tap on a phone, or a retried request, would silently reorder the
    * work the person is in the middle of.
+   *
+   * `{ contourId }` names whose set; without it, the default contour's (the
+   * first by position) -- which is also what an app from before contours gets,
+   * since it sends no body at all. A task already in another contour's set is
+   * moved to this one, and only `focusContourId` changes: `focusedAt` is when
+   * it was picked, which this is not, and no journal row is written -- the
+   * journal records entering and leaving work, and the task never left.
+   *
+   * A contour that is not the user's is a 400, not a 404: the task exists, the
+   * request is what is wrong (as for a category, ./tasks.ts).
    */
   app.post("/tasks/:id/focus", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
-    const task = await getTaskOrThrow(userIdOf(request), id);
+    const userId = userIdOf(request);
+    const body = focusTaskSchema.parse(request.body);
+    const task = await getTaskOrThrow(userId, id);
 
-    if (task.focusedAt !== null) {
-      reply.send(task);
-      return;
+    let contourId: string;
+    if (body.contourId !== undefined) {
+      const contour = await ownedContour(prisma, userId, body.contourId);
+      if (contour === null) throw new ValidationError(`Contour ${body.contourId} was not found`);
+      contourId = contour.id;
+    } else {
+      contourId = (await defaultContour(prisma, userId)).id;
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      if (task.focusedAt !== null) {
+        // Read rather than an empty update, which would still bump `updatedAt`.
+        if (task.focusContourId === contourId) {
+          return tx.task.findUniqueOrThrow({ where: { id }, include: taskInclude });
+        }
+        return tx.task.update({
+          where: { id },
+          data: { focusContourId: contourId },
+          include: taskInclude,
+        });
+      }
       const focused = await tx.task.update({
         where: { id },
-        data: { focusedAt: new Date() },
+        data: { focusedAt: new Date(), focusContourId: contourId },
+        include: taskInclude,
       });
       await tx.taskEvent.create({ data: { taskId: id, kind: "focused" } });
       return focused;
     });
 
-    reply.send(updated);
+    reply.send(taskView(updated));
   });
 
   /*
    * Take it back out. Idempotent in the same way and for a plainer reason:
    * removing something that is not there is not an error anybody can act on,
    * and the client's next read shows the set it expected either way.
+   *
+   * Leaving the set leaves the contour's set too: `focusContourId` is cleared
+   * with `focusedAt`, so a task out of work belongs to no contour's set.
    *
    * Note that this is not the only way out of the set -- finishing a task
    * leaves it too, from `PATCH /tasks/:id`. See ../domain/taskEvents.ts.
@@ -96,20 +162,19 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamSchema.parse(request.params);
     const task = await getTaskOrThrow(userIdOf(request), id);
 
-    if (task.focusedAt === null) {
-      reply.send(task);
-      return;
-    }
-
     const updated = await prisma.$transaction(async (tx) => {
+      if (task.focusedAt === null) {
+        return tx.task.findUniqueOrThrow({ where: { id }, include: taskInclude });
+      }
       const unfocused = await tx.task.update({
         where: { id },
-        data: { focusedAt: null },
+        data: { focusedAt: null, focusContourId: null },
+        include: taskInclude,
       });
       await tx.taskEvent.create({ data: { taskId: id, kind: "unfocused" } });
       return unfocused;
     });
 
-    reply.send(updated);
+    reply.send(taskView(updated));
   });
 }

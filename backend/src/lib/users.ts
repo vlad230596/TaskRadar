@@ -2,6 +2,7 @@ import type { FastifyRequest } from "fastify";
 import { prisma } from "./prisma";
 import { AuthConfig, OWNER_SUBJECT } from "./authConfig";
 import { normaliseEmail } from "./credentials";
+import { DEFAULT_CONTOUR } from "../domain/contours";
 
 /** What login and the guard need to know about a user. */
 export interface UserRecord {
@@ -56,6 +57,9 @@ export async function ensureOwner(config: AuthConfig): Promise<void> {
       email: config.email,
       name: "Owner",
       passwordHash: config.passwordHash,
+      // Only for a database older than the users table; the migrations give
+      // an existing owner their contour (src/domain/contours.ts).
+      contours: { create: { ...DEFAULT_CONTOUR } },
     },
     update: { email: config.email, passwordHash: config.passwordHash },
   });

@@ -570,3 +570,142 @@ export const linkPreviewQuerySchema = z.object({
       }
     }, "url must be an http(s) URL"),
 });
+
+// ---- Contours and goals (design/goals-ideas-contract.md) ----
+
+const clockSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "time must be HH:MM");
+
+/**
+ * When a contour is in force: weekdays (1 = Monday) and one span of local
+ * wall-clock time. `from < to`: a span across midnight is left out by the
+ * contract, so it is refused rather than half-supported. Null for "no
+ * schedule". The days come back sorted and without repeats, so two devices
+ * that ticked the same boxes in a different order store the same value.
+ */
+export const contourScheduleSchema = z
+  .object({
+    days: z
+      .array(z.number().int().min(1).max(7))
+      .min(1, "a schedule needs at least one day")
+      .max(7)
+      .transform((days) => [...new Set(days)].sort((a, b) => a - b)),
+    from: clockSchema,
+    to: clockSchema,
+  })
+  .strict()
+  .refine((s) => s.from < s.to, { message: "from must be before to", path: ["to"] })
+  .nullable();
+
+const contourNameSchema = z.string().trim().min(1, "name is required").max(40, "name is too long");
+const slotsSchema = z.number().int().min(1).max(5);
+const windowDaysSchema = z.number().int().min(1).max(90);
+
+export const createContourSchema = z.object({
+  name: contourNameSchema,
+  slots: slotsSchema.optional(),
+  windowDays: windowDaysSchema.optional(),
+  schedule: contourScheduleSchema.optional(),
+});
+
+/**
+ * `position` is the gapped float itself (src/domain/position.ts), not a pair
+ * of neighbours: contours are a handful of rows reordered in a settings list,
+ * and the client already holds every position it would need to bisect.
+ */
+export const updateContourSchema = z
+  .object({
+    name: contourNameSchema.optional(),
+    slots: slotsSchema.optional(),
+    windowDays: windowDaysSchema.optional(),
+    schedule: contourScheduleSchema.optional(),
+    position: z.number().finite().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "At least one field must be provided",
+  });
+
+/** `PUT /contours/active`: the manual choice, or null to let the schedules decide. */
+export const setActiveContourSchema = z.object({
+  contourId: z.string().min(1).nullable(),
+  until: z.coerce.date().nullable(),
+});
+
+export const listGoalsQuerySchema = z.object({
+  /** Comma-separated states; `slot,bench` when absent. */
+  state: z
+    .string()
+    .optional()
+    .transform((value, ctx) => {
+      const states = (value === undefined || value.trim() === "" ? "slot,bench" : value)
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s !== "");
+      for (const state of states) {
+        if (state !== "slot" && state !== "bench" && state !== "achieved") {
+          ctx.addIssue({ code: "custom", message: `unknown state "${state}"` });
+          return z.NEVER;
+        }
+      }
+      return [...new Set(states)] as ("slot" | "bench" | "achieved")[];
+    }),
+  contourId: z.string().min(1).optional(),
+});
+
+const goalTitleSchema = z.string().trim().min(1, "title is required").max(200, "title is too long");
+/** One line; an empty one is "no why". */
+const goalWhySchema = z
+  .string()
+  .trim()
+  .max(300, "why is too long")
+  .nullable()
+  .transform((value) => (value === "" ? null : value));
+
+export const createGoalSchema = z.object({
+  contourId: z.string().min(1, "contourId is required"),
+  title: goalTitleSchema,
+  why: goalWhySchema.optional(),
+  /** Straight into a slot; 409 `slots_full` (and nothing created) when they are taken. */
+  slot: z.boolean().optional(),
+});
+
+export const updateGoalSchema = z
+  .object({
+    title: goalTitleSchema.optional(),
+    why: goalWhySchema.optional(),
+    contourId: z.string().min(1).optional(),
+    /** The goal's own window, or null for its contour's. */
+    windowDays: windowDaysSchema.nullable().optional(),
+    position: z.number().finite().optional(),
+  })
+  .refine((body) => Object.keys(body).length > 0, {
+    message: "At least one field must be provided",
+  });
+
+/** `POST /goals/:id/slot`: optionally the goal's own window, kept for later slots too. */
+export const slotGoalSchema = z
+  .object({ windowDays: windowDaysSchema.optional() })
+  .nullish()
+  .transform((body) => body ?? {});
+
+export const goalTaskParamSchema = z.object({
+  id: z.string().min(1),
+  taskId: z.string().min(1),
+});
+
+export const goalIdeaParamSchema = z.object({
+  id: z.string().min(1),
+  noteId: z.string().min(1),
+});
+
+/** Same shape and meaning as `updateTaskPositionSchema`, among the goal's tasks. */
+export const moveGoalTaskSchema = updateTaskPositionSchema;
+
+/** `POST /tasks/:id/focus`: whose working set; the default contour when absent. */
+export const focusTaskSchema = z
+  .object({ contourId: z.string().min(1).optional() })
+  .nullish()
+  .transform((body) => body ?? {});
+
+export const focusQuerySchema = z.object({
+  contourId: z.string().min(1).optional(),
+});

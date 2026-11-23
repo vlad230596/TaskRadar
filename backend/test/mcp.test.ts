@@ -40,6 +40,7 @@ const prismaMock = vi.hoisted(() => ({
   project: { findFirst: vi.fn(), findMany: vi.fn() },
   task: {
     findUnique: vi.fn(),
+    findUniqueOrThrow: vi.fn(),
     findFirst: vi.fn(),
     findMany: vi.fn(),
     aggregate: vi.fn(),
@@ -51,6 +52,9 @@ const prismaMock = vi.hoisted(() => ({
   taskAttachment: { findFirst: vi.fn() },
   taskEvent: { create: vi.fn(), findMany: vi.fn() },
   note: { findMany: vi.fn() },
+  // Whose working set (goals: design/goals-ideas-contract.md). The goal tools
+  // themselves are tested in goals.test.ts, against a fake that knows goals.
+  contour: { findFirst: vi.fn() },
   inboxItem: { findMany: vi.fn() },
   dictationParse: { findFirst: vi.fn(async () => null), updateMany: vi.fn() },
   $transaction: vi.fn(),
@@ -412,6 +416,17 @@ function wireFakes(): void {
       return row === undefined ? null : withPictures(row, include);
     },
   );
+  m.task.findUniqueOrThrow.mockImplementation(async ({ where }: { where: { id: string } }) => {
+    const row = tasks.find((t) => t.id === where.id);
+    if (!row) throw new Error("fake: findUniqueOrThrow against no row");
+    return row;
+  });
+  m.contour.findFirst.mockImplementation(
+    async ({ where }: { where: { id?: string; userId: string } }) =>
+      where.id === undefined || where.id === `ctr-${where.userId}`
+        ? { id: `ctr-${where.userId}`, userId: where.userId, position: 1000 }
+        : null,
+  );
   m.task.findUnique.mockImplementation(
     async ({ where }: { where: { id?: string } }) => tasks.find((t) => t.id === where.id) ?? null,
   );
@@ -757,15 +772,23 @@ describe("POST /mcp auth", () => {
       (t) => t.name,
     );
     expect(names.sort()).toEqual([
+      "create_goal",
       "create_task",
+      "get_goal",
       "get_picture",
       "get_task",
+      "link_goal_task",
+      "list_contours",
+      "list_goals",
+      "list_ideas",
       "list_inbox",
       "list_notes",
       "list_projects",
       "list_tasks",
       "move_task",
       "search",
+      "unlink_goal_task",
+      "update_goal",
       "update_task",
     ]);
     expect(names.some((n) => /delete|archive|unfile/.test(n))).toBe(false);
@@ -1140,7 +1163,7 @@ describe("MCP tools", () => {
       taskId: "t-2",
       inWorkingSet: true,
     });
-    expect(inSet).toMatchObject({ inWorkingSet: true });
+    expect(inSet).toMatchObject({ inWorkingSet: true, workingSetContourId: `ctr-${USER_A.id}` });
     const out = await toolJson<Record<string, unknown>>(token, "update_task", {
       taskId: "t-2",
       inWorkingSet: false,

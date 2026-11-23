@@ -300,13 +300,19 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
      */
     const conflicts = conflictingFields(before, body);
     if (conflicts.length > 0) {
-      const attachments = await prisma.taskAttachment.findMany({
-        where: { taskId: id },
-        ...taskInclude.attachments,
+      const [attachments, goalLinks] = await Promise.all([
+        prisma.taskAttachment.findMany({ where: { taskId: id }, ...taskInclude.attachments }),
+        prisma.goalTask.findMany({
+          where: { taskId: id, ...taskInclude.goalLinks.where },
+          orderBy: taskInclude.goalLinks.orderBy,
+          select: taskInclude.goalLinks.select,
+        }),
+      ]);
+      reply.status(409).send({
+        error: "conflict",
+        fields: conflicts,
+        task: taskView({ ...before, attachments, goalLinks }),
       });
-      reply
-        .status(409)
-        .send({ error: "conflict", fields: conflicts, task: taskView({ ...before, attachments }) });
       return;
     }
 
@@ -328,6 +334,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       remindAt?: Date | null;
       remindTime?: string | null;
       focusedAt?: Date | null;
+      focusContourId?: string | null;
     } = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
@@ -349,7 +356,11 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       }
       data.remindTime = body.remindTime;
     }
-    if (movement.leavesFocus) data.focusedAt = null;
+    // Leaving the set leaves the contour's set: the two are cleared together.
+    if (movement.leavesFocus) {
+      data.focusedAt = null;
+      data.focusContourId = null;
+    }
 
     /*
      * One transaction, unconditionally -- even for a pure rename, which writes
@@ -498,6 +509,22 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
    * journal is the answer, and a client that wants "3 дня в blocked" gets that
    * from `GET /history` instead of recomputing it here.
    */
+  /*
+   * One task, in the shape every task answer has. The app mostly reads tasks
+   * by the list (board, project, focus); this is for the one it opens from
+   * somewhere that is not a list -- a goal's next step, a widget tap -- so it
+   * does not have to load a whole project to show one row.
+   */
+  app.get("/tasks/:id", async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params);
+    const task = await prisma.task.findFirst({
+      where: { id, project: { scope: { userId: userIdOf(request) } } },
+      include: taskInclude,
+    });
+    if (!task) throw new NotFoundError("Task");
+    reply.send(taskView(task));
+  });
+
   app.get("/tasks/:id/events", async (request, reply) => {
     const { id } = idParamSchema.parse(request.params);
     await getTaskOrThrow(userIdOf(request), id);
@@ -564,7 +591,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     }
 
     if (task.projectId === projectId) {
-      reply.send(task);
+      reply.send(taskView(await prisma.task.findUniqueOrThrow({ where: { id }, include: taskInclude })));
       return;
     }
 
@@ -581,8 +608,10 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         categoryId: null,
         createKey: null,
       },
+      include: taskInclude,
     });
-    reply.send(moved);
+    // Goals stay: a goal links tasks from any of the owner's projects.
+    reply.send(taskView(moved));
   });
 
   /*

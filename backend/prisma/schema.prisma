@@ -54,7 +54,9 @@ enum TaskEventKind {
 /// Data is separated by owner, not shared: every tree of rows hangs off exactly
 /// one user through its root -- `Scope` (and through it projects, tasks, notes
 /// and the task journal), `InboxItem` and `DictationParse`. Only the roots carry
-/// `userId`; everything below them is reached through its parent, so there is
+/// `userId` (`Contour` and `Goal` are roots too: a goal links tasks from many
+/// projects, so it cannot hang off any one of them); everything below them is
+/// reached through its parent, so there is
 /// one column per tree to filter on rather than a copy of it on every table.
 ///
 /// There is no registration. Users are created by an operator with
@@ -73,13 +75,173 @@ model User {
   disabledAt   DateTime?
   createdAt    DateTime  @default(now())
 
+  /// The contour the owner switched to by hand (design/goals-ideas-contract.md),
+  /// and until when that choice beats the contours' schedules. Both null: no
+  /// manual choice, the schedules decide. `until` null with a contour set:
+  /// until the next manual switch.
+  ///
+  /// Stored, not resolved: which contour is active *now* depends on the
+  /// device's wall clock and time zone, which the server does not know at the
+  /// moment of a request -- the app runs `resolveActiveContour` itself. This
+  /// row only carries the override across the owner's devices, so switching
+  /// on the desktop switches the phone too.
+  ///
+  /// `SetNull`: deleting the chosen contour simply ends the override.
+  activeContourId    String?
+  activeContour      Contour?  @relation("UserActiveContour", fields: [activeContourId], references: [id], onDelete: SetNull)
+  activeContourUntil DateTime?
+
   scopes          Scope[]
   inboxItems      InboxItem[]
   dictationParses DictationParse[]
   aiUsage         AiUsage[]
   agentTokens     AgentToken[]
+  contours        Contour[]        @relation("UserContours")
+  goals           Goal[]
 
   @@map("users")
+}
+
+/// A set of goal slots that is in force at some times and not others --
+/// "Работа" on weekdays from nine to six, "Личное" the rest of the time
+/// (design/goals-ideas-contract.md).
+///
+/// WHY CONTOURS AND NOT SCOPES
+///
+/// A scope partitions the *board* -- which projects are on screen. A contour
+/// partitions *attention* -- which few results the owner is pushing this week.
+/// The two look alike and are not: a personal goal ("сделать загранпаспорт")
+/// can need a task from the "work" scope (a certificate from HR), and a work
+/// goal can be blocked by something at home. Tying goals to scopes would force
+/// every goal into one part of life; so contours stand on their own and a goal
+/// links tasks from any project of its owner.
+///
+/// Every user has at least one: the migration that created this table gave
+/// every existing user «Основной», user creation does the same for new ones,
+/// and `DELETE /contours/:id` refuses the last one. The first one by
+/// `position` is the default -- where a task taken into work without saying
+/// which contour goes.
+///
+/// `slots` and `windowDays` are bounded by CHECK constraints in the migration
+/// (20261124090000_add_goals_contours), like the task's place.
+model Contour {
+  id         String @id @default(cuid())
+  userId     String
+  user       User   @relation("UserContours", fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  /// How many goals may stand in this contour's slots at once, 1..5. Enforced
+  /// when a goal is put into a slot (409 `slots_full`); lowering it below the
+  /// number already there is allowed -- the surplus stays and the app shows it.
+  slots      Int    @default(2)
+  /// A goal's window when it has none of its own, 1..90 days.
+  windowDays Int    @default(7)
+  /// When this contour is in force: null (no schedule) or
+  /// `{ "days": [1..7], "from": "HH:MM", "to": "HH:MM" }`, 1 = Monday, the
+  /// owner's local wall clock. Validated by `contourScheduleSchema`.
+  schedule   Json?
+  /// Gapped-float order (src/domain/position.ts); the first is the default.
+  position   Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  goals        Goal[]
+  focusedTasks Task[]
+  activeFor    User[] @relation("UserActiveContour")
+
+  @@index([userId, position])
+  @@map("contours")
+}
+
+/// A result worth pushing for a limited time (design/goals-ideas-contract.md):
+/// "сдать отчёт", "починить отопление на даче".
+///
+/// The problem it answers is that tasks get picked by how pleasant and how
+/// fresh they are, not by how useful: the useful-but-unpleasant one is never
+/// on screen. A goal sits in one of its contour's few slots for a window (a
+/// week, say), carries a "why", and its next step is put in front of the owner
+/// on the work screen and in the widget.
+///
+/// The state is derived, never stored, so there is no column that can
+/// disagree with the timestamps (src/domain/goals.ts):
+///
+/// - achieved -- `achievedAt` set;
+/// - slot     -- `slottedAt` set (and not achieved);
+/// - bench    -- neither.
+///
+/// An expired window does nothing by itself: the goal stays in its slot, and
+/// the app asks "продлить / на скамейку / достигнута". Moving it anywhere
+/// without the owner would be the app deciding what matters.
+model Goal {
+  id           String    @id @default(cuid())
+  /// Owner. `Cascade` like the contour: a goal is a note-to-self about
+  /// priorities, not data anybody else's rows depend on.
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// `Restrict`: a contour with goals -- achieved ones included, they are the
+  /// history -- cannot be deleted; `DELETE /contours/:id` answers 409 first.
+  contourId    String
+  contour      Contour   @relation(fields: [contourId], references: [id], onDelete: Restrict)
+  title        String
+  /// "Зачем" / "что будет, если отложить" -- one line, at most 300 characters.
+  why          String?
+  slottedAt    DateTime?
+  /// The goal's own window in days, or null for its contour's.
+  windowDays   Int?
+  /// End of the current window; set when the goal is slotted or extended,
+  /// cleared when it leaves the slot.
+  windowEndsAt DateTime?
+  /// Set only by hand ("достигнута"); nothing closes a goal automatically.
+  achievedAt   DateTime?
+  /// Order within the contour -- slots and bench are one order, so a goal
+  /// taken off the bench comes back to where it was.
+  position     Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tasks GoalTask[]
+  ideas GoalIdea[]
+
+  @@index([userId, contourId, position])
+  @@index([contourId])
+  @@map("goals")
+}
+
+/// A task that serves a goal. Many-to-many: one task can move two goals
+/// forward (a trip to the city for documents *and* for parts), and those goals
+/// can be in different contours. Tasks may come from any of the owner's
+/// projects -- that is the point of a goal crossing project lines.
+///
+/// `position` orders the goal's tasks (src/domain/position.ts); the first
+/// pending one is the goal's next step. It belongs to the link, not the task,
+/// because the same task can be first for one goal and last for another.
+model GoalTask {
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  position  Float
+  createdAt DateTime @default(now())
+
+  @@id([goalId, taskId])
+  @@index([taskId])
+  @@map("goal_tasks")
+}
+
+/// An idea (a note) kept next to a goal: something that may become one of its
+/// tasks. When the idea is turned into a task (`POST /notes/:id/to-task`) the
+/// link moves over to `GoalTask`.
+model GoalIdea {
+  goalId    String
+  goal      Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  noteId    String
+  note      Note     @relation(fields: [noteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([goalId, noteId])
+  @@index([noteId])
+  @@map("goal_ideas")
 }
 
 /// A personal API token for coding agents: the MCP endpoint (`POST /mcp`).
@@ -224,6 +386,16 @@ model Task {
   /// src/routes/focus.ts.
   focusedAt DateTime?
 
+  /// Whose working set the task is in (design/goals-ideas-contract.md): each
+  /// contour has its own, so "Работа" and "Личное" do not crowd one screen.
+  /// Set together with `focusedAt` and cleared with it; moving a task to
+  /// another contour's set changes only this, not `focusedAt` -- the order of
+  /// the set is when the task was picked, and switching sets is not picking.
+  /// `SetNull` is a backstop: `DELETE /contours/:id` moves the tasks to the
+  /// default contour before the row goes.
+  focusContourId String?
+  focusContour   Contour? @relation(fields: [focusContourId], references: [id], onDelete: SetNull)
+
   /// What AI processing started from (see src/domain/aiMark.ts): the words
   /// before the FIRST "Обработать", the kind of that first parse, and a
   /// snapshot of the fields as the last AI answer saved them -- the app
@@ -272,8 +444,12 @@ model Task {
   /// The dictation parses this task was created from (F14) -- normally one.
   dictationParses DictationParse[]
 
+  /// The goals this task serves; achieved ones are filtered out when shown.
+  goalLinks GoalTask[]
+
   @@index([projectId, position])
   @@index([categoryId])
+  @@index([focusContourId])
   // Per project, which is per user: a task has no userId of its own, a project
   // belongs to exactly one user, and a task changes project only within one
   // user's projects (`POST /tasks/:id/move`, which clears the key). So this
@@ -450,6 +626,10 @@ model Note {
   updatedAt DateTime @updatedAt
 
   dictationParses DictationParse[]
+
+  /// Goals this idea is kept next to. Called "идея" everywhere the owner or an
+  /// agent reads it; the model keeps its old name so no table is renamed.
+  goalLinks GoalIdea[]
 
   @@index([projectId])
   @@map("notes")

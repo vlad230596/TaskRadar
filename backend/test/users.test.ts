@@ -41,6 +41,8 @@ describe("ensureOwner", () => {
       email: config.email,
       name: "Owner",
       passwordHash: config.passwordHash,
+      // Goals: every user has a contour (src/domain/contours.ts).
+      contours: { create: { name: "Основной", slots: 2, windowDays: 7, position: 1000 } },
     });
     // An existing row keeps its name; only the credentials follow `.env`.
     expect(args.update).toEqual({ email: config.email, passwordHash: config.passwordHash });

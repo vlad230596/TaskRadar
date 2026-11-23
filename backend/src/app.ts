@@ -10,6 +10,8 @@ import { noteRoutes } from "./routes/notes";
 import { categoryRoutes } from "./routes/categories";
 import { inboxRoutes } from "./routes/inbox";
 import { focusRoutes } from "./routes/focus";
+import { contourRoutes } from "./routes/contours";
+import { goalRoutes } from "./routes/goals";
 import { historyRoutes } from "./routes/history";
 import { boardRoutes } from "./routes/board";
 import { agentTokenRoutes } from "./routes/agentTokens";
@@ -150,6 +152,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   await app.register(categoryRoutes);
   await app.register(inboxRoutes);
   await app.register(focusRoutes);
+  // Goals, contours and ideas (design/goals-ideas-contract.md).
+  await app.register(contourRoutes);
+  await app.register(goalRoutes);
   await app.register(historyRoutes);
   await app.register(boardRoutes);
   await app.register(agentTokenRoutes);

@@ -334,6 +334,9 @@ describe("GET /board -- response shape", () => {
       "checklist",
       "createdAt",
       "description",
+      // Goals (design/goals-ideas-contract.md): always present too.
+      "focusContourId",
+      "goals",
       "id",
       "isCurrent",
       "location",

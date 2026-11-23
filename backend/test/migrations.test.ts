@@ -112,3 +112,111 @@ describe("migrations", () => {
     expect(left.rows).toHaveLength(0);
   });
 });
+
+/*
+ * Goals and contours (20261124090000): the backfill, which only means
+ * something against data that existed before it. So this database is migrated
+ * up to the migration before, given two users with a working set each, and
+ * only then taken through the goals migration -- the order a live database
+ * goes through on release.
+ */
+describe("the goals migration", () => {
+  const GOALS = "20261124090000_add_goals_contours";
+  let pg: PGlite;
+
+  beforeAll(async () => {
+    pg = new PGlite();
+    const names = readdirSync(migrationsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(names).toContain(GOALS);
+    const apply = async (name: string) =>
+      pg.exec(readFileSync(join(migrationsDir, name, "migration.sql"), "utf8"));
+    for (const name of names.filter((n) => n < GOALS)) await apply(name);
+
+    // 'owner' exists already (20260929090000); a second user next to them.
+    await pg.query(
+      `INSERT INTO users (id, email, name, "passwordHash") VALUES ('u2', 'u2@example.com', 'U2', 'x')`,
+    );
+    for (const user of ["owner", "u2"]) {
+      await pg.query(
+        `INSERT INTO scopes (id, name, position, "userId", "updatedAt") VALUES ($1, 's', 1, $2, now())`,
+        [`s-${user}`, user],
+      );
+      await pg.query(
+        `INSERT INTO projects (id, name, "scopeId", "updatedAt") VALUES ($1, 'p', $2, now())`,
+        [`p-${user}`, `s-${user}`],
+      );
+      await pg.query(
+        `INSERT INTO tasks (id, "projectId", title, position, "updatedAt", "focusedAt")
+         VALUES ($1, $2, 'in work', 1, now(), now()), ($3, $2, 'idle', 2, now(), NULL)`,
+        [`focused-${user}`, `p-${user}`, `idle-${user}`],
+      );
+    }
+
+    for (const name of names.filter((n) => n >= GOALS)) await apply(name);
+  }, 60_000);
+
+  afterAll(async () => {
+    await pg?.close();
+  });
+
+  it("gives every existing user «Основной»: 2 slots, a 7-day window, no schedule", async () => {
+    const rows = await pg.query<Record<string, unknown>>(
+      `SELECT "userId", name, slots, "windowDays", schedule FROM contours ORDER BY "userId"`,
+    );
+    expect(rows.rows).toEqual([
+      { userId: "owner", name: "Основной", slots: 2, windowDays: 7, schedule: null },
+      { userId: "u2", name: "Основной", slots: 2, windowDays: 7, schedule: null },
+    ]);
+  });
+
+  it("puts each user's working set into their own contour, and nothing else", async () => {
+    const rows = await pg.query<{ id: string; focusContourId: string | null }>(
+      `SELECT id, "focusContourId" FROM tasks ORDER BY id`,
+    );
+    expect(rows.rows).toEqual([
+      { id: "focused-owner", focusContourId: "contour_owner" },
+      { id: "focused-u2", focusContourId: "contour_u2" },
+      { id: "idle-owner", focusContourId: null },
+      { id: "idle-u2", focusContourId: null },
+    ]);
+  });
+
+  it("holds slots and windows to the API's bounds", async () => {
+    await expect(pg.query(`UPDATE contours SET slots = 6 WHERE id = 'contour_owner'`)).rejects.toThrow(
+      /contours_slots_range/,
+    );
+    await expect(
+      pg.query(`UPDATE contours SET "windowDays" = 0 WHERE id = 'contour_owner'`),
+    ).rejects.toThrow(/contours_window_range/);
+    await expect(
+      pg.query(
+        `INSERT INTO goals (id, "userId", "contourId", title, position, "windowDays", "updatedAt")
+         VALUES ('g-bad', 'owner', 'contour_owner', 'x', 1, 91, now())`,
+      ),
+    ).rejects.toThrow(/goals_window_range/);
+  });
+
+  it("keeps a contour with goals, and drops a goal's links with it", async () => {
+    await pg.query(
+      `INSERT INTO goals (id, "userId", "contourId", title, position, "updatedAt")
+       VALUES ('g-1', 'owner', 'contour_owner', 'Котёл', 1000, now())`,
+    );
+    await pg.query(
+      `INSERT INTO goal_tasks ("goalId", "taskId", position) VALUES ('g-1', 'idle-owner', 1000)`,
+    );
+    await expect(
+      pg.query(`INSERT INTO goal_tasks ("goalId", "taskId", position) VALUES ('g-1', 'idle-owner', 2000)`),
+    ).rejects.toThrow(/goal_tasks_pkey/);
+    await expect(pg.query(`DELETE FROM contours WHERE id = 'contour_owner'`)).rejects.toThrow(
+      /goals_contourId_fkey/,
+    );
+    await pg.query(`DELETE FROM goals WHERE id = 'g-1'`);
+    const links = await pg.query(`SELECT * FROM goal_tasks`);
+    expect(links.rows).toHaveLength(0);
+    const tasks = await pg.query(`SELECT id FROM tasks WHERE id = 'idle-owner'`);
+    expect(tasks.rows).toHaveLength(1);
+  });
+});

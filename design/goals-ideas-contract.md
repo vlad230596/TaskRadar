@@ -189,6 +189,38 @@ null), переносит связи `GoalIdea` этой идеи в `GoalTask` 
 - `GET /focus?contourId=...` — набор одного контура; без параметра — все (как
   раньше, для совместимости), в каждой задаче есть `focusContourId`.
 
+### Уточнения по реализации бэкенда (24.11.2026)
+
+Дополнения, которых в контракте не было; ничего из сказанного выше не
+отменяют.
+
+- `GoalView`: у задач в `tasks` и у `nextStep` есть ещё `focusContourId`
+  (дуэли нужно знать, стоит ли шаг в наборе **активного** контура); есть
+  `ownWindowDays` — своё окно цели или `null` (`windowDays` — действующее).
+- `PUT`/`DELETE /goals/:id/tasks/:taskId`, `.../move`, `PUT`/`DELETE
+  /goals/:id/ideas/:noteId` и все действия (`slot`, `extend`, …) отвечают
+  `GoalView` целиком. `DELETE /goals/:id` — 204.
+- 409 `slots_full`: тело `{ error: "slots_full", message, details: { slots } }`.
+  Также 409: `slot` достигнутой цели (сначала `reopen`), `extend` цели не в
+  слоте, `PATCH { contourId }` цели в слоте, если в новом контуре слоты заняты.
+  Повторный `slot` цели, уже стоящей в слоте, окно не перезапускает.
+- Чужой или несуществующий `contourId` в теле (`POST /goals`, `PATCH /goals`,
+  `POST /tasks/:id/focus`, `PUT /contours/active`) — 400; чужая цель, задача,
+  идея в пути — 404.
+- `PUT /contours/active` отвечает `{ contourId, until }`; при `contourId: null`
+  `until` тоже сбрасывается.
+- `DELETE /contours/:id` переносит рабочий набор удаляемого контура в первый
+  из оставшихся.
+- `GET /focus?contourId=<контур по умолчанию>` включает и задачи набора с
+  пустым `focusContourId` (взятые старым бэкендом, например при откате).
+- Добавлен `GET /tasks/:id` (`taskView`) — его упоминал контракт, но маршрута не
+  было. `POST /tasks/:id/move` и `POST`/`DELETE /tasks/:id/focus` теперь тоже
+  отвечают `taskView`.
+- `POST /goals/:id/slot { windowDays }` сохраняет окно как своё окно цели.
+- MCP: в задачах из рабочего набора — `workingSetContourId`; `update_task`
+  принимает `workingSetContourId` вместе с `inWorkingSet: true`;
+  `create_goal` без `contourId` — контур по умолчанию.
+
 ## MCP и skill
 
 - `list_tasks` / `get_task` отдают `goals` задачи.

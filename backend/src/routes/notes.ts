@@ -11,6 +11,8 @@ import {
   projectIdParamSchema,
 } from "../schemas";
 import { getProjectOrThrow } from "./projects";
+import { computeAppendPosition } from "../domain/position";
+import { taskInclude, taskView } from "../domain/taskView";
 
 async function getNoteOrThrow(userId: string, id: string) {
   const note = await prisma.note.findFirst({ where: { id, project: { scope: { userId } } } });
@@ -95,6 +97,71 @@ export async function noteRoutes(app: FastifyInstance): Promise<void> {
       return updated;
     });
     reply.send(note);
+  });
+
+  /*
+   * "Сделать задачей" (design/goals-ideas-contract.md): the idea becomes a task
+   * at the end of the same project, and stops being an idea.
+   *
+   * Title from the idea's title, description from its text (or none). The
+   * goals the idea was kept next to follow it: each `GoalIdea` becomes a
+   * `GoalTask` at the end of that goal, so the thought that was parked beside
+   * a goal is now one of its steps without a second gesture.
+   *
+   * One transaction, with the task's `created` journal row (every task has
+   * one, see `TaskEvent`), for the two half-done states it rules out: a task
+   * made and the idea left behind (a twin), or the idea gone and no task.
+   *
+   * What the idea does not pass on: its AI marks (they describe the note's
+   * text as a note; the task has not been processed as a task) and its
+   * dataset rows, which keep their snapshot and lose the link
+   * (`DictationParse.noteId` is `SetNull`).
+   */
+  app.post("/notes/:id/to-task", async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params);
+    const note = await getNoteOrThrow(userIdOf(request), id);
+
+    const task = await prisma.$transaction(async (tx) => {
+      const last = await tx.task.aggregate({
+        where: { projectId: note.projectId },
+        _max: { position: true },
+      });
+      const created = await tx.task.create({
+        data: {
+          projectId: note.projectId,
+          title: note.title,
+          description: note.content.trim() === "" ? null : note.content,
+          position: computeAppendPosition(last._max.position),
+        },
+      });
+      await tx.taskEvent.create({
+        data: { taskId: created.id, kind: "created", toStatus: created.status },
+      });
+
+      const links = await tx.goalIdea.findMany({
+        where: { noteId: id },
+        orderBy: { createdAt: "asc" },
+      });
+      for (const link of links) {
+        const lastInGoal = await tx.goalTask.aggregate({
+          where: { goalId: link.goalId },
+          _max: { position: true },
+        });
+        await tx.goalTask.create({
+          data: {
+            goalId: link.goalId,
+            taskId: created.id,
+            position: computeAppendPosition(lastInGoal._max.position),
+          },
+        });
+      }
+
+      // Takes its `GoalIdea` rows with it (Cascade).
+      await tx.note.delete({ where: { id } });
+      return tx.task.findUniqueOrThrow({ where: { id: created.id }, include: taskInclude });
+    });
+
+    reply.status(201).send(taskView(task));
   });
 
   app.delete("/notes/:id", async (request, reply) => {
