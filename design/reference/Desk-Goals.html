@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Десктоп — цели</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.rail a,.rail button{width:56px;height:56px;border-radius:18px;color:#A7AECF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:transparent}
+.label{font-size:12.5px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:#61637E}
+.goal{border-radius:22px;background:linear-gradient(135deg,#14183C 0%,#2B3592 100%);padding:14px 16px;color:#FFFFFF;display:block}
+.sel{box-shadow:0 0 0 3px #F3F3F7,0 0 0 5px #FFC94D}
+.seg{flex-grow:1;height:3px;border-radius:2px}
+.bench{background:#FFFFFF;border:1px solid #DEDEE8;border-radius:18px;padding:12px 12px 12px 14px;display:flex;align-items:center;gap:12px}
+.chip{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+/* Правая панель цели — тёмная, как Goal-Edit.html */
+.tl{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+.tr{min-height:56px;display:flex;align-items:center;gap:12px;padding:0 4px 0 10px;border-radius:14px}
+.st{width:22px;height:22px;border-radius:11px;box-sizing:border-box;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.tt{display:block;font-size:15px;font-weight:500;color:#EDEEF7}
+.tp{display:block;margin-top:2px;font-size:12px;font-weight:600;color:#A7AECF}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 1440×900. Список (440) + цель (остаток). Вкладки контуров — в шапке. Выбранная цель обведена золотом 2 px через зазор 3 px. -->
+<div style="width: 1440px; height: 900px; box-sizing: border-box; background: #F3F3F7; display: flex; overflow: hidden;">
+
+  <nav class="rail" style="width: 76px; flex-shrink: 0; background: #1B2050; display: flex; flex-direction: column; align-items: center; padding: 18px 0 16px; gap: 10px;">
+    <span style="width: 34px; height: 34px; border-radius: 10px; background: #4A56BE; display: flex; align-items: center; justify-content: center; margin-bottom: 10px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D6DBFF" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.2"/><circle cx="15.6" cy="8.4" r="1.6" fill="#F0A33C" stroke="none"/></svg>
+    </span>
+    <a href="Desk-Plan.html" style="background: #333A73; color: #FFFFFF;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></svg><span style="font-size: 9.5px; font-weight: 700;">План</span></a>
+    <a href="Desk-Focus-Goals.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg><span style="font-size: 9.5px; font-weight: 600;">Работа</span></a>
+    <a href="Desk-History.html"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></svg><span style="font-size: 9.5px; font-weight: 600;">Итоги</span></a>
+    <span style="flex-grow: 1;"></span>
+    <button style="background: #4A56BE; color: #FFFFFF;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg><span style="font-size: 9.5px; font-weight: 700;">Голос</span></button>
+  </nav>
+
+  <div style="flex-grow: 1; display: flex; flex-direction: column; overflow: hidden;">
+    <header style="height: 78px; flex-shrink: 0; box-sizing: border-box; padding: 0 28px; display: flex; align-items: center; gap: 18px; background: #FFFFFF; border-bottom: 1px solid #DEDEE8;">
+      <a href="Desk-Plan.html" aria-label="Назад" style="width: 44px; height: 44px; margin-left: -12px; display: flex; align-items: center; justify-content: center; color: #1B2050;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></a>
+      <span style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: -0.01em;">Цели</span>
+      <!-- вкладки контуров: 44, r 13 -->
+      <div style="display: flex; gap: 2px; background: #F3F3F7; border: 1px solid #DEDEE8; border-radius: 16px; padding: 3px;">
+        <span style="height: 40px; padding: 0 18px; border-radius: 13px; background: #14183C; color: #FFFFFF; display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 700;"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>Работа <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 12px; font-weight: 600; color: #FFC94D;">2/2</span></span>
+        <span style="height: 40px; padding: 0 18px; border-radius: 13px; color: #61637E; display: flex; align-items: center; gap: 8px; font-size: 14.5px; font-weight: 600;">Личное <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 12px; font-weight: 600;">1/2</span></span>
+      </div>
+      <span style="flex-grow: 1;"></span>
+      <a href="Contours.html" style="height: 44px; padding: 0 16px; border-radius: 16px; border: 1px solid #C3C6DE; display: inline-flex; align-items: center; font-size: 15px; font-weight: 600; color: #3A3C5C;">Контуры</a>
+      <a href="#" style="height: 44px; padding: 0 20px; border-radius: 16px; background: #1B2050; color: #FFFFFF; display: inline-flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 600;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Цель</a>
+    </header>
+
+    <div style="flex-grow: 1; padding: 28px 40px 32px; display: flex; gap: 28px; overflow: hidden;">
+
+      <!-- Левая колонка 440 -->
+      <div style="width: 440px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+        <div class="label" style="padding-left: 4px;">В слотах · 2 из 2</div>
+        <a href="#" class="goal sel">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+            <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">Новое поколение TaskRadar</span>
+            <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 600; color: #7FD1A8;">2/5</span>
+          </div>
+          <div style="margin-top: 3px; display: flex; font-size: 13px; font-weight: 500; color: #A7AECF;"><span style="flex-grow: 1;">Чтобы задачи выбирались по пользе</span><span class="num" style="font-size: 12px; font-weight: 600;">ещё 3 д</span></div>
+          <div style="margin-top: 8px; display: flex; gap: 3px;"><span class="seg" style="background: #7FD1A8;"></span><span class="seg" style="background: #7FD1A8;"></span><span class="seg" style="background: rgba(255,255,255,0.15);"></span><span class="seg" style="background: rgba(255,255,255,0.15);"></span><span class="seg" style="background: rgba(255,255,255,0.15);"></span></div>
+          <div style="margin-top: 9px; font-size: 13.5px; font-weight: 600; color: #D6DBFF;"><span style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ШАГ</span>&nbsp; Спроектировать экран целей и дуэль</div>
+        </a>
+        <a href="#" class="goal">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+            <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">Первая публикация</span>
+            <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 600; color: #7FD1A8;">1/3</span>
+          </div>
+          <div style="margin-top: 3px; display: flex; font-size: 13px; font-weight: 500; color: #A7AECF;"><span style="flex-grow: 1;">Без публикаций меня как инженера не видно</span><span class="num" style="font-size: 12px; font-weight: 600;">до 18:30</span></div>
+          <div style="margin-top: 8px; display: flex; gap: 3px;"><span class="seg" style="background: #7FD1A8;"></span><span class="seg" style="background: rgba(255,255,255,0.15);"></span><span class="seg" style="background: rgba(255,255,255,0.15);"></span></div>
+          <div style="margin-top: 9px; font-size: 13.5px; font-weight: 600; color: #D6DBFF;"><span style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ШАГ</span>&nbsp; Набросать план статьи про локальную диктовку</div>
+        </a>
+
+        <div class="label" style="padding-left: 4px; margin-top: 14px; display: flex; align-items: center; gap: 8px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#61637E" stroke-width="2" aria-hidden="true"><path d="M4 10h16M4 14h16M6 14v5M18 14v5M6 10V7M18 10V7"/></svg>Скамейка · 2</div>
+        <div class="bench">
+          <span class="chip" style="background: #E6E8F7;"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#8C91B8"/><path d="M5 21h14" stroke="#8C91B8" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+          <span style="flex-grow: 1;"><span style="display: block; font-size: 15.5px; font-weight: 600;">Бэкапы, которым можно верить</span><span style="display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: #61637E;">0/3 · Проверить восстановление с нуля</span></span>
+          <button style="height: 36px; padding: 0 12px; border-radius: 12px; border: 1px solid #C3C6DE; background: #FFFFFF; color: #61637E; font-size: 13px; font-weight: 600;">Слоты заняты</button>
+        </div>
+        <div class="bench">
+          <span class="chip" style="background: #E6E8F7;"><svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#8C91B8"/><path d="M5 21h14" stroke="#8C91B8" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+          <span style="flex-grow: 1;"><span style="display: block; font-size: 15.5px; font-weight: 600;">Лендинг TaskRadar</span><span style="display: block; margin-top: 3px; font-size: 12.5px; font-weight: 500; color: #61637E;">задач нет</span></span>
+          <button style="height: 36px; padding: 0 12px; border-radius: 12px; border: 1px solid #C3C6DE; background: #FFFFFF; color: #61637E; font-size: 13px; font-weight: 600;">Слоты заняты</button>
+        </div>
+        <a href="History-Goals.html" style="height: 44px; display: flex; align-items: center; gap: 6px; padding-left: 4px; font-size: 14px; font-weight: 600;">Достигнутые · 4 →</a>
+      </div>
+
+      <!-- Правая панель: цель, тёмная, r 28, отступы 28 32 -->
+      <section style="flex-grow: 1; background: #14183C; border-radius: 28px; padding: 26px 32px 28px; color: #EDEEF7; display: flex; gap: 32px; overflow: hidden;">
+        <div style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="height: 36px; padding: 0 14px; border-radius: 18px; background: #232B6E; display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: #FFFFFF;"><svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>В слоте · ещё 3 д</span>
+            <span style="font-size: 13px; font-weight: 600; color: #D6DBFF;">окно 7 д ▾</span>
+            <span style="flex-grow: 1;"></span>
+            <span style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #39407A; background: #1F2552; color: #D6DBFF; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600;">Работа ▾</span>
+          </div>
+          <div style="margin-top: 18px; font-size: 30px; font-weight: 600; line-height: 1.25; color: #FFFFFF;">Новое поколение TaskRadar</div>
+          <div class="tl" style="margin-top: 18px;">Зачем</div>
+          <div style="margin-top: 6px; font-size: 17px; line-height: 1.45; color: #D6DBFF; border-left: 3px solid #FFC94D; padding-left: 12px;">Чтобы задачи выбирались по пользе, а не по свежести</div>
+
+          <div style="margin-top: 24px; display: flex; align-items: center;"><span class="tl" style="flex-grow: 1;">Задачи · 2/5</span><span style="font-size: 14px; font-weight: 700; color: #D6DBFF;">+ Добавить</span></div>
+          <div style="margin-top: 6px;">
+            <div class="tr"><span class="st" style="background: #7FD1A8;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span style="flex-grow: 1;"><span class="tt" style="color: #A7AECF; text-decoration: line-through;">Записать боль: задачи выбираются по свежести</span><span class="tp">TaskRadar</span></span></div>
+            <div class="tr"><span class="st" style="background: #7FD1A8;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span style="flex-grow: 1;"><span class="tt" style="color: #A7AECF; text-decoration: line-through;">Описать контуры в контракте</span><span class="tp">TaskRadar</span></span></div>
+            <div class="tr" style="background: #232B6E; padding-top: 6px; padding-bottom: 6px;"><span class="st" style="border: 2px solid #39407A;"></span><span style="flex-grow: 1;"><span style="display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ШАГ</span><span class="tt" style="color: #FFFFFF; font-weight: 600;">Спроектировать экран целей и дуэль</span><span class="tp">TaskRadar · в работе</span></span></div>
+            <div class="tr"><span class="st" style="border: 2px solid #F0A33C;"></span><span style="flex-grow: 1;"><span class="tt">Миграция: контуры и цели</span><span class="tp" style="color: #F0A33C;">TaskRadar · ждёт 1 д</span></span></div>
+            <div class="tr"><span class="st" style="border: 2px solid #39407A;"></span><span style="flex-grow: 1;"><span class="tt">Шаги целей в виджете</span><span class="tp">TaskRadar</span></span></div>
+          </div>
+        </div>
+
+        <!-- узкая колонка: идеи и действия, 260 -->
+        <div style="width: 260px; flex-shrink: 0; display: flex; flex-direction: column;">
+          <div class="tl">Идеи · 1</div>
+          <div style="margin-top: 8px; background: #1F2552; border-radius: 16px; padding: 14px; display: flex; gap: 10px; align-items: flex-start;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B9AEF5" stroke-width="1.9" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>
+            <span><span style="display: block; font-size: 14.5px; font-weight: 600;">Корона в строке задачи вместо тега</span><span style="display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: #A7AECF;">TaskRadar</span></span>
+          </div>
+          <span style="margin-top: 8px; font-size: 14px; font-weight: 700; color: #D6DBFF;">+ Идея</span>
+          <span style="flex-grow: 1;"></span>
+          <button style="height: 48px; border-radius: 16px; border: 1px solid #39407A; background: transparent; color: #D6DBFF; font-size: 15px; font-weight: 600;">Продлить окно</button>
+          <button style="margin-top: 10px; height: 48px; border-radius: 16px; border: 1px solid #39407A; background: transparent; color: #D6DBFF; font-size: 15px; font-weight: 600;">На скамейку</button>
+          <button style="margin-top: 10px; height: 64px; border: none; border-radius: 22px; background: #FFFFFF; color: #14183C; font-size: 18px; font-weight: 700;">✓ Достигнута</button>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+</body>
+</html>

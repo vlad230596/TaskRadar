@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Контур — слоты, окно, расписание</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.label{font-size:13px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#61637E;margin:20px 4px 8px}
+/* Слот: 52×52 r 16; выбранные — #14183C + корона 18 #FFC94D; прочие — белые, рамка #DEDEE8, цифра 15/700 #61637E */
+.sl{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;box-sizing:border-box}
+.on{background:#14183C}
+.off{background:#FFFFFF;border:1px solid #DEDEE8;color:#61637E}
+/* День: круг 40×40; выбран — #1B2050 / #FFF 13/700; нет — белый, рамка #DEDEE8, 13/600 #61637E */
+.d{width:40px;height:40px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:13px;box-sizing:border-box}
+.don{background:#1B2050;color:#FFFFFF;font-weight:700}
+.doff{background:#FFFFFF;border:1px solid #DEDEE8;color:#61637E;font-weight:600}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. Контур «Работа»: 2 слота, окно 7 д, пн–пт 9:00–19:00. Внизу — удаление с объяснением 409 (в контуре есть цели). -->
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F3F7; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="padding: 10px 8px 10px 4px; display: flex; align-items: center; gap: 4px; background: #FFFFFF; border-bottom: 1px solid #DEDEE8;">
+    <a href="Contours.html" aria-label="Назад" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #1B2050;">
+      <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>
+    </a>
+    <div style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 600; font-size: 18px;">Контур</div>
+    <button style="height: 44px; padding: 0 12px; border: none; background: transparent; color: #3F4AA8; font-size: 15px; font-weight: 700;">Сохранить</button>
+  </header>
+
+  <div style="flex-grow: 1; padding: 0 16px; overflow: hidden;">
+    <div class="label">Название</div>
+    <div style="height: 52px; box-sizing: border-box; border-radius: 16px; background: #FFFFFF; border: 1.5px solid #3F4AA8; padding: 0 16px; display: flex; align-items: center; font-size: 17px; font-weight: 500;">Работа</div>
+
+    <div class="label">Слотов для целей</div>
+    <div style="display: flex; gap: 8px;">
+      <span class="sl on"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span class="sl on"><svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span class="sl off">3</span>
+      <span class="sl off">4</span>
+      <span class="sl off">5</span>
+    </div>
+    <p style="margin: 8px 4px 0; font-size: 12.5px; font-weight: 500; color: #61637E;">Две-три — нормально. Больше — и цели снова станут списком.</p>
+
+    <div class="label">Окно по умолчанию</div>
+    <div style="display: flex; gap: 2px; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 14px; padding: 3px;">
+      <span style="flex: 1; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #61637E;">3 д</span>
+      <span style="flex: 1; height: 40px; border-radius: 11px; background: #1B2050; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700;">7 д</span>
+      <span style="flex: 1; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #61637E;">14 д</span>
+      <span style="flex: 1; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #61637E;">30 д</span>
+      <span style="flex: 1; height: 40px; border-radius: 11px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: #61637E;">Своё</span>
+    </div>
+
+    <div class="label">Расписание</div>
+    <div style="background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 18px; padding: 0 14px 14px;">
+      <div style="height: 56px; display: flex; align-items: center; gap: 12px;">
+        <span style="flex-grow: 1; font-size: 15.5px; font-weight: 600;">Включать по расписанию</span>
+        <!-- переключатель: 52×32, вкл. — #1B2050 -->
+        <span style="width: 52px; height: 32px; border-radius: 16px; background: #1B2050; position: relative;"><span style="position: absolute; right: 4px; top: 4px; width: 24px; height: 24px; border-radius: 12px; background: #FFFFFF;"></span></span>
+      </div>
+      <div style="display: flex; justify-content: space-between;">
+        <span class="d don">пн</span><span class="d don">вт</span><span class="d don">ср</span><span class="d don">чт</span><span class="d don">пт</span><span class="d doff">сб</span><span class="d doff">вс</span>
+      </div>
+      <div style="margin-top: 12px; display: flex; align-items: center; gap: 10px;">
+        <span style="flex: 1; height: 52px; border-radius: 16px; background: #F3F3F7; border: 1px solid #DEDEE8; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;"><span style="color: #61637E; font-weight: 500; margin-right: 6px;">с</span>9:00</span>
+        <span style="color: #61637E;">—</span>
+        <span style="flex: 1; height: 52px; border-radius: 16px; background: #F3F3F7; border: 1px solid #DEDEE8; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums;"><span style="color: #61637E; font-weight: 500; margin-right: 6px;">до</span>19:00</span>
+      </div>
+    </div>
+
+    <button style="margin-top: 18px; height: 52px; padding: 0 4px; border: none; background: transparent; color: #61637E; font-size: 15px; font-weight: 600;">Удалить контур</button>
+    <!-- 409: плашка #FDF7EE / рамка #EBD5B0, r 14, отступы 12 14; текст 14/500 #8A5A0B -->
+    <div style="border-radius: 14px; background: #FDF7EE; border: 1px solid #EBD5B0; padding: 12px 14px; display: flex; gap: 10px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8A5A0B" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16.5v.5"/></svg>
+      <div>
+        <div style="font-size: 14px; font-weight: 500; line-height: 1.4; color: #8A5A0B;">Нельзя удалить: в контуре 5 целей (с достигнутыми). Сначала перенесите их в другой контур — в карточке цели, чип контура.</div>
+        <a href="Goals.html" style="display: inline-flex; align-items: center; min-height: 32px; margin-top: 4px; font-size: 14px; font-weight: 700; color: #3F4AA8;">К целям контура →</a>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

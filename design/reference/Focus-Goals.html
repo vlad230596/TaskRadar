@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Работа — блок целей над набором</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}a:hover{color:#2C3480}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.col>*{flex-shrink:0} /* экран прокручивается, ничто не сжимается */
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. Блок целей: градиент #14183C → #2B3592 (goalStart → goalEnd), r 24, тень 0 6 18 rgba(20,24,60,.18).
+     Цель 1 — обычная; цель 2 — окно вышло (три кнопки). Ниже — строка целей контура «Личное», затем крупная карточка. -->
+<div class="col" style="position: relative; width: 390px; height: 844px; box-sizing: border-box; background: #F3F3F7; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="padding: 14px 16px 8px; display: flex; align-items: flex-start; gap: 12px;">
+    <div style="flex-grow: 1;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px; letter-spacing: -0.01em;">Работа</span>
+        <span style="display: inline-flex; align-items: center; gap: 6px;">
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #1B2050;"></span>
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #C3C6DE;"></span>
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #C3C6DE;"></span>
+        </span>
+      </div>
+      <!-- Переключатель контура: 30 px, r 15, #14183C; корона 12 #FFC94D; имя 13/700 #FFF; слоты 6×6: занятые #FFC94D, свободные #4A5088 -->
+      <button style="margin-top: 6px; height: 30px; padding: 0 12px 0 10px; border: none; border-radius: 15px; background: #14183C; color: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700;">
+        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>
+        Работа
+        <span style="display: inline-flex; gap: 3px; margin-left: 2px;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: #FFC94D;"></span>
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: #FFC94D;"></span>
+        </span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#A7AECF" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+    </div>
+    <a href="Pick.html" style="margin-top: 0; height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #C3C6DE; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #3A3C5C;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 7h16M4 12h11M4 17h7"/></svg>Набор
+    </a>
+  </header>
+
+  <!-- БЛОК ЦЕЛЕЙ -->
+  <section style="margin: 4px 16px 0; border-radius: 24px; background: linear-gradient(135deg, #14183C 0%, #2B3592 100%); box-shadow: 0 6px 18px rgba(20,24,60,0.18); padding: 4px 0; color: #FFFFFF;">
+
+    <!-- Цель 1: отступы 14 16 14 -->
+    <div style="padding: 14px 16px 14px;">
+      <div style="display: flex; align-items: center; gap: 8px; height: 22px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+        <span style="flex-grow: 1; min-width: 0; font-size: 16px; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Новое поколение TaskRadar</span>
+        <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 600; color: #7FD1A8; flex-shrink: 0;">2/5</span>
+      </div>
+      <div style="margin-top: 3px; display: flex; gap: 10px; align-items: baseline;">
+        <span style="flex-grow: 1; min-width: 0; font-size: 13px; font-weight: 500; color: #A7AECF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Чтобы задачи выбирались по пользе, а не по свежести</span>
+        <span class="num" style="flex-shrink: 0; font-size: 12px; font-weight: 600; color: #A7AECF;">ещё 3 д</span>
+      </div>
+      <!-- прогресс: сегменты 3 px, зазор 3, сделано #7FD1A8, прочее rgba(255,255,255,.15) -->
+      <div style="margin-top: 8px; display: flex; gap: 3px;">
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></span>
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></span>
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span>
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span>
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span>
+      </div>
+      <!-- колодец шага: 52, r 16, фон rgba(255,255,255,.08), рамка 1 rgba(255,255,255,.15) -->
+      <div style="margin-top: 10px; height: 52px; box-sizing: border-box; border-radius: 16px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 0 6px 0 14px; display: flex; align-items: center; gap: 10px;">
+        <a href="Edit-Goals.html" style="flex-grow: 1; min-width: 0; color: #FFFFFF;">
+          <span style="display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ШАГ</span>
+          <span style="display: flex; margin-top: 2px; font-size: 14.5px; font-weight: 600; line-height: 1.3; white-space: nowrap;">
+            <span style="overflow: hidden; text-overflow: ellipsis;">Спроектировать экран целей</span>
+            <span style="flex-shrink: 0; font-size: 12px; font-weight: 600; color: #A7AECF; margin-left: 6px; line-height: 19px;">· TaskRadar</span>
+          </span>
+        </a>
+        <!-- взять в работу: белый круг 40 (мишень 44), значок #14183C -->
+        <button aria-label="Взять шаг в работу" style="width: 44px; height: 44px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; flex-shrink: 0; padding: 0;">
+          <span style="width: 40px; height: 40px; border-radius: 20px; background: #FFFFFF; display: flex; align-items: center; justify-content: center; color: #14183C;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.6"/></svg>
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div style="height: 1px; margin: 0 16px; background: rgba(255,255,255,0.15);"></div>
+
+    <!-- Цель 2: окно вышло -->
+    <div style="padding: 14px 16px 14px;">
+      <div style="display: flex; align-items: center; gap: 8px; height: 22px;">
+        <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+        <span style="flex-grow: 1; min-width: 0; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Первая публикация</span>
+        <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 600; color: #7FD1A8;">1/3</span>
+      </div>
+      <div style="margin-top: 3px; font-size: 13px; font-weight: 600; color: #FF8C70;">Окно вышло вчера</div>
+      <div style="margin-top: 8px; display: flex; gap: 3px;">
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></span>
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span>
+        <span style="flex-grow: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span>
+      </div>
+      <!-- три кнопки 44, зазор 8, r 14 -->
+      <div style="margin-top: 10px; display: flex; gap: 8px;">
+        <button style="flex: 0 0 88px; height: 44px; border: none; border-radius: 14px; background: #FFFFFF; color: #14183C; font-size: 14px; font-weight: 700; padding: 0;">Оставить</button>
+        <button style="flex: 1 1 auto; height: 44px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #D6DBFF; font-size: 14px; font-weight: 600; padding: 0; white-space: nowrap;">На скамейку</button>
+        <button style="flex: 0 0 112px; height: 44px; border-radius: 14px; border: 1px solid rgba(127,209,168,0.5); background: transparent; color: #7FD1A8; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 5px; padding: 0;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Достигнута
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Цели других контуров: строка 44, без фона -->
+  <button style="margin: 4px 16px 0; height: 44px; padding: 0; border: none; background: transparent; display: flex; align-items: center; gap: 8px; text-align: left;">
+    <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#8C91B8"/><path d="M5 21h14" stroke="#8C91B8" stroke-width="2" stroke-linecap="round"/></svg>
+    <span style="font-size: 13px; font-weight: 700; color: #3A3C5C;">Личное</span>
+    <span style="flex-grow: 1; min-width: 0; font-size: 13px; font-weight: 500; color: #61637E; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">· Положение на рынке труда</span>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#61637E" stroke-width="2.2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+  </button>
+
+  <!-- Крупная карточка (Focus.html) + чип цели -->
+  <section style="margin: 4px 16px 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 26px; padding: 18px 18px 18px;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="height: 28px; padding: 0 12px; border-radius: 14px; background: #E6E8F7; color: #2C3480; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700; flex-shrink: 0;">TaskRadar</span>
+      <!-- чип цели: 28, r 14, #14183C, корона 13, название 13/700, max 190 -->
+      <span style="height: 28px; max-width: 190px; padding: 0 12px 0 9px; border-radius: 14px; background: #14183C; color: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; min-width: 0;">
+        <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" style="flex-shrink: 0;"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Новое поколение TaskRadar</span>
+      </span>
+    </div>
+    <div style="margin-top: 6px; font-size: 12.5px; font-weight: 600; color: #61637E;">в работе с 9:40</div>
+
+    <h1 style="margin: 12px 0 0; font-size: 27px; font-weight: 600; line-height: 1.28; letter-spacing: -0.01em;">Описать контуры в контракте</h1>
+
+    <button style="margin-top: 18px; width: 100%; height: 68px; border: none; border-radius: 22px; background: #2A6B4E; color: #FFFFFF; font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+      Сделано
+    </button>
+  </section>
+
+  <div style="margin: 16px 16px 0; display: flex; align-items: center; gap: 8px;">
+    <span style="font-size: 13px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase; color: #61637E;">Дальше</span>
+    <span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span>
+  </div>
+  <!-- строка «Дальше»: корона-чип 18×18 r 6 перед именем проекта -->
+  <button style="margin: 10px 16px 0; flex-shrink: 0; text-align: left; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 18px; padding: 14px; display: flex; align-items: center; gap: 12px;">
+    <span style="width: 26px; height: 26px; border-radius: 13px; border: 2px solid #C3C6DE; flex-shrink: 0; box-sizing: border-box;"></span>
+    <span style="flex-grow: 1;">
+      <span style="display: block; font-size: 16px; font-weight: 500; line-height: 1.32;">Потестить диктовку на телефоне</span>
+      <span style="display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 12px; font-weight: 600; color: #61637E;">
+        <span style="width: 18px; height: 18px; border-radius: 6px; background: #14183C; display: inline-flex; align-items: center; justify-content: center;"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg></span>
+        TaskRadar
+      </span>
+    </span>
+  </button>
+
+  <div style="flex: 1 1 0; flex-shrink: 1; min-height: 0;"></div>
+
+  <nav style="position: absolute; left: 0; right: 0; bottom: 0; height: 82px; flex-shrink: 0; box-sizing: border-box; border-top: 1px solid #DEDEE8; background: #FFFFFF; display: flex; align-items: flex-start; padding: 8px 10px 0; gap: 6px;">
+    <a href="Main.html" style="flex-grow: 1; height: 54px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #61637E;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></svg>
+      <span style="font-size: 11px; font-weight: 600;">План</span>
+    </a>
+    <a href="Focus-Goals.html" style="flex-grow: 1; height: 54px; border-radius: 16px; background: #E6E8F7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #2C3480;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+      <span style="font-size: 11px; font-weight: 700;">Работа</span>
+    </a>
+    <a href="History-Goals.html" style="flex-grow: 1; height: 54px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #61637E;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></svg>
+      <span style="font-size: 11px; font-weight: 600;">История</span>
+    </a>
+    <a href="Dictate.html" style="width: 84px; flex-shrink: 0; height: 54px; border-radius: 16px; background: #4A56BE; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      <span style="font-size: 11px; font-weight: 700;">Голос</span>
+    </a>
+  </nav>
+</div>
+</body>
+</html>
