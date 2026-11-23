@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/task.dart';
 import '../providers/focus_providers.dart';
+import 'goals/duel_sheet.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'mutation_feedback.dart';
@@ -23,14 +24,19 @@ Future<void> toggleFocus(
 }) {
   final inFocus = ref.read(focusedTaskIdsProvider).contains(task.id);
   final notifier = ref.read(focusSetProvider.notifier);
+  if (!inFocus) {
+    // Through the duel (`design/goals-ideas-contract.md`, «Дуэль»).
+    return takeIntoWork(
+      context,
+      ref,
+      task: task,
+      projectName: projectName,
+    ).then((outcome) => outcome != TakeOutcome.none);
+  }
   return runMutation(
     context,
-    () => inFocus
-        ? notifier.drop(task.id)
-        : notifier.take(task, projectName: projectName),
-    failure: inFocus
-        ? 'Не удалось убрать задачу из набора.'
-        : 'Не удалось взять задачу в работу.',
+    () => notifier.drop(task.id),
+    failure: 'Не удалось убрать задачу из набора.',
   );
 }
 

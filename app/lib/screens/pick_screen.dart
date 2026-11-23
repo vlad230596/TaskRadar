@@ -9,11 +9,14 @@ import '../models/board_project.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../providers/board_providers.dart';
+import '../domain/goals.dart';
 import '../providers/focus_providers.dart';
 import '../providers/scope_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/glance.dart';
+import '../widgets/goals/crown.dart';
+import '../widgets/goals/duel_sheet.dart';
 import '../widgets/mutation_feedback.dart';
 import 'work_screen.dart';
 
@@ -248,6 +251,7 @@ class _TaskChoice extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final age = daysSinceMovement(task.updatedAt, createdAt: task.createdAt);
+    final crown = watchCrown(ref, task.id, task.goals);
 
     return Material(
       color: chosen ? AppColors.ink : AppColors.card,
@@ -280,8 +284,23 @@ class _TaskChoice extends ConsumerWidget {
               // Только у невзятых: у взятой возраст уже ничего не решает, а чип
               // на чернильном фоне был бы третьим цветом в строке.
               if (!chosen) ...<Widget>[
+                // The crown, as on a project row: before the age.
+                if (crown != CrownLevel.none)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: CrownChip(bright: crown == CrownLevel.bright),
+                  ),
                 const SizedBox(width: 12),
-                AgeChip(days: age, showIcon: false),
+                AgeChip(
+                  days: age,
+                  showIcon: false,
+                  warm: mayWarmAge(
+                    inWorkingSet: ref
+                        .watch(anyFocusedTaskIdsProvider)
+                        .contains(task.id),
+                    crowned: crown != CrownLevel.none,
+                  ),
+                ),
               ],
             ],
           ),
@@ -319,12 +338,9 @@ class _TaskChoice extends ConsumerWidget {
       return;
     }
 
+    // Through the duel: a goal's step may be offered instead.
     unawaited(
-      runMutation(
-        context,
-        () => notifier.take(task, projectName: projectName),
-        failure: 'Не удалось взять задачу в работу.',
-      ),
+      takeIntoWork(context, ref, task: task, projectName: projectName),
     );
   }
 }

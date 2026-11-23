@@ -83,6 +83,7 @@ class TaskCrown extends ConsumerWidget {
     this.iconSize = 13,
     this.chipless = false,
     this.target = Targets.minimum,
+    this.targetHeight,
     super.key,
   });
 
@@ -99,6 +100,10 @@ class TaskCrown extends ConsumerWidget {
 
   /// The tap target's side.
   final double target;
+
+  /// The target's height when it must stay inside a line of text (a task
+  /// row's title line); [target] otherwise.
+  final double? targetHeight;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -121,7 +126,7 @@ class TaskCrown extends ConsumerWidget {
             unawaited(showCrownMenu(context, ref, taskId, goals)),
         child: SizedBox(
           width: target,
-          height: target,
+          height: targetHeight ?? target,
           child: Center(child: mark),
         ),
       ),

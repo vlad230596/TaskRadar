@@ -15,6 +15,7 @@ import '../models/task_category.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/attachment_providers.dart';
+import '../domain/goals.dart';
 import '../providers/focus_providers.dart';
 import '../providers/outbox_providers.dart';
 import '../providers/project_providers.dart';
@@ -24,6 +25,8 @@ import 'attachment_badge.dart';
 import 'category_sheets.dart';
 import 'editor/checklist_section.dart';
 import 'glance.dart';
+import 'goals/crown.dart';
+import 'goals/duel_sheet.dart';
 import 'mutation_feedback.dart';
 import 'overflow_fade_text.dart';
 import 'reminder_time_picker.dart';
@@ -638,9 +641,11 @@ class TaskRow extends ConsumerWidget {
     required int? age,
     required bool current,
     required int pictures,
+    required bool crowned,
   }) {
     final chip = AppText.chip;
     var width = 0.0;
+    if (crowned) width += 8 + Targets.minimum;
     if (_hasLink) width += 6 + 16;
     if (task.location != null) width += 6 + 16;
     final checklist = task.checklist;
@@ -677,6 +682,11 @@ class TaskRow extends ConsumerWidget {
       task.updatedAt,
       createdAt: task.createdAt,
       now: now,
+    );
+    final crown = watchCrown(ref, task.id, task.goals);
+    final warmAge = mayWarmAge(
+      inWorkingSet: ref.watch(anyFocusedTaskIdsProvider).contains(task.id),
+      crowned: crown != CrownLevel.none,
     );
 
     final title = OverflowFadeText(
@@ -754,10 +764,27 @@ class TaskRow extends ConsumerWidget {
                   // the title -- and never shrinks. See `widgets/glance.dart`.
                   // Not on a done row: how long a finished task sat still is
                   // not a question anyone asks.
+                  // The crown: right of the title, before the age
+                  // (`Project-Goals.html`). Its target is 44 wide and no
+                  // taller than the title line, so the row does not grow.
+                  if (crown != CrownLevel.none && !_unconfirmed)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Transform.translate(
+                        offset: const Offset(0, -4),
+                        child: TaskCrown(
+                          taskId: task.id,
+                          goals: task.goals,
+                          targetHeight: 30,
+                        ),
+                      ),
+                    ),
                   if (!current && !blocked && !done)
                     Padding(
-                      padding: const EdgeInsets.only(left: 10),
-                      child: AgeChip(days: age, showIcon: false),
+                      padding: EdgeInsets.only(
+                        left: crown != CrownLevel.none ? 0 : 10,
+                      ),
+                      child: AgeChip(days: age, showIcon: false, warm: warmAge),
                     ),
                 ];
                 final inline =
@@ -766,6 +793,7 @@ class TaskRow extends ConsumerWidget {
                           context,
                           age: age,
                           current: current,
+                          crowned: crown != CrownLevel.none,
                           pictures: attachmentCount(
                             task,
                             ref.watch(pendingAttachmentCountsProvider),
@@ -1032,14 +1060,27 @@ class _FocusTarget extends ConsumerWidget {
     final container = ProviderScope.containerOf(context, listen: false);
     final notifier = ref.read(focusSetProvider.notifier);
 
+    if (!inFocus) {
+      // Through the duel: a goal's step may be offered instead.
+      final outcome = await takeIntoWork(
+        context,
+        ref,
+        task: task,
+        projectName: projectName,
+      );
+      if (outcome != TakeOutcome.task || !messenger.mounted) return;
+      _offerUndo(
+        messenger,
+        'Взята в работу',
+        () => container.read(focusSetProvider.notifier).drop(task.id),
+      );
+      return;
+    }
+
     final ok = await runMutation(
       context,
-      () => inFocus
-          ? notifier.drop(task.id)
-          : notifier.take(task, projectName: projectName),
-      failure: inFocus
-          ? 'Не удалось убрать задачу из набора.'
-          : 'Не удалось взять задачу в работу.',
+      () => notifier.drop(task.id),
+      failure: 'Не удалось убрать задачу из набора.',
     );
     if (!ok || !messenger.mounted) return;
 

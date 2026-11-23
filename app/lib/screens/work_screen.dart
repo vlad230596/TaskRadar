@@ -7,12 +7,19 @@ import '../api/api_error_message.dart';
 import '../models/focus_task.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
+import '../domain/goals.dart';
+import '../models/goal.dart';
 import '../providers/focus_providers.dart';
+import '../providers/goal_providers.dart';
 import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/glance.dart';
+import '../widgets/goals/contour_switcher.dart';
+import '../widgets/goals/crown.dart';
+import '../widgets/goals/goal_block.dart';
+import '../widgets/goals/goal_icons.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mode_title.dart';
 import '../widgets/mutation_feedback.dart';
@@ -53,10 +60,19 @@ class WorkScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final set = ref.watch(focusSetProvider);
+    // The active contour's set (`design/goals-ideas-contract.md`: each
+    // contour keeps its own); every set at once while contours are unknown.
+    final set = ref.watch(activeFocusSetProvider);
 
     final Widget body = switch (set) {
-      AsyncData(:final value) when value.isEmpty => const _NoSet(),
+      AsyncData(:final value) when value.isEmpty => _NoSet(
+        header: isWideLayout(context)
+            ? const Padding(
+                padding: EdgeInsets.fromLTRB(40, 0, 40, 0),
+                child: WorkGoalsStrip(),
+              )
+            : const WorkGoals(),
+      ),
       AsyncData(:final value) => _Set(tasks: value),
       AsyncError(:final error) => _Failed(error: error),
       _ => const _Filler(
@@ -74,7 +90,10 @@ class WorkScreen extends ConsumerWidget {
         const LocalCopyNote(cacheKey: ReadCacheKeys.focus),
         Expanded(
           child: RefreshIndicator(
-            onRefresh: () => ref.read(focusSetProvider.notifier).refresh(),
+            onRefresh: () async {
+              unawaited(ref.read(goalsProvider.notifier).syncQuietly());
+              await ref.read(focusSetProvider.notifier).refresh();
+            },
             child: body,
           ),
         ),
@@ -94,8 +113,10 @@ class WorkHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tasks = ref.watch(focusSetProvider).value ?? const <FocusTask>[];
+    final tasks =
+        ref.watch(activeFocusSetProvider).value ?? const <FocusTask>[];
     final wide = isWideLayout(context);
+    final switcher = showContourSwitcher(ref);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(Insets.gutter, 18, Insets.gutter, 12),
@@ -114,10 +135,16 @@ class WorkHeader extends ConsumerWidget {
                   AppMode.work.title,
                   AppText.mode,
                 );
-                final room = box.maxWidth - title - 12;
-                return Row(
+                final room =
+                    box.maxWidth - title - 12 - (wide && switcher ? 200 : 0);
+                final row = Row(
                   children: <Widget>[
                     Flexible(child: ModeTitle(AppMode.work.title)),
+                    // Desktop: the contour pill beside the mode's name.
+                    if (wide && switcher) ...<Widget>[
+                      const SizedBox(width: 16),
+                      const ContourSwitcher(wide: true),
+                    ],
                     // Пустой набор не рисует ряд пустых слотов: точки
                     // описывают набор, а его пока нет, и об этом говорит само
                     // тело экрана.
@@ -135,6 +162,17 @@ class WorkHeader extends ConsumerWidget {
                         ),
                       ),
                     ],
+                  ],
+                );
+                // Phone: the contour pill under the mode's name.
+                if (wide || !switcher) return row;
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    row,
+                    const SizedBox(height: 6),
+                    const ContourSwitcher(),
                   ],
                 );
               },
@@ -306,6 +344,7 @@ class _Set extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 24),
       children: <Widget>[
+        const WorkGoals(),
         _HeadCard(task: head),
         if (rest.isNotEmpty) ...<Widget>[
           const _NextLabel(),
@@ -343,7 +382,28 @@ class _WideSet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(40, 0, 40, 32),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // The goals as a strip of cards above the big task
+          // (`Desk-Focus-Goals.html`).
+          const WorkGoalsStrip(),
+          Expanded(child: _WideRow(head: head, rest: rest)),
+        ],
+      ),
+    );
+  }
+}
+
+class _WideRow extends StatelessWidget {
+  const _WideRow({required this.head, required this.rest});
+
+  final FocusTask head;
+  final List<FocusTask> rest;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           Expanded(child: _HeadCard(task: head, wide: true)),
@@ -365,7 +425,6 @@ class _WideSet extends StatelessWidget {
             ),
           ),
         ],
-      ),
     );
   }
 }
@@ -380,6 +439,15 @@ class _HeadCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final blocked = task.status == TaskStatus.blocked;
+    final goals = watchTaskGoals(ref, task.id, task.goals);
+    final since = Text(
+      blocked ? 'ждёт' : focusedSince(task.focusedAt),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: _meta.copyWith(
+        color: blocked ? AppColors.waitingInk : AppColors.muted,
+      ),
+    );
 
     return Container(
       margin: wide
@@ -396,6 +464,27 @@ class _HeadCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          if (goals.isNotEmpty) ...<Widget>[
+            // With a goal chip the time goes under the chips on a phone (it
+            // never fits beside both at 390), beside them on a desktop.
+            Row(
+              children: <Widget>[
+                _ProjectChip(name: task.project.name, wide: wide),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: _GoalChip(
+                    goals: goals,
+                    activeContourId: ref.watch(activeContourIdProvider),
+                  ),
+                ),
+                if (wide) ...<Widget>[
+                  const SizedBox(width: 12),
+                  Flexible(child: since),
+                ],
+              ],
+            ),
+            if (!wide) ...<Widget>[const SizedBox(height: 8), since],
+          ] else
           Row(
             children: <Widget>[
               _ProjectChip(name: task.project.name, wide: wide),
@@ -584,6 +673,69 @@ class _ProjectChip extends StatelessWidget {
   }
 }
 
+/// The goal chip of the big card: 28 high, the first bright goal's name in
+/// white on `#14183C` with the crown, «+1» for more.
+class _GoalChip extends StatelessWidget {
+  const _GoalChip({required this.goals, required this.activeContourId});
+
+  final List<TaskGoalRef> goals;
+  final String? activeContourId;
+
+  @override
+  Widget build(BuildContext context) {
+    final bright = <TaskGoalRef>[
+      for (final goal in goals)
+        if (activeContourId == null || goal.contourId == activeContourId) goal,
+    ];
+    final lead = bright.isNotEmpty ? bright.first : goals.first;
+    final lit = bright.isNotEmpty;
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.fromLTRB(10, 0, 12, 0),
+      decoration: BoxDecoration(
+        color: lit ? AppColors.crownChip : AppColors.crownMutedChip,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          CrownIcon(
+            size: 13,
+            color: lit ? AppColors.crown : AppColors.crownMuted,
+          ),
+          const SizedBox(width: 6),
+          Flexible(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 190),
+              child: Text(
+                lead.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppFonts.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: lit ? AppColors.onInk : AppColors.inkSoft,
+                ),
+              ),
+            ),
+          ),
+          if (goals.length > 1)
+            Text(
+              ' +${goals.length - 1}',
+              style: const TextStyle(
+                fontFamily: AppFonts.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: AppColors.voiceMuted,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _NextLabel extends StatelessWidget {
   const _NextLabel();
 
@@ -613,6 +765,7 @@ class _NextRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final blocked = task.status == TaskStatus.blocked;
+    final crown = watchCrown(ref, task.id, task.goals);
 
     return Container(
       decoration: BoxDecoration(
@@ -682,11 +835,27 @@ class _NextRow extends ConsumerWidget {
                       style: wide ? _nextTitleWide : _nextTitle,
                     ),
                     SizedBox(height: wide ? 8 : 5),
-                    Text(
-                      task.project.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppText.caption.copyWith(fontSize: 12),
+                    Row(
+                      children: <Widget>[
+                        // `[♛] TaskRadar`: the crown before the project.
+                        if (crown != CrownLevel.none) ...<Widget>[
+                          CrownChip(
+                            bright: crown == CrownLevel.bright,
+                            size: 18,
+                            iconSize: 11,
+                            radius: 6,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Flexible(
+                          child: Text(
+                            task.project.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppText.caption.copyWith(fontSize: 12),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -715,11 +884,16 @@ class _NextRow extends ConsumerWidget {
 /// Не «здесь пока ничего нет», а «наберите» — пустой набор это не поломка и не
 /// ожидание данных, это ровно то состояние, из которого начинается день.
 class _NoSet extends StatelessWidget {
-  const _NoSet();
+  const _NoSet({this.header});
+
+  /// The goals above the empty set: an empty set is exactly when a goal's
+  /// step is the thing to take.
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
     return _Filler(
+      header: header,
       icon: Icons.adjust,
       title: 'Набор пуст',
       body:
@@ -825,7 +999,11 @@ class _Filler extends StatelessWidget {
     required this.body,
     this.icon,
     this.action,
+    this.header,
   });
+
+  /// Drawn at the top, above the centred text.
+  final Widget? header;
 
   /// Null рисует спиннер — состояние загрузки.
   final IconData? icon;
@@ -862,7 +1040,17 @@ class _Filler extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: Center(child: content),
+          child: header == null
+              ? Center(child: content)
+              : IntrinsicHeight(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      header!,
+                      Expanded(child: Center(child: content)),
+                    ],
+                  ),
+                ),
         ),
       ),
     );

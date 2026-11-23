@@ -6,11 +6,19 @@ import '../domain/project_badge.dart';
 import '../domain/project_summary.dart';
 import '../domain/task_age.dart';
 import '../models/board_project.dart';
+import '../domain/goals.dart';
 import '../models/scope.dart';
+import '../models/task.dart';
 import '../navigation/app_routes.dart';
 import '../providers/archive_providers.dart';
 import '../providers/board_providers.dart';
 import '../providers/focus_providers.dart';
+import '../providers/goal_providers.dart';
+import '../navigation/goal_routes.dart';
+import 'goals_screen.dart' show goalGradient;
+import '../widgets/goals/contour_switcher.dart';
+import '../widgets/goals/crown.dart';
+import '../widgets/goals/goal_icons.dart';
 import '../providers/inbox_providers.dart';
 import '../providers/scope_providers.dart';
 import '../providers/shell_providers.dart';
@@ -121,9 +129,19 @@ class PlanHeader extends ConsumerWidget {
                 // already chosen is furniture -- the same rule the old
                 // `ScopeSwitcher` followed, kept. `active` is null for "Все
                 // пространства", which is a choice like any other here.
-                if (scopes.length > 1) ...<Widget>[
+                // The contour pill sits right of the scope pill: the scope
+                // is what is shown, the contour which goals are in force.
+                if (scopes.length > 1 || showContourSwitcher(ref)) ...<Widget>[
                   const SizedBox(height: 6),
-                  _ScopePill(scopes: scopes, active: active),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: <Widget>[
+                      if (scopes.length > 1)
+                        _ScopePill(scopes: scopes, active: active),
+                      if (showContourSwitcher(ref)) const ContourSwitcher(),
+                    ],
+                  ),
                 ],
               ],
             ),
@@ -388,6 +406,7 @@ class _Board extends ConsumerWidget {
         // sit above the list in both layouts -- except that the tile layout
         // folds the sandbox into the grid as its first tile, which is what the
         // reference does and what keeps the grid from starting with a hole.
+        const SliverToBoxAdapter(child: _GoalsBar()),
         const SliverToBoxAdapter(child: _FocusBar()),
         if (sandboxAsRow) const SliverToBoxAdapter(child: _SandboxRow()),
 
@@ -624,6 +643,90 @@ class _FocusBar extends ConsumerWidget {
                   color: AppColors.onInk,
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// «Цели»: the way to the goals screen, first row above «В работе»
+/// (`design/goals-ideas-spec.md`, п. 5): the goal block's gradient, the
+/// active contour's slots as dots, a coral dot when a window has run out.
+/// Nothing while the contours are unknown (an older server).
+class _GoalsBar extends ConsumerWidget {
+  const _GoalsBar();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(activeContourProvider);
+    if (active == null) return const SizedBox.shrink();
+    final goals = ref.watch(goalListProvider);
+    final taken = goals
+        .where((goal) => goal.contourId == active.id && goal.inSlot)
+        .length;
+    final expired = goals.any(
+      (goal) => goal.contourId == active.id && goal.windowExpired,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 0, Insets.gutter, 10),
+      child: Material(
+        color: Colors.transparent,
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: goalGradient,
+            borderRadius: BorderRadius.circular(Radii.row),
+          ),
+          child: InkWell(
+            onTap: () => openGoals(context),
+            borderRadius: BorderRadius.circular(Radii.row),
+            child: Container(
+              constraints: const BoxConstraints(minHeight: 52),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              child: Row(
+                children: <Widget>[
+                  const CrownIcon(size: 18, color: AppColors.crown),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Цели',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: AppText.action.copyWith(color: AppColors.onInk),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: SlotDots(
+                      taken: taken,
+                      total: active.slots,
+                      size: 9,
+                      gap: 5,
+                      ring: true,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (expired) ...<Widget>[
+                    Tooltip(
+                      message: 'Окно цели вышло',
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: AppColors.goalExpired,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: AppColors.onInk,
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -924,11 +1027,22 @@ class _ProjectRow extends StatelessWidget {
               // Two lines, not one: a dictated task title is a sentence, and
               // one line of it was usually the half that did not say what the
               // task was.
-              Text(
-                _currentLine(summary),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: AppText.body,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  // The current task's crown, bare: a chip does not fit a
+                  // 14.5 px line (spec, п. 1).
+                  if (summary.currentTask case final current?)
+                    _CurrentCrown(task: current),
+                  Expanded(
+                    child: Text(
+                      _currentLine(summary),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.body,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               Row(
@@ -1059,6 +1173,30 @@ class _ProjectTile extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// The bare crown before a project's current task: `crownOnLight` for a goal
+/// of the active contour, `crownMuted` otherwise. Not a button -- the row
+/// itself opens the project.
+class _CurrentCrown extends ConsumerWidget {
+  const _CurrentCrown({required this.task});
+
+  final Task task;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final level = watchCrown(ref, task.id, task.goals);
+    if (level == CrownLevel.none) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 3, right: 6),
+      child: CrownIcon(
+        size: 13,
+        color: level == CrownLevel.bright
+            ? AppColors.crownOnLight
+            : AppColors.crownMuted,
       ),
     );
   }

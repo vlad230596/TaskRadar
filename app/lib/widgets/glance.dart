@@ -36,7 +36,12 @@ import '../theme/tokens.dart';
 /// ordering is the right one on its own merits -- a truncated project name is
 /// still recognisable, a truncated number is a different number.
 class AgeChip extends StatelessWidget {
-  const AgeChip({required this.days, this.showIcon = true, super.key});
+  const AgeChip({
+    required this.days,
+    this.showIcon = true,
+    this.warm = true,
+    super.key,
+  });
 
   /// Null draws nothing at all: a row with an unreadable timestamp should look
   /// like a row with nothing wrong, not like a row aged zero days.
@@ -47,12 +52,19 @@ class AgeChip extends StatelessWidget {
   /// short strip.
   final bool showIcon;
 
+  /// Whether an old age may go warm at all. A task's age does only when the
+  /// task is in a working set or carries a crown
+  /// (`design/goals-ideas-contract.md`, «Тёплый возраст»); every other task's
+  /// age stays grey however old -- otherwise the warm chip, on every forgotten
+  /// line, stops meaning anything.
+  final bool warm;
+
   @override
   Widget build(BuildContext context) {
     final value = days;
     if (value == null) return const SizedBox.shrink();
 
-    final stale = isStaleAge(value);
+    final stale = warm && isStaleAge(value);
     final foreground = stale ? AppColors.waitingInk : AppColors.muted;
 
     return Container(
