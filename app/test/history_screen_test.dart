@@ -83,7 +83,11 @@ void main() {
   group('состояния', () {
     testWidgets('пока сервер считает — говорит, что считает', (tester) async {
       final inFlight = Completer<ResponseBody>();
-      backend.responder = (_) => inFlight.future;
+      // Only the history is held: a body's stream can be read once, and the
+      // screen also asks for the achieved goals once the history is there.
+      backend.responder = (options) => options.path.startsWith('/history')
+          ? inFlight.future
+          : jsonResponse(const <dynamic>[]);
 
       await pumpHistory(tester);
 

@@ -4,16 +4,21 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
+import '../domain/goals.dart';
 import '../domain/task_age.dart';
+import '../models/goal.dart';
 import '../models/history_snapshot.dart';
 import '../models/history_task_event.dart';
 import '../navigation/app_routes.dart';
+import '../navigation/goal_routes.dart';
+import '../providers/goal_providers.dart';
 import '../providers/history_providers.dart';
 import '../providers/outbox_providers.dart';
 import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
+import '../widgets/goals/goal_icons.dart';
 import '../widgets/glance.dart';
 import '../widgets/history_charts.dart';
 import '../widgets/mode_navigation.dart';
@@ -283,6 +288,10 @@ class _PhoneBody extends StatelessWidget {
         else ...<Widget>[
           _ClosedCard(data: data),
 
+          // «Достигнутые цели» -- над закрытыми задачами и долгожителями:
+          // достижение важнее списка (design/goals-ideas-spec.md, п. 8).
+          _AchievedGoalsSection(range: data.range),
+
           if (stale.isNotEmpty) ...<Widget>[
             const _Heading('Висит дольше всего'),
             _Card(
@@ -320,7 +329,7 @@ class _PhoneBody extends StatelessWidget {
 }
 
 /// Карточка недели: число закрытых и столбики по дням.
-class _ClosedCard extends StatelessWidget {
+class _ClosedCard extends ConsumerWidget {
   const _ClosedCard({required this.data});
 
   final HistorySnapshot data;
@@ -332,7 +341,11 @@ class _ClosedCard extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final achieved = achievedInRange(
+      ref.watch(achievedGoalsProvider).value ?? const <GoalView>[],
+      data.range,
+    ).length;
     final Widget summary;
     if (data.closedTotal == 0) {
       // Ноль не рисуется числом: см. заголовок файла.
@@ -344,7 +357,20 @@ class _ClosedCard extends StatelessWidget {
         ),
       );
     } else {
-      summary = Column(
+      // A Wrap, not a Row: at a large system font the goals' count goes under
+      // the closed one instead of past the card's edge.
+      summary = Wrap(
+        runSpacing: 12,
+        children: <Widget>[
+          _closedSummary(),
+          if (achieved > 0) _AchievedCount(count: achieved),
+        ],
+      );
+    }
+    return _layout(context, summary, achieved);
+  }
+
+  Widget _closedSummary() => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -363,8 +389,8 @@ class _ClosedCard extends StatelessWidget {
           ),
         ],
       );
-    }
 
+  Widget _layout(BuildContext context, Widget summary, int achieved) {
     return _Card(
       margin: const EdgeInsets.fromLTRB(Insets.gutter, 4, Insets.gutter, 0),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -389,7 +415,8 @@ class _ClosedCard extends StatelessWidget {
           );
           final numberWidth = data.closedTotal == 0
               ? 0.0
-              : measureText(context, '${data.closedTotal}', _numberStyle).width;
+              : measureText(context, '${data.closedTotal}', _numberStyle).width +
+                    (achieved > 0 ? _AchievedCount.widthOf(context, achieved) : 0);
           final days = data.closedByDay.length.clamp(1, 7);
           final stacked =
               data.closedTotal != 0 &&
@@ -601,7 +628,15 @@ class _WideBody extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(child: _WideStaleCard(data: data)),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _AchievedGoalsSection(range: data.range, wide: true),
+                    _WideStaleCard(data: data),
+                  ],
+                ),
+              ),
               const SizedBox(width: 18),
               SizedBox(width: 400, child: _WideProjectsCard(data: data)),
             ],
@@ -1242,6 +1277,370 @@ class _Filler extends StatelessWidget {
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// --- достигнутые цели (design/goals-ideas-spec.md, п. 8) --------------------
+
+/// The achieved goals that fall into [range] by `achievedAt`, newest first.
+///
+/// Counted in local calendar days, like the closed-by-day bars: "7 дней" is
+/// today and the six before it.
+@visibleForTesting
+List<GoalView> achievedInRange(
+  List<GoalView> goals,
+  HistoryRange range, {
+  DateTime? now,
+}) {
+  final days = switch (range) {
+    HistoryRange.week => 7,
+    HistoryRange.month => 30,
+    HistoryRange.all => null,
+  };
+  final today = (now ?? DateTime.now()).toLocal();
+  final from = days == null
+      ? null
+      : DateTime(today.year, today.month, today.day - (days - 1));
+  final rows = <GoalView>[
+    for (final goal in goals)
+      if (goal.achievedAt != null &&
+          (from == null ||
+              !(DateTime.tryParse(goal.achievedAt!)?.toLocal().isBefore(from) ??
+                  true)))
+        goal,
+  ]..sort((a, b) => (b.achievedAt ?? '').compareTo(a.achievedAt ?? ''));
+  return rows;
+}
+
+/// «2 ♛ цели достигнуты» beside «сделано» in the summary.
+class _AchievedCount extends StatelessWidget {
+  const _AchievedCount({required this.count});
+
+  final int count;
+
+  static final TextStyle _numberStyle = AppText.number.copyWith(
+    fontSize: 44,
+    height: 1,
+    color: AppColors.ink,
+  );
+
+  static const double _gap = 20;
+
+  static String _caption(int count) =>
+      count == 1 ? 'цель достигнута' : '${goalsWord(count)} достигнуты';
+
+  /// How much room it takes beside the closed count.
+  static double widthOf(BuildContext context, int count) {
+    final number = measureText(context, '$count', _numberStyle).width + 8 + 26;
+    final caption = measureText(
+      context,
+      _caption(count),
+      AppText.caption.copyWith(fontSize: 13),
+    ).width;
+    return _gap + math.max(number, caption);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: _gap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('$count', style: _numberStyle),
+              const SizedBox(width: 8),
+              const CrownIcon(size: 26, color: AppColors.crownOnLight),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _caption(count),
+            style: AppText.caption.copyWith(
+              fontSize: 13,
+              color: AppColors.inkSoft,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// «ДОСТИГНУТЫЕ ЦЕЛИ · N»: the newest large on the goal gradient, the rest as
+/// light rows. Nothing at all when there are none in the range, or when the
+/// read failed -- goals are an extra on this screen, never its error.
+class _AchievedGoalsSection extends ConsumerWidget {
+  const _AchievedGoalsSection({required this.range, this.wide = false});
+
+  final HistoryRange range;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final goals = achievedInRange(
+      ref.watch(achievedGoalsProvider).value ?? const <GoalView>[],
+      range,
+    );
+    if (goals.isEmpty) return const SizedBox.shrink();
+    final contours = <String, String>{
+      for (final contour in ref.watch(contourListProvider))
+        contour.id: contour.name,
+    };
+
+    final heading = Row(
+      children: <Widget>[
+        const CrownIcon(size: 13, color: AppColors.crownOnLight),
+        const SizedBox(width: 8),
+        Expanded(
+          child: HistoryHeading(label: 'Достигнутые цели · ${goals.length}'),
+        ),
+      ],
+    );
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        heading,
+        const SizedBox(height: 8),
+        _AchievedHero(goal: goals.first),
+        for (final goal in goals.skip(1)) ...<Widget>[
+          const SizedBox(height: 8),
+          _AchievedRow(goal: goal, contourName: contours[goal.contourId]),
+        ],
+      ],
+    );
+
+    if (wide) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 18),
+        child: _Card(
+          margin: EdgeInsets.zero,
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          child: content,
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 20, Insets.gutter, 0),
+      child: content,
+    );
+  }
+}
+
+/// The newest achieved goal, large.
+class _AchievedHero extends StatelessWidget {
+  const _AchievedHero({required this.goal});
+
+  final GoalView goal;
+
+  static const TextStyle _big = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w700,
+    fontSize: 22,
+    fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+  );
+
+  static const TextStyle _under = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w600,
+    fontSize: 12.5,
+    color: AppColors.voiceBright,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final why = (goal.why ?? '').trim();
+    final days = daysBetween(goal.createdAt, goal.achievedAt);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(Radii.goal),
+        onTap: () => openGoal(context, goal.id),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: <Color>[AppColors.goalStart, AppColors.goalEnd],
+            ),
+            borderRadius: BorderRadius.circular(Radii.goal),
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x2E14183C),
+                blurRadius: 18,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  const CrownIcon(size: 22, color: AppColors.crown),
+                  const Spacer(),
+                  const Icon(
+                    Icons.check,
+                    size: 14,
+                    color: AppColors.doneOnDark,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Достигнута ${shortDate(goal.achievedAt)}',
+                    style: const TextStyle(
+                      fontFamily: AppFonts.text,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      color: AppColors.doneOnDark,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                goal.title,
+                style: const TextStyle(
+                  fontFamily: AppFonts.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  height: 1.3,
+                  color: AppColors.onInk,
+                ),
+              ),
+              if (why.isNotEmpty) ...<Widget>[
+                const SizedBox(height: 4),
+                Text(why, style: AppText.goalWhy),
+              ],
+              const SizedBox(height: 14),
+              Wrap(
+                spacing: 22,
+                runSpacing: 10,
+                children: <Widget>[
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        '${goal.progress.done}',
+                        style: _big.copyWith(color: AppColors.doneOnDark),
+                      ),
+                      Text(
+                        '${tasksWord(goal.progress.done)} закрыто',
+                        style: _under,
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        '$days',
+                        style: _big.copyWith(color: AppColors.onInk),
+                      ),
+                      Text('${_daysWord(days)} от начала', style: _under),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// «день / дня / дней» for [n].
+String _daysWord(int n) {
+  final mod10 = n % 10;
+  final mod100 = n % 100;
+  if (mod10 == 1 && mod100 != 11) return 'день';
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня';
+  return 'дней';
+}
+
+/// An older achieved goal: a light 64 px row.
+class _AchievedRow extends StatelessWidget {
+  const _AchievedRow({required this.goal, required this.contourName});
+
+  final GoalView goal;
+  final String? contourName;
+
+  @override
+  Widget build(BuildContext context) {
+    final done = goal.progress.done;
+    final meta = <String>[
+      shortDate(goal.achievedAt),
+      '$done ${tasksWord(done)}',
+      ?contourName,
+    ].join(' · ');
+    return Material(
+      color: AppColors.card,
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: AppColors.line),
+        borderRadius: BorderRadius.circular(Radii.card),
+      ),
+      child: InkWell(
+        customBorder: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Radii.card),
+        ),
+        onTap: () => openGoal(context, goal.id),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 64),
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: AppColors.crownChip,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const CrownIcon(size: 20, color: AppColors.crown),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      goal.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: AppFonts.text,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15.5,
+                        color: AppColors.ink,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      meta,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.caption.copyWith(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: AppColors.muted),
+            ],
           ),
         ),
       ),
