@@ -30,6 +30,12 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
           ?.map((e) => TaskAttachment.fromJson(e as Map<String, dynamic>))
           .toList() ??
       const <TaskAttachment>[],
+  focusContourId: json['focusContourId'] as String?,
+  goals:
+      (json['goals'] as List<dynamic>?)
+          ?.map((e) => TaskGoalRef.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <TaskGoalRef>[],
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,
   isCurrent: json['isCurrent'] as bool,
@@ -51,6 +57,8 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'checklist': instance.checklist?.map((e) => e.toJson()).toList(),
   'location': instance.location?.toJson(),
   'attachments': instance.attachments.map((e) => e.toJson()).toList(),
+  'focusContourId': instance.focusContourId,
+  'goals': instance.goals.map((e) => e.toJson()).toList(),
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
   'isCurrent': instance.isCurrent,

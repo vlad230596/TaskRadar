@@ -19,6 +19,12 @@ _FocusTask _$FocusTaskFromJson(Map<String, dynamic> json) => _FocusTask(
   updatedAt: json['updatedAt'] as String,
   focusedAt: json['focusedAt'] as String,
   project: FocusProject.fromJson(json['project'] as Map<String, dynamic>),
+  focusContourId: json['focusContourId'] as String?,
+  goals:
+      (json['goals'] as List<dynamic>?)
+          ?.map((e) => TaskGoalRef.fromJson(e as Map<String, dynamic>))
+          .toList() ??
+      const <TaskGoalRef>[],
 );
 
 Map<String, dynamic> _$FocusTaskToJson(_FocusTask instance) =>
@@ -34,7 +40,9 @@ Map<String, dynamic> _$FocusTaskToJson(_FocusTask instance) =>
       'createdAt': instance.createdAt,
       'updatedAt': instance.updatedAt,
       'focusedAt': instance.focusedAt,
-      'project': instance.project,
+      'project': instance.project.toJson(),
+      'focusContourId': instance.focusContourId,
+      'goals': instance.goals.map((e) => e.toJson()).toList(),
     };
 
 const _$TaskStatusEnumMap = {

@@ -93,7 +93,7 @@ final class OutboxProvider
   Outbox create() => Outbox();
 }
 
-String _$outboxHash() => r'15e7d6b4105d174a8d3875f96aebc78d46db934c';
+String _$outboxHash() => r'0959dd713727579f1eea9d6015cef7c265ed8095';
 
 /// Task writes made with no network, and the last week of what became of
 /// them (the "Офлайн" view of the history mode).

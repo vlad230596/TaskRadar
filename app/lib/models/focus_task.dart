@@ -1,5 +1,6 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'goal.dart';
 import 'task_status.dart';
 
 part 'focus_task.freezed.dart';
@@ -30,6 +31,8 @@ part 'focus_task.g.dart';
 /// Временные метки остаются ISO-строками — как в [Task] и по той же причине.
 @freezed
 abstract class FocusTask with _$FocusTask {
+  // ignore: invalid_annotation_target -- freezed forwards it to the class.
+  @JsonSerializable(explicitToJson: true)
   const factory FocusTask({
     required String id,
     required String projectId,
@@ -47,6 +50,13 @@ abstract class FocusTask with _$FocusTask {
 
     /// Проект задачи: только id и имя — больше сервер здесь и не присылает.
     required FocusProject project,
+
+    /// Whose working set this row is in; null from an older server, which
+    /// reads as the default contour's (as the server itself does).
+    String? focusContourId,
+
+    /// The goals the task serves (the crown); none from an older server.
+    @Default(<TaskGoalRef>[]) List<TaskGoalRef> goals,
   }) = _FocusTask;
 
   factory FocusTask.fromJson(Map<String, dynamic> json) =>

@@ -137,6 +137,66 @@ abstract final class AppColors {
   /// The clock, and the peaks of the meter.
   static const Color voiceRecordingSoft = Color(0xFFFF8C70);
 
+  // -- Goals (design/goals-ideas-spec.md, «Новые токены») ---------------------
+  //
+  // Everything about a goal is dark blue with a gold crown; gold is only ever
+  // the crown (and «ШАГ» beside it), never a button or a status.
+
+  /// The crown on dark, «ШАГ», the dots of taken slots.
+  static const Color crown = Color(0xFFFFC94D);
+
+  /// The chip behind a bright crown on a light row.
+  static const Color crownChip = voiceBackground;
+
+  /// The muted crown: a goal of a contour that is not active.
+  static const Color crownMuted = Color(0xFF8C91B8);
+
+  /// The chip behind a muted crown.
+  static const Color crownMutedChip = indigoFill;
+
+  /// The goal block's gradient, top-left to bottom-right.
+  static const Color goalStart = voiceBackground;
+  static const Color goalEnd = Color(0xFF2B3592);
+
+  /// The well of a step inside the block: white at 8 %.
+  static const Color goalWell = Color(0x14FFFFFF);
+
+  /// The well's border, the line between goals, the progress track: white at
+  /// 15 %.
+  static const Color goalWellLine = Color(0x26FFFFFF);
+
+  /// "Сделано" lightened for dark surfaces: goal progress, «Достигнута».
+  static const Color doneOnDark = Color(0xFF7FD1A8);
+
+  /// «Окно вышло», a slot overflow.
+  static const Color goalExpired = voiceRecordingSoft;
+
+  /// A raised plate on [voiceBackground]: a goal's state, the highlighted step
+  /// in a goal's task list.
+  static const Color goalRaised = Color(0xFF232B6E);
+
+  /// On dark: drag handles, the rings of free slots.
+  static const Color goalDim = Color(0xFF4A5088);
+
+  /// A crown with no chip on white (the planning screen's current task, the
+  /// «Достигнутые цели» heading).
+  static const Color crownOnLight = Color(0xFFC99A1E);
+
+  /// The tile behind an idea's bulb, the «идея» chip.
+  static const Color ideaFill = Color(0xFFF1EEFE);
+
+  /// The bulb, «Сделать задачей», the ideas heading.
+  static const Color ideaInk = Color(0xFF5B45C4);
+
+  /// The border of an idea's buttons.
+  static const Color ideaLine = Color(0xFFDDD6FA);
+
+  /// The bulb on dark screens.
+  static const Color ideaOnDark = Color(0xFFB9AEF5);
+
+  /// The bulb's tile on dark.
+  static const Color ideaTileOnDark = Color(0xFF2A2466);
+
   // -- The desktop rail, which is dark for the same reason ------------------
 
   /// The rail's own background. Same [ink] as the primary button: the rail is
@@ -232,6 +292,12 @@ abstract final class Radii {
 
   /// The one thing that is properly round: the dictation "Готово".
   static const double large = 24;
+
+  /// The goal block, a goal card on the phone.
+  static const double goal = 24;
+
+  /// The chip behind a crown on a task row.
+  static const double crownChip = 7;
 }
 
 /// Touch targets. The spec states the floor once and it is not a suggestion:

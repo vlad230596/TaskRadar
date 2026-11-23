@@ -1,6 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
 import 'checklist_item.dart';
+import 'goal.dart';
 import 'task_attachment.dart';
 import 'task_location.dart';
 import 'task_status.dart';
@@ -91,6 +92,14 @@ abstract class Task with _$Task {
     /// The pictures' metadata, oldest first. Never null: a response without
     /// the key (an older server, an older snapshot) reads as "none".
     @Default(<TaskAttachment>[]) List<TaskAttachment> attachments,
+
+    /// Whose working set the task is in (`design/goals-ideas-contract.md`);
+    /// null when it is in none, or when the server is older than contours.
+    String? focusContourId,
+
+    /// The goals the task serves, achieved ones left out -- the source of the
+    /// crown. Never null: an older server or snapshot reads as "none".
+    @Default(<TaskGoalRef>[]) List<TaskGoalRef> goals,
     required String createdAt,
     required String updatedAt,
 

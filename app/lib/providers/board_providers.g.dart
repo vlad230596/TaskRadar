@@ -260,6 +260,16 @@ String _$boardViewHash() => r'0e645314fd354af0c35497b7549a66a8943d3e9b';
 /// only thing that has to remember anything. It used to be a `ref.watch` in
 /// the planning screen, which Riverpod pauses whenever a route covers the
 /// shell -- see the scope for why that lost alarms.
+///
+/// ## Edits still in the outbox
+///
+/// The board is the server's answer, so a reminder moved with no network --
+/// «Завтра» pressed on a notification in a tunnel, or a date picked offline
+/// -- is not in it until the outbox is sent. The targets are therefore drawn
+/// from the board *with the waiting outbox entries applied* (the overlay the
+/// project screen draws), so the alarm moves when the user moves it, not
+/// when the network comes back; and the outbox is listened to as well, so
+/// queuing such an edit re-arms on its own.
 
 @ProviderFor(boardReminderBridge)
 final boardReminderBridgeProvider = BoardReminderBridgeProvider._();
@@ -290,6 +300,16 @@ final boardReminderBridgeProvider = BoardReminderBridgeProvider._();
 /// only thing that has to remember anything. It used to be a `ref.watch` in
 /// the planning screen, which Riverpod pauses whenever a route covers the
 /// shell -- see the scope for why that lost alarms.
+///
+/// ## Edits still in the outbox
+///
+/// The board is the server's answer, so a reminder moved with no network --
+/// «Завтра» pressed on a notification in a tunnel, or a date picked offline
+/// -- is not in it until the outbox is sent. The targets are therefore drawn
+/// from the board *with the waiting outbox entries applied* (the overlay the
+/// project screen draws), so the alarm moves when the user moves it, not
+/// when the network comes back; and the outbox is listened to as well, so
+/// queuing such an edit re-arms on its own.
 
 final class BoardReminderBridgeProvider
     extends $FunctionalProvider<void, void, void>
@@ -320,6 +340,16 @@ final class BoardReminderBridgeProvider
   /// only thing that has to remember anything. It used to be a `ref.watch` in
   /// the planning screen, which Riverpod pauses whenever a route covers the
   /// shell -- see the scope for why that lost alarms.
+  ///
+  /// ## Edits still in the outbox
+  ///
+  /// The board is the server's answer, so a reminder moved with no network --
+  /// «Завтра» pressed on a notification in a tunnel, or a date picked offline
+  /// -- is not in it until the outbox is sent. The targets are therefore drawn
+  /// from the board *with the waiting outbox entries applied* (the overlay the
+  /// project screen draws), so the alarm moves when the user moves it, not
+  /// when the network comes back; and the outbox is listened to as well, so
+  /// queuing such an edit re-arms on its own.
   BoardReminderBridgeProvider._()
     : super(
         from: null,
@@ -354,4 +384,4 @@ final class BoardReminderBridgeProvider
 }
 
 String _$boardReminderBridgeHash() =>
-    r'9acddb8a586422d4d24a7683df33f6760eb61469';
+    r'7a812deafe2c11e61af7a6e051f0346a8694016b';

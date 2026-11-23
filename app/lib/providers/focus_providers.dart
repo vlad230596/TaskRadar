@@ -7,12 +7,14 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../api/focus_api.dart';
 import '../api/project_api.dart';
 import '../domain/not_loaded.dart';
+import '../models/goal.dart';
 import '../models/focus_task.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
+import 'goal_providers.dart';
 import 'read_cache_providers.dart';
 
 part 'focus_providers.g.dart';
@@ -144,21 +146,61 @@ class FocusSet extends _$FocusSet {
   /// идемпотентен и повтор был бы безвреден, но повтор, который ничего не меняет,
   /// — это запрос ради запроса; а главное, оптимистичная строка второй раз
   /// удвоила бы задачу в списке на один кадр.
-  Future<void> take(Task task, {required String projectName}) {
+  ///
+  /// В набор **активного** контура (`design/goals-ideas-contract.md`): задача,
+  /// стоящая в наборе другого контура, переезжает в этот. Контуры неизвестны —
+  /// без контура, то есть в набор контура по умолчанию, как было до контуров.
+  Future<void> take(Task task, {required String projectName}) =>
+      _takeRow(_optimistic(task, projectName));
+
+  /// Взять в работу шаг цели — у него нет полной [Task], только то, что
+  /// цель о нём знает.
+  Future<void> takeStep(GoalTask step) => _takeRow(
+    FocusTask(
+      id: step.id,
+      projectId: step.projectId,
+      title: step.title,
+      description: null,
+      status: step.status,
+      position: 0,
+      remindAt: null,
+      createdAt: DateTime.now().toUtc().toIso8601String(),
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+      focusedAt: DateTime.now().toUtc().toIso8601String(),
+      project: FocusProject(id: step.projectId, name: step.projectName),
+    ),
+  );
+
+  Future<void> _takeRow(FocusTask row) {
+    final contourId = ref.read(activeContourIdProvider);
     return _write(
       optimistic: (rows) {
-        if (rows.any((row) => row.id == task.id)) return null;
-        return <FocusTask>[...rows, _optimistic(task, projectName)];
+        final existing = rows.where((r) => r.id == row.id).firstOrNull;
+        if (existing != null) {
+          if (contourId == null ||
+              _contourOf(existing) == contourId) {
+            return null;
+          }
+          return <FocusTask>[
+            for (final r in rows)
+              if (r.id == row.id) r.copyWith(focusContourId: contourId) else r,
+          ];
+        }
+        return <FocusTask>[...rows, row.copyWith(focusContourId: contourId)];
       },
       // Перечитываем набор: `focusedAt` ставит сервер (экран показывает его как
       // «в работе с 9:40»), и он же решает, куда строка встанет. Догадка клиента
       // про время была бы видимой неправдой.
       send: () async {
-        await _focus.addToFocus(task.id);
+        await _focus.addToFocus(row.id, contourId: contourId);
         return null;
       },
     );
   }
+
+  /// Чей набор у строки: её контур, а без него — контур по умолчанию.
+  String? _contourOf(FocusTask row) =>
+      row.focusContourId ?? ref.read(defaultContourIdProvider);
 
   /// Убрать задачу из набора.
   ///
@@ -295,6 +337,7 @@ class FocusSet extends _$FocusSet {
     updatedAt: task.updatedAt,
     focusedAt: DateTime.now().toUtc().toIso8601String(),
     project: FocusProject(id: task.projectId, name: projectName),
+    goals: task.goals,
   );
 }
 
@@ -304,9 +347,42 @@ class FocusSet extends _$FocusSet {
 /// вопрос — «я в наборе?» — и ничего больше. Пока набор не загружен, множество
 /// пустое: это честнее, чем показывать кнопку «взять в работу» нажатой на
 /// основании того, чего мы ещё не знаем.
+///
+/// Это набор **активного** контура: задача из набора другого контура для
+/// строки проекта «не в работе» — взять её значит перенести сюда.
 @Riverpod(keepAlive: true)
 Set<String> focusedTaskIds(Ref ref) {
+  final rows = ref.watch(activeFocusSetProvider).value;
+  if (rows == null) return const <String>{};
+  return <String>{for (final row in rows) row.id};
+}
+
+/// Id задач из наборов **всех** контуров — для тёплого возраста: задача в
+/// работе остаётся «в работе», в каком бы контуре её ни взяли.
+@Riverpod(keepAlive: true)
+Set<String> anyFocusedTaskIds(Ref ref) {
   final rows = ref.watch(focusSetProvider).value;
   if (rows == null) return const <String>{};
   return <String>{for (final row in rows) row.id};
+}
+
+/// Набор активного контура (`design/goals-ideas-contract.md`: «у каждого
+/// контура свой рабочий набор»).
+///
+/// `GET /focus` читается целиком (все контуры), а делится здесь: переключение
+/// контура тогда не стоит запроса, и строка без контура (взятая старым
+/// сервером) попадает в набор контура по умолчанию — как и на сервере.
+/// Контуры неизвестны — весь набор, как до контуров.
+@Riverpod(keepAlive: true)
+AsyncValue<List<FocusTask>> activeFocusSet(Ref ref) {
+  final set = ref.watch(focusSetProvider);
+  final active = ref.watch(activeContourIdProvider);
+  if (active == null) return set;
+  final fallback = ref.watch(defaultContourIdProvider);
+  return set.whenData(
+    (rows) => List<FocusTask>.unmodifiable(<FocusTask>[
+      for (final row in rows)
+        if ((row.focusContourId ?? fallback) == active) row,
+    ]),
+  );
 }

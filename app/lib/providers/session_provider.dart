@@ -10,6 +10,7 @@ import 'board_providers.dart';
 import 'capture_queue_providers.dart';
 import 'dependencies.dart';
 import 'focus_providers.dart';
+import 'goal_providers.dart';
 import 'history_providers.dart';
 import 'inbox_providers.dart';
 import 'read_cache_providers.dart';
@@ -171,6 +172,9 @@ class Session extends _$Session {
     ref.invalidate(historyFeedProvider);
     ref.invalidate(archivedBoardProvider);
     ref.invalidate(focusSetProvider);
+    ref.invalidate(contoursProvider);
+    ref.invalidate(goalsProvider);
+    ref.invalidate(achievedGoalsProvider);
     ref.invalidate(cachedReadsProvider);
 
     state = const AsyncData(SessionStatus.signedIn);

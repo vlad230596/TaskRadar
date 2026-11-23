@@ -273,6 +273,80 @@ abstract final class AppText {
     fontSize: 14,
     color: AppColors.voiceMuted,
   );
+
+  // -- Goals and ideas (design/goals-ideas-spec.md) ---------------------------
+
+  /// A goal's title in the block.
+  static const TextStyle goalTitle = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w700,
+    fontSize: 16,
+    height: 1.25,
+    color: AppColors.onInk,
+  );
+
+  /// «Зачем», one line.
+  static const TextStyle goalWhy = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    height: 1.3,
+    color: AppColors.voiceMuted,
+  );
+
+  /// «ШАГ», «ЦЕЛЬ».
+  static const TextStyle goalLabel = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w700,
+    fontSize: 10.5,
+    letterSpacing: 0.63,
+    color: AppColors.crown,
+  );
+
+  /// The next step.
+  static const TextStyle goalStep = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w600,
+    fontSize: 14.5,
+    height: 1.3,
+    color: AppColors.onInk,
+  );
+
+  /// «2/5».
+  static const TextStyle goalCount = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w600,
+    fontSize: 13,
+    color: AppColors.doneOnDark,
+    fontFeatures: _figures,
+  );
+
+  /// A goal's step in the duel.
+  static const TextStyle duelStep = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w600,
+    fontSize: 21,
+    height: 1.3,
+    color: AppColors.onInk,
+  );
+
+  /// An idea's title in the list.
+  static const TextStyle ideaTitle = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w600,
+    fontSize: 16,
+    height: 1.3,
+    color: AppColors.ink,
+  );
+
+  /// Two lines of an idea's text.
+  static const TextStyle ideaPreview = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w400,
+    fontSize: 14,
+    height: 1.4,
+    color: AppColors.muted,
+  );
 }
 
 /// The app's one theme.

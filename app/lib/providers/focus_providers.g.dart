@@ -115,7 +115,7 @@ final class FocusSetProvider
   FocusSet create() => FocusSet();
 }
 
-String _$focusSetHash() => r'558f8da7fa9487ef5910a9b3759648d3cbadb267';
+String _$focusSetHash() => r'402b61708850ecba89c7ae12042bb2f1d6e93c5c';
 
 /// Сам набор: `GET /focus`, и три записи, которые его меняют.
 ///
@@ -152,6 +152,9 @@ abstract class _$FocusSet extends $AsyncNotifier<List<FocusTask>> {
 /// вопрос — «я в наборе?» — и ничего больше. Пока набор не загружен, множество
 /// пустое: это честнее, чем показывать кнопку «взять в работу» нажатой на
 /// основании того, чего мы ещё не знаем.
+///
+/// Это набор **активного** контура: задача из набора другого контура для
+/// строки проекта «не в работе» — взять её значит перенести сюда.
 
 @ProviderFor(focusedTaskIds)
 final focusedTaskIdsProvider = FocusedTaskIdsProvider._();
@@ -162,6 +165,9 @@ final focusedTaskIdsProvider = FocusedTaskIdsProvider._();
 /// вопрос — «я в наборе?» — и ничего больше. Пока набор не загружен, множество
 /// пустое: это честнее, чем показывать кнопку «взять в работу» нажатой на
 /// основании того, чего мы ещё не знаем.
+///
+/// Это набор **активного** контура: задача из набора другого контура для
+/// строки проекта «не в работе» — взять её значит перенести сюда.
 
 final class FocusedTaskIdsProvider
     extends $FunctionalProvider<Set<String>, Set<String>, Set<String>>
@@ -172,6 +178,9 @@ final class FocusedTaskIdsProvider
   /// вопрос — «я в наборе?» — и ничего больше. Пока набор не загружен, множество
   /// пустое: это честнее, чем показывать кнопку «взять в работу» нажатой на
   /// основании того, чего мы ещё не знаем.
+  ///
+  /// Это набор **активного** контура: задача из набора другого контура для
+  /// строки проекта «не в работе» — взять её значит перенести сюда.
   FocusedTaskIdsProvider._()
     : super(
         from: null,
@@ -205,4 +214,123 @@ final class FocusedTaskIdsProvider
   }
 }
 
-String _$focusedTaskIdsHash() => r'a69bf84ce188a969b6d53a4ffc16dae18ff5d2b4';
+String _$focusedTaskIdsHash() => r'ee5fb0a00b1908bf47c97c7c56d2e5a376dd0dab';
+
+/// Id задач из наборов **всех** контуров — для тёплого возраста: задача в
+/// работе остаётся «в работе», в каком бы контуре её ни взяли.
+
+@ProviderFor(anyFocusedTaskIds)
+final anyFocusedTaskIdsProvider = AnyFocusedTaskIdsProvider._();
+
+/// Id задач из наборов **всех** контуров — для тёплого возраста: задача в
+/// работе остаётся «в работе», в каком бы контуре её ни взяли.
+
+final class AnyFocusedTaskIdsProvider
+    extends $FunctionalProvider<Set<String>, Set<String>, Set<String>>
+    with $Provider<Set<String>> {
+  /// Id задач из наборов **всех** контуров — для тёплого возраста: задача в
+  /// работе остаётся «в работе», в каком бы контуре её ни взяли.
+  AnyFocusedTaskIdsProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'anyFocusedTaskIdsProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$anyFocusedTaskIdsHash();
+
+  @$internal
+  @override
+  $ProviderElement<Set<String>> $createElement($ProviderPointer pointer) =>
+      $ProviderElement(pointer);
+
+  @override
+  Set<String> create(Ref ref) {
+    return anyFocusedTaskIds(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(Set<String> value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<Set<String>>(value),
+    );
+  }
+}
+
+String _$anyFocusedTaskIdsHash() => r'0268454762a729429c9cd6d5d274ba12adbdedc4';
+
+/// Набор активного контура (`design/goals-ideas-contract.md`: «у каждого
+/// контура свой рабочий набор»).
+///
+/// `GET /focus` читается целиком (все контуры), а делится здесь: переключение
+/// контура тогда не стоит запроса, и строка без контура (взятая старым
+/// сервером) попадает в набор контура по умолчанию — как и на сервере.
+/// Контуры неизвестны — весь набор, как до контуров.
+
+@ProviderFor(activeFocusSet)
+final activeFocusSetProvider = ActiveFocusSetProvider._();
+
+/// Набор активного контура (`design/goals-ideas-contract.md`: «у каждого
+/// контура свой рабочий набор»).
+///
+/// `GET /focus` читается целиком (все контуры), а делится здесь: переключение
+/// контура тогда не стоит запроса, и строка без контура (взятая старым
+/// сервером) попадает в набор контура по умолчанию — как и на сервере.
+/// Контуры неизвестны — весь набор, как до контуров.
+
+final class ActiveFocusSetProvider
+    extends
+        $FunctionalProvider<
+          AsyncValue<List<FocusTask>>,
+          AsyncValue<List<FocusTask>>,
+          AsyncValue<List<FocusTask>>
+        >
+    with $Provider<AsyncValue<List<FocusTask>>> {
+  /// Набор активного контура (`design/goals-ideas-contract.md`: «у каждого
+  /// контура свой рабочий набор»).
+  ///
+  /// `GET /focus` читается целиком (все контуры), а делится здесь: переключение
+  /// контура тогда не стоит запроса, и строка без контура (взятая старым
+  /// сервером) попадает в набор контура по умолчанию — как и на сервере.
+  /// Контуры неизвестны — весь набор, как до контуров.
+  ActiveFocusSetProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'activeFocusSetProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$activeFocusSetHash();
+
+  @$internal
+  @override
+  $ProviderElement<AsyncValue<List<FocusTask>>> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
+
+  @override
+  AsyncValue<List<FocusTask>> create(Ref ref) {
+    return activeFocusSet(ref);
+  }
+
+  /// {@macro riverpod.override_with_value}
+  Override overrideWithValue(AsyncValue<List<FocusTask>> value) {
+    return $ProviderOverride(
+      origin: this,
+      providerOverride: $SyncValueProvider<AsyncValue<List<FocusTask>>>(value),
+    );
+  }
+}
+
+String _$activeFocusSetHash() => r'5390ad701b495811f067f69b11dbe633d97a3625';

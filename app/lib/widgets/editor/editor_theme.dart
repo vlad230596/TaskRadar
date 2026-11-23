@@ -25,7 +25,7 @@ abstract final class EditorColors {
   static const Color blocked = AppColors.waitingDotOnInk;
 
   /// "Сделано", lightened so it reads on the dark surface.
-  static const Color done = Color(0xFF7FD1A8);
+  static const Color done = AppColors.doneOnDark;
 
   /// A reminder whose moment has gone by.
   static const Color past = Color(0xFFFF8C70);

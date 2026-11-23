@@ -17,7 +17,10 @@ mixin _$FocusTask {
 
  String get id; String get projectId; String get title; String? get description; TaskStatus get status; double get position; String? get remindAt; String? get remindTime; String get createdAt; String get updatedAt;/// Когда задачу взяли в работу. Порядок набора — по нему, по возрастанию.
  String get focusedAt;/// Проект задачи: только id и имя — больше сервер здесь и не присылает.
- FocusProject get project;
+ FocusProject get project;/// Whose working set this row is in; null from an older server, which
+/// reads as the default contour's (as the server itself does).
+ String? get focusContourId;/// The goals the task serves (the crown); none from an older server.
+ List<TaskGoalRef> get goals;
 /// Create a copy of FocusTask
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -30,16 +33,16 @@ $FocusTaskCopyWith<FocusTask> get copyWith => _$FocusTaskCopyWithImpl<FocusTask>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is FocusTask&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.project, project) || other.project == project));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is FocusTask&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.project, project) || other.project == project)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId)&&const DeepCollectionEquality().equals(other.goals, goals));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,createdAt,updatedAt,focusedAt,project);
+int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,createdAt,updatedAt,focusedAt,project,focusContourId,const DeepCollectionEquality().hash(goals));
 
 @override
 String toString() {
-  return 'FocusTask(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, createdAt: $createdAt, updatedAt: $updatedAt, focusedAt: $focusedAt, project: $project)';
+  return 'FocusTask(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, createdAt: $createdAt, updatedAt: $updatedAt, focusedAt: $focusedAt, project: $project, focusContourId: $focusContourId, goals: $goals)';
 }
 
 
@@ -50,7 +53,7 @@ abstract mixin class $FocusTaskCopyWith<$Res>  {
   factory $FocusTaskCopyWith(FocusTask value, $Res Function(FocusTask) _then) = _$FocusTaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String createdAt, String updatedAt, String focusedAt, FocusProject project
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String createdAt, String updatedAt, String focusedAt, FocusProject project, String? focusContourId, List<TaskGoalRef> goals
 });
 
 
@@ -67,7 +70,7 @@ class _$FocusTaskCopyWithImpl<$Res>
 
 /// Create a copy of FocusTask
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? createdAt = null,Object? updatedAt = null,Object? focusedAt = null,Object? project = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? createdAt = null,Object? updatedAt = null,Object? focusedAt = null,Object? project = null,Object? focusContourId = freezed,Object? goals = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
@@ -81,7 +84,9 @@ as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore:
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,focusedAt: null == focusedAt ? _self.focusedAt : focusedAt // ignore: cast_nullable_to_non_nullable
 as String,project: null == project ? _self.project : project // ignore: cast_nullable_to_non_nullable
-as FocusProject,
+as FocusProject,focusContourId: freezed == focusContourId ? _self.focusContourId : focusContourId // ignore: cast_nullable_to_non_nullable
+as String?,goals: null == goals ? _self.goals : goals // ignore: cast_nullable_to_non_nullable
+as List<TaskGoalRef>,
   ));
 }
 /// Create a copy of FocusTask
@@ -175,10 +180,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  String focusedAt,  FocusProject project)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  String focusedAt,  FocusProject project,  String? focusContourId,  List<TaskGoalRef> goals)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _FocusTask() when $default != null:
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.focusedAt,_that.project);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.focusedAt,_that.project,_that.focusContourId,_that.goals);case _:
   return orElse();
 
 }
@@ -196,10 +201,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  String focusedAt,  FocusProject project)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  String focusedAt,  FocusProject project,  String? focusContourId,  List<TaskGoalRef> goals)  $default,) {final _that = this;
 switch (_that) {
 case _FocusTask():
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.focusedAt,_that.project);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.focusedAt,_that.project,_that.focusContourId,_that.goals);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -216,10 +221,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  String focusedAt,  FocusProject project)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String createdAt,  String updatedAt,  String focusedAt,  FocusProject project,  String? focusContourId,  List<TaskGoalRef> goals)?  $default,) {final _that = this;
 switch (_that) {
 case _FocusTask() when $default != null:
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.focusedAt,_that.project);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.createdAt,_that.updatedAt,_that.focusedAt,_that.project,_that.focusContourId,_that.goals);case _:
   return null;
 
 }
@@ -228,10 +233,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 }
 
 /// @nodoc
-@JsonSerializable()
 
+@JsonSerializable(explicitToJson: true)
 class _FocusTask implements FocusTask {
-  const _FocusTask({required this.id, required this.projectId, required this.title, required this.description, required this.status, required this.position, required this.remindAt, this.remindTime, required this.createdAt, required this.updatedAt, required this.focusedAt, required this.project});
+  const _FocusTask({required this.id, required this.projectId, required this.title, required this.description, required this.status, required this.position, required this.remindAt, this.remindTime, required this.createdAt, required this.updatedAt, required this.focusedAt, required this.project, this.focusContourId, final  List<TaskGoalRef> goals = const <TaskGoalRef>[]}): _goals = goals;
   factory _FocusTask.fromJson(Map<String, dynamic> json) => _$FocusTaskFromJson(json);
 
 @override final  String id;
@@ -248,6 +253,18 @@ class _FocusTask implements FocusTask {
 @override final  String focusedAt;
 /// Проект задачи: только id и имя — больше сервер здесь и не присылает.
 @override final  FocusProject project;
+/// Whose working set this row is in; null from an older server, which
+/// reads as the default contour's (as the server itself does).
+@override final  String? focusContourId;
+/// The goals the task serves (the crown); none from an older server.
+ final  List<TaskGoalRef> _goals;
+/// The goals the task serves (the crown); none from an older server.
+@override@JsonKey() List<TaskGoalRef> get goals {
+  if (_goals is EqualUnmodifiableListView) return _goals;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_goals);
+}
+
 
 /// Create a copy of FocusTask
 /// with the given fields replaced by the non-null parameter values.
@@ -262,16 +279,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _FocusTask&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.project, project) || other.project == project));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _FocusTask&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.project, project) || other.project == project)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId)&&const DeepCollectionEquality().equals(other._goals, _goals));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,createdAt,updatedAt,focusedAt,project);
+int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,createdAt,updatedAt,focusedAt,project,focusContourId,const DeepCollectionEquality().hash(_goals));
 
 @override
 String toString() {
-  return 'FocusTask(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, createdAt: $createdAt, updatedAt: $updatedAt, focusedAt: $focusedAt, project: $project)';
+  return 'FocusTask(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, createdAt: $createdAt, updatedAt: $updatedAt, focusedAt: $focusedAt, project: $project, focusContourId: $focusContourId, goals: $goals)';
 }
 
 
@@ -282,7 +299,7 @@ abstract mixin class _$FocusTaskCopyWith<$Res> implements $FocusTaskCopyWith<$Re
   factory _$FocusTaskCopyWith(_FocusTask value, $Res Function(_FocusTask) _then) = __$FocusTaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String createdAt, String updatedAt, String focusedAt, FocusProject project
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String createdAt, String updatedAt, String focusedAt, FocusProject project, String? focusContourId, List<TaskGoalRef> goals
 });
 
 
@@ -299,7 +316,7 @@ class __$FocusTaskCopyWithImpl<$Res>
 
 /// Create a copy of FocusTask
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? createdAt = null,Object? updatedAt = null,Object? focusedAt = null,Object? project = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? createdAt = null,Object? updatedAt = null,Object? focusedAt = null,Object? project = null,Object? focusContourId = freezed,Object? goals = null,}) {
   return _then(_FocusTask(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
@@ -313,7 +330,9 @@ as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore:
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,focusedAt: null == focusedAt ? _self.focusedAt : focusedAt // ignore: cast_nullable_to_non_nullable
 as String,project: null == project ? _self.project : project // ignore: cast_nullable_to_non_nullable
-as FocusProject,
+as FocusProject,focusContourId: freezed == focusContourId ? _self.focusContourId : focusContourId // ignore: cast_nullable_to_non_nullable
+as String?,goals: null == goals ? _self._goals : goals // ignore: cast_nullable_to_non_nullable
+as List<TaskGoalRef>,
   ));
 }
 

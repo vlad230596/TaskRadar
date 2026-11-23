@@ -54,8 +54,17 @@ class FocusApi {
   /// `GET /focus`, а строить из этого ответа [FocusTask] значило бы додумывать
   /// половину полей. Поэтому `dynamic` и `void` — та же типизация и по той же
   /// причине, что у `ProjectApi.deleteTask`.
-  Future<void> addToFocus(String taskId) =>
-      _client.post<dynamic>('/tasks/$taskId/focus');
+  ///
+  /// [contourId] names whose set (`design/goals-ideas-contract.md`); without
+  /// it the server uses the default contour. A task already in another
+  /// contour's set is moved to this one.
+  Future<void> addToFocus(String taskId, {String? contourId}) =>
+      _client.post<dynamic>(
+        '/tasks/$taskId/focus',
+        body: contourId == null
+            ? null
+            : <String, dynamic>{'contourId': contourId},
+      );
 
   /// `DELETE /tasks/:id/focus` — убрать из набора.
   ///

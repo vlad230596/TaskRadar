@@ -62,7 +62,11 @@ mixin _$Task {
  List<ChecklistItem>? get checklist;/// The place reminder (§7), or null.
  TaskLocation? get location;/// The pictures' metadata, oldest first. Never null: a response without
 /// the key (an older server, an older snapshot) reads as "none".
- List<TaskAttachment> get attachments; String get createdAt; String get updatedAt;/// Computed by the server, never stored: the first task in `position` order
+ List<TaskAttachment> get attachments;/// Whose working set the task is in (`design/goals-ideas-contract.md`);
+/// null when it is in none, or when the server is older than contours.
+ String? get focusContourId;/// The goals the task serves, achieved ones left out -- the source of the
+/// crown. Never null: an older server or snapshot reads as "none".
+ List<TaskGoalRef> get goals; String get createdAt; String get updatedAt;/// Computed by the server, never stored: the first task in `position` order
 /// that is neither done nor blocked.
 ///
 /// It is a property of the *list*, not of the row, so it is only meaningful
@@ -82,16 +86,16 @@ $TaskCopyWith<Task> get copyWith => _$TaskCopyWithImpl<Task>(this as Task, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.categoryId, categoryId) || other.categoryId == categoryId)&&(identical(other.aiSource, aiSource) || other.aiSource == aiSource)&&(identical(other.aiKind, aiKind) || other.aiKind == aiKind)&&const DeepCollectionEquality().equals(other.aiResult, aiResult)&&const DeepCollectionEquality().equals(other.checklist, checklist)&&(identical(other.location, location) || other.location == location)&&const DeepCollectionEquality().equals(other.attachments, attachments)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.categoryId, categoryId) || other.categoryId == categoryId)&&(identical(other.aiSource, aiSource) || other.aiSource == aiSource)&&(identical(other.aiKind, aiKind) || other.aiKind == aiKind)&&const DeepCollectionEquality().equals(other.aiResult, aiResult)&&const DeepCollectionEquality().equals(other.checklist, checklist)&&(identical(other.location, location) || other.location == location)&&const DeepCollectionEquality().equals(other.attachments, attachments)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId)&&const DeepCollectionEquality().equals(other.goals, goals)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,categoryId,aiSource,aiKind,const DeepCollectionEquality().hash(aiResult),const DeepCollectionEquality().hash(checklist),location,const DeepCollectionEquality().hash(attachments),createdAt,updatedAt,isCurrent);
+int get hashCode => Object.hashAll([runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,categoryId,aiSource,aiKind,const DeepCollectionEquality().hash(aiResult),const DeepCollectionEquality().hash(checklist),location,const DeepCollectionEquality().hash(attachments),focusContourId,const DeepCollectionEquality().hash(goals),createdAt,updatedAt,isCurrent]);
 
 @override
 String toString() {
-  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, categoryId: $categoryId, aiSource: $aiSource, aiKind: $aiKind, aiResult: $aiResult, checklist: $checklist, location: $location, attachments: $attachments, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
+  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, categoryId: $categoryId, aiSource: $aiSource, aiKind: $aiKind, aiResult: $aiResult, checklist: $checklist, location: $location, attachments: $attachments, focusContourId: $focusContourId, goals: $goals, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
 }
 
 
@@ -102,7 +106,7 @@ abstract mixin class $TaskCopyWith<$Res>  {
   factory $TaskCopyWith(Task value, $Res Function(Task) _then) = _$TaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String? categoryId, String? aiSource, String? aiKind, Map<String, dynamic>? aiResult, List<ChecklistItem>? checklist, TaskLocation? location, List<TaskAttachment> attachments, String createdAt, String updatedAt, bool isCurrent
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String? categoryId, String? aiSource, String? aiKind, Map<String, dynamic>? aiResult, List<ChecklistItem>? checklist, TaskLocation? location, List<TaskAttachment> attachments, String? focusContourId, List<TaskGoalRef> goals, String createdAt, String updatedAt, bool isCurrent
 });
 
 
@@ -119,7 +123,7 @@ class _$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? categoryId = freezed,Object? aiSource = freezed,Object? aiKind = freezed,Object? aiResult = freezed,Object? checklist = freezed,Object? location = freezed,Object? attachments = null,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? categoryId = freezed,Object? aiSource = freezed,Object? aiKind = freezed,Object? aiResult = freezed,Object? checklist = freezed,Object? location = freezed,Object? attachments = null,Object? focusContourId = freezed,Object? goals = null,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
@@ -136,7 +140,9 @@ as String?,aiResult: freezed == aiResult ? _self.aiResult : aiResult // ignore: 
 as Map<String, dynamic>?,checklist: freezed == checklist ? _self.checklist : checklist // ignore: cast_nullable_to_non_nullable
 as List<ChecklistItem>?,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
 as TaskLocation?,attachments: null == attachments ? _self.attachments : attachments // ignore: cast_nullable_to_non_nullable
-as List<TaskAttachment>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<TaskAttachment>,focusContourId: freezed == focusContourId ? _self.focusContourId : focusContourId // ignore: cast_nullable_to_non_nullable
+as String?,goals: null == goals ? _self.goals : goals // ignore: cast_nullable_to_non_nullable
+as List<TaskGoalRef>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable
 as bool,
@@ -236,10 +242,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String? categoryId,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  List<ChecklistItem>? checklist,  TaskLocation? location,  List<TaskAttachment> attachments,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String? categoryId,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  List<ChecklistItem>? checklist,  TaskLocation? location,  List<TaskAttachment> attachments,  String? focusContourId,  List<TaskGoalRef> goals,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.categoryId,_that.aiSource,_that.aiKind,_that.aiResult,_that.checklist,_that.location,_that.attachments,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.categoryId,_that.aiSource,_that.aiKind,_that.aiResult,_that.checklist,_that.location,_that.attachments,_that.focusContourId,_that.goals,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
   return orElse();
 
 }
@@ -257,10 +263,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String? categoryId,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  List<ChecklistItem>? checklist,  TaskLocation? location,  List<TaskAttachment> attachments,  String createdAt,  String updatedAt,  bool isCurrent)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String? categoryId,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  List<ChecklistItem>? checklist,  TaskLocation? location,  List<TaskAttachment> attachments,  String? focusContourId,  List<TaskGoalRef> goals,  String createdAt,  String updatedAt,  bool isCurrent)  $default,) {final _that = this;
 switch (_that) {
 case _Task():
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.categoryId,_that.aiSource,_that.aiKind,_that.aiResult,_that.checklist,_that.location,_that.attachments,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.categoryId,_that.aiSource,_that.aiKind,_that.aiResult,_that.checklist,_that.location,_that.attachments,_that.focusContourId,_that.goals,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -277,10 +283,10 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String? categoryId,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  List<ChecklistItem>? checklist,  TaskLocation? location,  List<TaskAttachment> attachments,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String projectId,  String title,  String? description,  TaskStatus status,  double position,  String? remindAt,  String? remindTime,  String? categoryId,  String? aiSource,  String? aiKind,  Map<String, dynamic>? aiResult,  List<ChecklistItem>? checklist,  TaskLocation? location,  List<TaskAttachment> attachments,  String? focusContourId,  List<TaskGoalRef> goals,  String createdAt,  String updatedAt,  bool isCurrent)?  $default,) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.categoryId,_that.aiSource,_that.aiKind,_that.aiResult,_that.checklist,_that.location,_that.attachments,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
+return $default(_that.id,_that.projectId,_that.title,_that.description,_that.status,_that.position,_that.remindAt,_that.remindTime,_that.categoryId,_that.aiSource,_that.aiKind,_that.aiResult,_that.checklist,_that.location,_that.attachments,_that.focusContourId,_that.goals,_that.createdAt,_that.updatedAt,_that.isCurrent);case _:
   return null;
 
 }
@@ -292,7 +298,7 @@ return $default(_that.id,_that.projectId,_that.title,_that.description,_that.sta
 
 @JsonSerializable(explicitToJson: true)
 class _Task implements Task {
-  const _Task({required this.id, required this.projectId, required this.title, required this.description, required this.status, required this.position, required this.remindAt, this.remindTime, this.categoryId, this.aiSource, this.aiKind, final  Map<String, dynamic>? aiResult, final  List<ChecklistItem>? checklist, this.location, final  List<TaskAttachment> attachments = const <TaskAttachment>[], required this.createdAt, required this.updatedAt, required this.isCurrent}): _aiResult = aiResult,_checklist = checklist,_attachments = attachments;
+  const _Task({required this.id, required this.projectId, required this.title, required this.description, required this.status, required this.position, required this.remindAt, this.remindTime, this.categoryId, this.aiSource, this.aiKind, final  Map<String, dynamic>? aiResult, final  List<ChecklistItem>? checklist, this.location, final  List<TaskAttachment> attachments = const <TaskAttachment>[], this.focusContourId, final  List<TaskGoalRef> goals = const <TaskGoalRef>[], required this.createdAt, required this.updatedAt, required this.isCurrent}): _aiResult = aiResult,_checklist = checklist,_attachments = attachments,_goals = goals;
   factory _Task.fromJson(Map<String, dynamic> json) => _$TaskFromJson(json);
 
 @override final  String id;
@@ -384,6 +390,20 @@ class _Task implements Task {
   return EqualUnmodifiableListView(_attachments);
 }
 
+/// Whose working set the task is in (`design/goals-ideas-contract.md`);
+/// null when it is in none, or when the server is older than contours.
+@override final  String? focusContourId;
+/// The goals the task serves, achieved ones left out -- the source of the
+/// crown. Never null: an older server or snapshot reads as "none".
+ final  List<TaskGoalRef> _goals;
+/// The goals the task serves, achieved ones left out -- the source of the
+/// crown. Never null: an older server or snapshot reads as "none".
+@override@JsonKey() List<TaskGoalRef> get goals {
+  if (_goals is EqualUnmodifiableListView) return _goals;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_goals);
+}
+
 @override final  String createdAt;
 @override final  String updatedAt;
 /// Computed by the server, never stored: the first task in `position` order
@@ -408,16 +428,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.categoryId, categoryId) || other.categoryId == categoryId)&&(identical(other.aiSource, aiSource) || other.aiSource == aiSource)&&(identical(other.aiKind, aiKind) || other.aiKind == aiKind)&&const DeepCollectionEquality().equals(other._aiResult, _aiResult)&&const DeepCollectionEquality().equals(other._checklist, _checklist)&&(identical(other.location, location) || other.location == location)&&const DeepCollectionEquality().equals(other._attachments, _attachments)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.status, status) || other.status == status)&&(identical(other.position, position) || other.position == position)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt)&&(identical(other.remindTime, remindTime) || other.remindTime == remindTime)&&(identical(other.categoryId, categoryId) || other.categoryId == categoryId)&&(identical(other.aiSource, aiSource) || other.aiSource == aiSource)&&(identical(other.aiKind, aiKind) || other.aiKind == aiKind)&&const DeepCollectionEquality().equals(other._aiResult, _aiResult)&&const DeepCollectionEquality().equals(other._checklist, _checklist)&&(identical(other.location, location) || other.location == location)&&const DeepCollectionEquality().equals(other._attachments, _attachments)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId)&&const DeepCollectionEquality().equals(other._goals, _goals)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.isCurrent, isCurrent) || other.isCurrent == isCurrent));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,categoryId,aiSource,aiKind,const DeepCollectionEquality().hash(_aiResult),const DeepCollectionEquality().hash(_checklist),location,const DeepCollectionEquality().hash(_attachments),createdAt,updatedAt,isCurrent);
+int get hashCode => Object.hashAll([runtimeType,id,projectId,title,description,status,position,remindAt,remindTime,categoryId,aiSource,aiKind,const DeepCollectionEquality().hash(_aiResult),const DeepCollectionEquality().hash(_checklist),location,const DeepCollectionEquality().hash(_attachments),focusContourId,const DeepCollectionEquality().hash(_goals),createdAt,updatedAt,isCurrent]);
 
 @override
 String toString() {
-  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, categoryId: $categoryId, aiSource: $aiSource, aiKind: $aiKind, aiResult: $aiResult, checklist: $checklist, location: $location, attachments: $attachments, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
+  return 'Task(id: $id, projectId: $projectId, title: $title, description: $description, status: $status, position: $position, remindAt: $remindAt, remindTime: $remindTime, categoryId: $categoryId, aiSource: $aiSource, aiKind: $aiKind, aiResult: $aiResult, checklist: $checklist, location: $location, attachments: $attachments, focusContourId: $focusContourId, goals: $goals, createdAt: $createdAt, updatedAt: $updatedAt, isCurrent: $isCurrent)';
 }
 
 
@@ -428,7 +448,7 @@ abstract mixin class _$TaskCopyWith<$Res> implements $TaskCopyWith<$Res> {
   factory _$TaskCopyWith(_Task value, $Res Function(_Task) _then) = __$TaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String? categoryId, String? aiSource, String? aiKind, Map<String, dynamic>? aiResult, List<ChecklistItem>? checklist, TaskLocation? location, List<TaskAttachment> attachments, String createdAt, String updatedAt, bool isCurrent
+ String id, String projectId, String title, String? description, TaskStatus status, double position, String? remindAt, String? remindTime, String? categoryId, String? aiSource, String? aiKind, Map<String, dynamic>? aiResult, List<ChecklistItem>? checklist, TaskLocation? location, List<TaskAttachment> attachments, String? focusContourId, List<TaskGoalRef> goals, String createdAt, String updatedAt, bool isCurrent
 });
 
 
@@ -445,7 +465,7 @@ class __$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? categoryId = freezed,Object? aiSource = freezed,Object? aiKind = freezed,Object? aiResult = freezed,Object? checklist = freezed,Object? location = freezed,Object? attachments = null,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? projectId = null,Object? title = null,Object? description = freezed,Object? status = null,Object? position = null,Object? remindAt = freezed,Object? remindTime = freezed,Object? categoryId = freezed,Object? aiSource = freezed,Object? aiKind = freezed,Object? aiResult = freezed,Object? checklist = freezed,Object? location = freezed,Object? attachments = null,Object? focusContourId = freezed,Object? goals = null,Object? createdAt = null,Object? updatedAt = null,Object? isCurrent = null,}) {
   return _then(_Task(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,projectId: null == projectId ? _self.projectId : projectId // ignore: cast_nullable_to_non_nullable
@@ -462,7 +482,9 @@ as String?,aiResult: freezed == aiResult ? _self._aiResult : aiResult // ignore:
 as Map<String, dynamic>?,checklist: freezed == checklist ? _self._checklist : checklist // ignore: cast_nullable_to_non_nullable
 as List<ChecklistItem>?,location: freezed == location ? _self.location : location // ignore: cast_nullable_to_non_nullable
 as TaskLocation?,attachments: null == attachments ? _self._attachments : attachments // ignore: cast_nullable_to_non_nullable
-as List<TaskAttachment>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as List<TaskAttachment>,focusContourId: freezed == focusContourId ? _self.focusContourId : focusContourId // ignore: cast_nullable_to_non_nullable
+as String?,goals: null == goals ? _self._goals : goals // ignore: cast_nullable_to_non_nullable
+as List<TaskGoalRef>,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,isCurrent: null == isCurrent ? _self.isCurrent : isCurrent // ignore: cast_nullable_to_non_nullable
 as bool,
