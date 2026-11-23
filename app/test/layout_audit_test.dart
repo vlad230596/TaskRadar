@@ -70,7 +70,7 @@ void main() {
     'project notes': _Screen(
       (b) => ProjectScreen(projectId: b.homeProjectId),
       then: (tester) async {
-        final tab = find.textContaining('Заметки');
+        final tab = find.textContaining('Идеи');
         if (tab.evaluate().isNotEmpty) await tester.tap(tab.first);
       },
     ),

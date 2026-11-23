@@ -26,6 +26,7 @@ import '../storage/read_cache_store.dart';
 import 'board_providers.dart';
 import 'dependencies.dart';
 import 'focus_providers.dart';
+import 'goal_providers.dart';
 import 'inbox_providers.dart';
 import 'outbox_providers.dart';
 import 'read_cache_providers.dart';
@@ -1226,26 +1227,30 @@ class ProjectNotes extends _$ProjectNotes {
     }
   }
 
-  Future<void> create(String title) async {
+  /// Creates an idea; returns it as the server saved it (null for an empty
+  /// title, which creates nothing).
+  Future<Note?> create(String title, {String content = ''}) async {
     final trimmed = title.trim();
-    if (trimmed.isEmpty) return;
+    if (trimmed.isEmpty) return null;
 
     final previous = state.value;
     if (previous == null) throw state.error ?? const NotLoadedException();
 
-    final placeholder = _optimisticNote(trimmed);
+    final placeholder = _optimisticNote(trimmed).copyWith(content: content);
     state = AsyncData(<Note>[...previous, placeholder]);
 
     try {
       final created = await _api.createNote(
         projectId: projectId,
         title: trimmed,
+        content: content,
       );
-      if (!ref.mounted) return;
+      if (!ref.mounted) return created;
       state = AsyncData(<Note>[
         for (final note in state.value ?? previous)
           if (note.id == placeholder.id) created else note,
       ]);
+      return created;
     } catch (error) {
       if (ref.mounted) state = AsyncData(previous);
       rethrow;
@@ -1324,6 +1329,46 @@ class ProjectNotes extends _$ProjectNotes {
       if (ref.mounted) state = AsyncData(previous);
       rethrow;
     }
+  }
+
+  /// «Сделать задачей» (`POST /notes/:id/to-task`): the idea becomes a task
+  /// at the end of its project, its goals carried over, and is gone.
+  ///
+  /// Online only -- the server moves the goal links in the same transaction,
+  /// which an outbox could not replay faithfully. The idea leaves the list at
+  /// once and comes back if the request fails. Afterwards the project's tasks
+  /// are re-read (the new task's `isCurrent` is a property of the list) and
+  /// the goals quietly (the crown follows the links).
+  Future<Task> toTask(Note note) async {
+    final previous = state.value;
+    if (previous == null) throw state.error ?? const NotLoadedException();
+
+    state = AsyncData(<Note>[
+      for (final row in previous)
+        if (row.id != note.id) row,
+    ]);
+
+    final Task task;
+    try {
+      task = await ref.read(goalsApiProvider).ideaToTask(note.id);
+    } catch (error) {
+      if (ref.mounted) state = AsyncData(previous);
+      rethrow;
+    }
+
+    try {
+      final rows = List<Task>.unmodifiable(await _api.fetchTasks(projectId));
+      if (ref.mounted && ref.exists(projectTasksProvider(projectId))) {
+        ref.read(projectTasksProvider(projectId).notifier).adopt(rows);
+      }
+      if (ref.mounted) {
+        ref.read(boardProvider.notifier).applyProjectTasks(projectId, rows);
+      }
+    } catch (error) {
+      debugPrint('Tasks re-read after idea -> task failed: $error');
+    }
+    if (ref.mounted) unawaited(ref.read(goalsProvider.notifier).syncQuietly());
+    return task;
   }
 
   Note _optimisticNote(String title) {

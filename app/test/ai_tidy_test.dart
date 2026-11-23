@@ -531,7 +531,7 @@ void main() {
       expect(find.byType(NoteEditorScreen), findsOneWidget);
       expect(find.text('- гвозди\n- краска'), findsOneWidget);
       // A draft, not a save: the user says "Сохранить" as for any edit.
-      expect(find.text('Заметка · не сохранено'), findsOneWidget);
+      expect(find.text('Идея · не сохранено'), findsOneWidget);
     });
 
     testWidgets('saved, the answer takes its record along (F15)', (
@@ -577,7 +577,7 @@ void main() {
       await settle(tester);
       await tester.tap(find.text('Готово'));
       await settle(tester);
-      await tester.tap(find.byTooltip('Сохранить'));
+      await tester.tap(find.text('Сохранить'));
       await settle(tester);
 
       expect(patches.single, <String, dynamic>{
@@ -598,7 +598,7 @@ void main() {
       );
       expect(find.byTooltip('Причесать'), findsNothing);
 
-      final body = find.widgetWithText(TextField, 'Markdown…');
+      final body = find.widgetWithText(TextField, 'Текст идеи');
       await tester.enterText(body, '   \n ');
       await tester.pump();
       expect(find.byTooltip('Причесать'), findsNothing);

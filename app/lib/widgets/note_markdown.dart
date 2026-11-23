@@ -29,8 +29,12 @@ class NoteMarkdown extends StatelessWidget {
   const NoteMarkdown({
     required this.content,
     this.selectable = false,
+    this.onDark = false,
     super.key,
   });
+
+  /// Drawn on the dark idea screen: light text, the body at 17.
+  final bool onDark;
 
   /// Raw markdown source, as stored. Never empty-able server-side (a `Note`'s
   /// `content` is a non-null column whose empty value is `""`), so the empty
@@ -45,7 +49,27 @@ class NoteMarkdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final base = Theme.of(context);
+    final theme = onDark
+        ? base.copyWith(
+            textTheme: base.textTheme
+                .apply(
+                  bodyColor: const Color(0xFFEDEEF7),
+                  displayColor: const Color(0xFFEDEEF7),
+                )
+                .copyWith(
+                  bodyMedium: base.textTheme.bodyMedium?.copyWith(
+                    fontSize: 17,
+                    height: 1.45,
+                    color: const Color(0xFFEDEEF7),
+                  ),
+                ),
+            colorScheme: base.colorScheme.copyWith(
+              onSurfaceVariant: const Color(0xFFA7AECF),
+              surfaceContainerHighest: const Color(0xFF39407A),
+            ),
+          )
+        : base;
 
     if (content.trim().isEmpty) {
       return Text(

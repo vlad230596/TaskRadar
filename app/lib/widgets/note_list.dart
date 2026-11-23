@@ -3,165 +3,551 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_error_message.dart';
+import '../api/api_exception.dart';
+import '../models/goal.dart';
 import '../models/note.dart';
+import '../navigation/app_routes.dart';
+import '../providers/goal_providers.dart';
 import '../providers/project_providers.dart';
+import '../screens/dictation_screen.dart';
 import '../screens/note_editor_screen.dart';
-import 'dictate_into.dart';
-import 'ime_text_controller.dart';
+import '../theme/app_theme.dart';
+import '../theme/tokens.dart';
+import 'goals/goal_icons.dart';
+import 'goals/goal_picker_sheet.dart';
+import 'mode_navigation.dart';
 import 'mutation_feedback.dart';
-import 'note_markdown.dart';
-import 'unsaved_changes_guard.dart';
 
-/// The notes half of the project screen.
+/// The ideas half of the project screen (`design/goals-ideas-spec.md`, §7).
 ///
-/// Port of `frontend/src/components/NoteList.tsx` + `NoteListItem.tsx`, with one
-/// structural change: the React row was an editor *and* a viewer, toggling a
-/// textarea against a rendered preview in place. On a phone that is the wrong
-/// shape -- a list of five notes, any of which might be a 40-line textarea, is
-/// unreadable and unscrollable. So the list renders notes and nothing else, and
-/// editing happens on its own screen ([NoteEditorScreen]).
+/// Ideas are the former notes: what may become a task, with no age and no
+/// status. The model, the table and the routes stay `Note` / `/notes` (the
+/// contract keeps them), only the interface says «идеи».
 ///
-/// Why the notes exist at all is worth remembering while reading this: per
-/// `../../README.md`, the thing that makes a project a first-class entity
-/// rather than a list is that it has a **body**. These are that body.
+/// The list renders cards and nothing else; an idea is written on its own
+/// screen ([NoteEditorScreen]). The inline composer is gone: «+ Идея» and the
+/// microphone are pinned under the list, as the tasks' bar is.
 class NoteListView extends ConsumerWidget {
-  const NoteListView({required this.projectId, required this.notes, super.key});
+  const NoteListView({
+    required this.projectId,
+    required this.notes,
+    this.projectName,
+    super.key,
+  });
 
   final String projectId;
 
-  /// In `createdAt` ascending order, as the server sends them.
+  /// For «Теперь это задача в «…»». Optional: the snackbar reads without it.
+  final String? projectName;
+
+  /// In `createdAt` ascending order, as the server sends them; drawn newest
+  /// first.
   final List<Note> notes;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return RefreshIndicator(
-      onRefresh: () =>
-          ref.read(projectNotesProvider(projectId).notifier).refresh(),
-      child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 32),
-        // +1 for the composer, +1 for the empty-state footer when there is one.
-        itemCount: notes.length + (notes.isEmpty ? 2 : 1),
-        itemBuilder: (context, index) {
-          if (index == 0) return _NoteComposer(projectId: projectId);
-          if (notes.isEmpty) return const _NoNotesYet();
+    final ordered = <Note>[...notes]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-          final note = notes[index - 1];
-          return _NoteCard(
-            key: ValueKey<String>(note.id),
-            projectId: projectId,
-            note: note,
-          );
-        },
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () =>
+                ref.read(projectNotesProvider(projectId).notifier).refresh(),
+            child: ordered.isEmpty
+                ? _NoIdeasYet(projectId: projectId)
+                : ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(
+                      Insets.gutter,
+                      12,
+                      Insets.gutter,
+                      16,
+                    ),
+                    children: <Widget>[
+                      if (ordered.length < 3)
+                        const Padding(
+                          padding: EdgeInsets.fromLTRB(2, 0, 2, 10),
+                          child: Text(
+                            'Мысль, которая может стать задачей. Без срока и '
+                            'возраста.',
+                            style: _hint,
+                          ),
+                        ),
+                      for (final note in ordered)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: Insets.gap),
+                          child: IdeaCard(
+                            key: ValueKey<String>(note.id),
+                            projectId: projectId,
+                            projectName: projectName,
+                            note: note,
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ),
+        _IdeaBar(projectId: projectId, projectName: projectName),
+      ],
+    );
+  }
+}
+
+/// «+ Идея» (56, ink) and the microphone (56, indigo), pinned under the list.
+class _IdeaBar extends StatelessWidget {
+  const _IdeaBar({required this.projectId, required this.projectName});
+
+  final String projectId;
+  final String? projectName;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(Insets.gutter, 8, Insets.gutter, 16),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: SizedBox(
+              height: Targets.microphone,
+              child: FilledButton.icon(
+                onPressed: () => unawaited(openNewIdea(context, projectId)),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.ink,
+                  foregroundColor: AppColors.onInk,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(Radii.stub),
+                  ),
+                  textStyle: AppText.action.copyWith(fontSize: 16),
+                ),
+                icon: const Icon(Icons.add, size: 20),
+                label: const Text('Идея'),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          MicrophoneSquare(
+            tooltip: 'Продиктовать идею',
+            onPressed: () => unawaited(dictateNewIdea(context, projectId)),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// "New note" -- a title only.
-///
-/// The content is written in the editor, which is where a multi-line markdown
-/// body belongs. Creating with an empty body is explicitly fine on the server
-/// (`createNoteSchema` defaults `content` to `""`), so this is one field and one
-/// Enter, not a form.
-class _NoteComposer extends ConsumerStatefulWidget {
-  const _NoteComposer({required this.projectId});
-
-  final String projectId;
-
-  @override
-  ConsumerState<_NoteComposer> createState() => _NoteComposerState();
+/// A new idea's screen, empty or with [title] / [content] already in it.
+Future<void> openNewIdea(
+  BuildContext context,
+  String projectId, {
+  String title = '',
+  String content = '',
+}) {
+  return Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => NoteEditorScreen(
+        projectId: projectId,
+        note: null,
+        initialTitle: title,
+        initialContent: content,
+      ),
+    ),
+  );
 }
 
-class _NoteComposerState extends ConsumerState<_NoteComposer> {
-  final TextEditingController _controller = ImeTextController();
+/// The microphone of the ideas tab: dictation, then the new idea's screen
+/// with the words in it -- the first line its title, the rest its text.
+Future<void> dictateNewIdea(BuildContext context, String projectId) async {
+  final result = await AppRoutes.openDictation(
+    context,
+    destination: const FieldDestination('новая идея'),
+  );
+  final (String title, String content) = switch (result) {
+    FieldTaskText(:final title, :final description) => (
+      title,
+      description ?? '',
+    ),
+    FieldWords(:final text) => splitIdeaText(text),
+    null => ('', ''),
+  };
+  if (title.trim().isEmpty && content.trim().isEmpty) return;
+  if (!context.mounted) return;
+  await openNewIdea(context, projectId, title: title, content: content);
+}
+
+/// Dictated words as an idea: the first line is the title (cut at 120
+/// characters, the rest moves to the text), the remaining lines the text.
+(String, String) splitIdeaText(String text) {
+  final trimmed = text.trim();
+  final newline = trimmed.indexOf('\n');
+  var title = newline < 0 ? trimmed : trimmed.substring(0, newline).trim();
+  var rest = newline < 0 ? '' : trimmed.substring(newline + 1).trim();
+  if (title.length > 120) {
+    final cut = title.lastIndexOf(' ', 120);
+    final at = cut > 40 ? cut : 120;
+    rest = '${title.substring(at).trim()}${rest.isEmpty ? '' : '\n$rest'}';
+    title = '${title.substring(0, at).trim()}…';
+  }
+  return (title, rest);
+}
+
+/// The goals [noteId] is kept next to, from the goals list.
+List<GoalView> goalsOfIdea(List<GoalView> goals, String noteId) => <GoalView>[
+  for (final goal in goals)
+    if (goal.ideas.any((idea) => idea.id == noteId)) goal,
+];
+
+/// The idea's text as a two-line preview: markdown marks stripped, links
+/// shown as their text.
+String ideaPreview(String markdown) {
+  final lines = <String>[];
+  for (var line in markdown.split('\n')) {
+    line = line
+        .replaceFirst(RegExp(r'^\s{0,3}#{1,6}\s*'), '')
+        .replaceFirst(RegExp(r'^\s*([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?'), '')
+        .replaceFirst(RegExp(r'^\s*>\s?'), '');
+    line = line
+        .replaceAllMapped(RegExp(r'!?\[([^\]]*)\]\([^)]*\)'), (m) => m[1]!)
+        .replaceAll(RegExp(r'(\*\*|__|~~|`)'), '')
+        .replaceAllMapped(
+          RegExp(r'(^|\W)[*_]([^*_]+)[*_]'),
+          (m) => '${m[1]}${m[2]}',
+        )
+        .trim();
+    if (line.isNotEmpty) lines.add(line);
+  }
+  return lines.join(' ');
+}
+
+/// One idea (`Ideas.html`): the bulb, the title, two lines of text, and a
+/// foot with its goals and «Сделать задачей».
+class IdeaCard extends ConsumerStatefulWidget {
+  const IdeaCard({
+    required this.projectId,
+    required this.note,
+    this.projectName,
+    super.key,
+  });
+
+  final String projectId;
+  final String? projectName;
+  final Note note;
+
+  @override
+  ConsumerState<IdeaCard> createState() => _IdeaCardState();
+}
+
+class _IdeaCardState extends ConsumerState<IdeaCard>
+    with SingleTickerProviderStateMixin {
+  /// 1 while the card is there; run down to 0 (200 ms) when the idea leaves
+  /// for the task list, and back up if that fails.
+  late final AnimationController _size = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 200),
+    value: 1,
+  );
+  bool _busy = false;
 
   @override
   void dispose() {
-    _controller.dispose();
+    _size.dispose();
     super.dispose();
   }
 
-  /// Returns whether the note was created. The field is cleared only then:
-  /// clearing it up front lost the typed title whenever the create failed
-  /// (offline, most often), with the optimistic row rolled back as well.
-  Future<bool> _submit() async {
-    final title = _controller.text.trim();
-    if (title.isEmpty) return true;
+  Note get note => widget.note;
 
-    final ok = await runMutation(
-      context,
-      () => ref
-          .read(projectNotesProvider(widget.projectId).notifier)
-          .create(title),
-      failure: 'Не удалось создать заметку.',
-    );
-    if (ok && _controller.text.trim() == title) _controller.clear();
-    return ok;
+  Future<void> _toTask() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final notifier = ref.read(projectNotesProvider(widget.projectId).notifier);
+    final name = widget.projectName;
+
+    await _size.reverse();
+    try {
+      final task = await notifier.toTask(note);
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              name == null
+                  ? 'Теперь это задача'
+                  : 'Теперь это задача в «$name»',
+            ),
+            persist: false,
+            action: SnackBarAction(
+              label: 'Открыть',
+              onPressed: () => unawaited(
+                AppRoutes.openTask(
+                  navigator.context,
+                  projectId: task.projectId,
+                  taskId: task.id,
+                ),
+              ),
+            ),
+          ),
+        );
+    } catch (error) {
+      if (mounted) {
+        setState(() => _busy = false);
+        unawaited(_size.forward());
+      }
+      messenger
+        ..clearSnackBars()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              error is NetworkException
+                  ? 'Нужна сеть: сделать задачей можно только онлайн.'
+                  : 'Не удалось сделать задачей. ${describeApiError(error)}',
+            ),
+          ),
+        );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return UnsavedChangesGuard(
-      listenable: _controller,
-      isDirty: () => _controller.text.trim().isNotEmpty,
-      message: 'Новая заметка не будет создана.',
-      onSave: _submit,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _controller,
-                textInputAction: TextInputAction.done,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'Новая заметка…',
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                ),
-                onSubmitted: (_) => unawaited(_submit()),
+    final unconfirmed = isOptimisticId(note.id);
+    final goals = goalsOfIdea(ref.watch(goalListProvider), note.id);
+    final active = ref.watch(activeContourIdProvider);
+    final preview = ideaPreview(note.content);
+
+    return SizeTransition(
+      sizeFactor: CurvedAnimation(parent: _size, curve: Curves.easeInOut),
+      axisAlignment: -1,
+      child: FadeTransition(
+        opacity: _size,
+        child: Material(
+          color: AppColors.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Radii.panel),
+            side: const BorderSide(color: AppColors.line),
+          ),
+          shadowColor: const Color(0x0D1B2050),
+          elevation: 0.5,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: unconfirmed ? null : () => _open(context),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    crossAxisAlignment: preview.isEmpty
+                        ? CrossAxisAlignment.center
+                        : CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const IdeaTile(),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            Text(
+                              note.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppText.ideaTitle,
+                            ),
+                            if (preview.isNotEmpty) ...<Widget>[
+                              const SizedBox(height: 4),
+                              Text(
+                                preview,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppText.ideaPreview,
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (unconfirmed)
+                        const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Divider(height: 1, color: AppColors.lineFaint),
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      minHeight: Targets.minimum,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: goals.isEmpty
+                              ? Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: _LinkButton(
+                                    onPressed: unconfirmed
+                                        ? null
+                                        : () => unawaited(_link(goals)),
+                                  ),
+                                )
+                              : _GoalChips(
+                                  goals: goals,
+                                  activeContourId: active,
+                                  onTap: unconfirmed
+                                      ? null
+                                      : () => unawaited(_link(goals)),
+                                ),
+                        ),
+                        const SizedBox(width: 8),
+                        // At a large system font on a narrow phone the
+                        // button would push the row past the edge: it gets
+                        // at most 60 % and scales its label down instead.
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: MediaQuery.sizeOf(context).width * 0.55,
+                          ),
+                          child: _MakeTaskButton(
+                            onPressed: unconfirmed || _busy
+                                ? null
+                                : () => unawaited(_toTask()),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
-            DictateInto(controller: _controller, label: 'в заметку'),
-            IconButton.filled(
-              tooltip: 'Создать заметку',
-              onPressed: () => unawaited(_submit()),
-              icon: const Icon(Icons.add),
-            ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _link(List<GoalView> goals) => linkIdeaToGoals(
+    context,
+    ref,
+    noteId: note.id,
+    current: <String>{for (final goal in goals) goal.id},
+  );
+
+  void _open(BuildContext context) {
+    unawaited(
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => NoteEditorScreen(
+            projectId: widget.projectId,
+            note: note,
+            projectName: widget.projectName,
+          ),
         ),
       ),
     );
   }
 }
 
-class _NoNotesYet extends StatelessWidget {
-  const _NoNotesYet();
+/// The bulb on its 34x34 tile.
+class IdeaTile extends StatelessWidget {
+  const IdeaTile({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    return Container(
+      width: 34,
+      height: 34,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: AppColors.ideaFill,
+        borderRadius: BorderRadius.circular(11),
+      ),
+      child: const BulbIcon(size: 19, color: AppColors.ideaInk),
+    );
+  }
+}
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-      child: Column(
-        children: [
-          Icon(
-            Icons.sticky_note_2_outlined,
-            size: 36,
-            color: theme.colorScheme.onSurfaceVariant,
+class _GoalChips extends StatelessWidget {
+  const _GoalChips({
+    required this.goals,
+    required this.activeContourId,
+    required this.onTap,
+  });
+
+  final List<GoalView> goals;
+  final String? activeContourId;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: SizedBox(
+        height: Targets.minimum,
+        child: ClipRect(
+          child: Row(
+            children: <Widget>[
+              for (final goal in goals) ...<Widget>[
+                Flexible(
+                  child: IdeaGoalChip(
+                    title: goal.title,
+                    bright:
+                        activeContourId == null ||
+                        goal.contourId == activeContourId,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+            ],
           ),
-          const SizedBox(height: 12),
-          Text('Заметок пока нет', style: theme.textTheme.titleMedium),
-          const SizedBox(height: 6),
-          Text(
-            'Контекст проекта, ссылки, куда вернуться — всё, что нужно '
-            'вспомнить через две недели.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
+/// A goal on an idea card: 24 high, r 12, crown 11 and the title.
+class IdeaGoalChip extends StatelessWidget {
+  const IdeaGoalChip({required this.title, required this.bright, super.key});
+
+  final String title;
+  final bool bright;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      constraints: const BoxConstraints(maxWidth: 160),
+      padding: const EdgeInsets.fromLTRB(7, 0, 9, 0),
+      decoration: BoxDecoration(
+        color: bright ? AppColors.crownChip : AppColors.crownMutedChip,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          CrownIcon(
+            size: 11,
+            color: bright ? AppColors.crown : AppColors.crownMuted,
+          ),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontFamily: AppFonts.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+                color: bright ? AppColors.onInk : AppColors.inkSoft,
+              ),
             ),
           ),
         ],
@@ -170,103 +556,165 @@ class _NoNotesYet extends StatelessWidget {
   }
 }
 
-class _NoteCard extends ConsumerWidget {
-  const _NoteCard({required this.projectId, required this.note, super.key});
+class _LinkButton extends StatelessWidget {
+  const _LinkButton({required this.onPressed});
 
-  final String projectId;
-  final Note note;
+  final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final theme = Theme.of(context);
-    final unconfirmed = isOptimisticId(note.id);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: unconfirmed ? null : () => _open(context),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      note.title,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  if (unconfirmed)
-                    const Padding(
-                      padding: EdgeInsets.all(12),
-                      child: SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    )
-                  else
-                    IconButton(
-                      tooltip: 'Удалить заметку',
-                      onPressed: () => _delete(context, ref),
-                      icon: const Icon(Icons.close),
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Padding(
-                padding: const EdgeInsets.only(right: 8),
-                // Clipped rather than truncated: markdown cut off mid-source
-                // renders as broken markup (an unclosed `**`, half a list), so
-                // the preview renders the whole note and the *box* is what ends.
-                //
-                // A scroll view that does not scroll, rather than an `Align`
-                // in a 180 px box: the note is laid out at its full height and
-                // the viewport shows the top of it. Squeezed into 180 px, the
-                // markdown's own column reported an overflow (the striped
-                // band in a debug build) on every long note.
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 180),
-                  child: SingleChildScrollView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    primary: false,
-                    child: NoteMarkdown(content: note.content),
-                  ),
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onPressed,
+      borderRadius: BorderRadius.circular(12),
+      child: const SizedBox(
+        height: Targets.minimum,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            CrownIcon(size: 13, color: AppColors.crownMuted),
+            SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                'Связать с целью',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: AppFonts.text,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: AppColors.muted,
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// «Сделать задачей →»: 36 high in a 44 target, r 12, `ideaLine` border.
+class _MakeTaskButton extends StatelessWidget {
+  const _MakeTaskButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: Targets.minimum,
+      child: Center(
+        widthFactor: 1,
+        child: SizedBox(
+          height: 36,
+          child: OutlinedButton(
+            onPressed: onPressed,
+            style: OutlinedButton.styleFrom(
+              backgroundColor: AppColors.card,
+              foregroundColor: AppColors.ideaInk,
+              side: const BorderSide(color: AppColors.ideaLine),
+              padding: const EdgeInsets.fromLTRB(12, 0, 10, 0),
+              minimumSize: const Size(0, 36),
+              tapTargetSize: MaterialTapTargetSize.padded,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              textStyle: const TextStyle(
+                fontFamily: AppFonts.text,
+                fontWeight: FontWeight.w700,
+                fontSize: 13.5,
+              ),
+            ),
+            child: const FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text('Сделать задачей', maxLines: 1, softWrap: false),
+                  SizedBox(width: 6),
+                  Icon(Icons.arrow_forward, size: 15),
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+}
 
-  void _open(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => NoteEditorScreen(projectId: projectId, note: note),
-      ),
+/// No ideas: the bulb on its tile, two lines and «+ Идея».
+class _NoIdeasYet extends StatelessWidget {
+  const _NoIdeasYet({required this.projectId});
+
+  final String projectId;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(32, 48, 32, 24),
+      children: <Widget>[
+        Center(
+          child: Container(
+            width: 56,
+            height: 56,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.ideaFill,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: const BulbIcon(size: 28, color: AppColors.ideaInk),
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          'Идей пока нет',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontFamily: AppFonts.text,
+            fontWeight: FontWeight.w600,
+            fontSize: 17,
+            color: AppColors.ink,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Сюда — то, что может стать задачей, когда дойдут руки. Идеи не '
+          'стареют и не висят.',
+          textAlign: TextAlign.center,
+          style: _hint,
+        ),
+      ],
     );
   }
+}
 
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    final confirmed = await confirmDestructive(
-      context,
-      title: 'Удалить заметку?',
-      message: '«${note.title}» будет удалена без возможности восстановления.',
-    );
-    if (!confirmed || !context.mounted) return;
+const TextStyle _hint = TextStyle(
+  fontFamily: AppFonts.text,
+  fontWeight: FontWeight.w500,
+  fontSize: 13,
+  height: 1.4,
+  color: AppColors.muted,
+);
 
-    await runMutation(
-      context,
-      () => ref.read(projectNotesProvider(projectId).notifier).remove(note),
-      failure: 'Не удалось удалить заметку.',
-    );
-  }
+/// Kept for the delete in the idea's own screen.
+Future<void> deleteIdea(
+  BuildContext context,
+  WidgetRef ref, {
+  required String projectId,
+  required Note note,
+}) async {
+  final confirmed = await confirmDestructive(
+    context,
+    title: 'Удалить идею?',
+    message: '«${note.title}» будет удалена без возможности восстановления.',
+  );
+  if (!confirmed || !context.mounted) return;
+
+  await runMutation(
+    context,
+    () => ref.read(projectNotesProvider(projectId).notifier).remove(note),
+    failure: 'Не удалось удалить идею.',
+  );
 }

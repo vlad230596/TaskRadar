@@ -1083,6 +1083,36 @@ class FakeProjectBackend {
       return jsonResponse(note);
     });
 
+    // An idea becomes a task (`routes/notes.ts`): at the end of its project,
+    // the text as the description, the idea gone. 201 with the raw row.
+    backend.on('POST', '/notes/:id/to-task', (match) {
+      final note = _note(match.params['id']!);
+      if (note == null) return _notFound('Note');
+      final projectId = note['projectId'] as String;
+      final content = note['content'] as String;
+      final row = <String, dynamic>{
+        'id': _id('tsk'),
+        'projectId': projectId,
+        'title': note['title'],
+        'description': content.trim().isEmpty ? null : content,
+        'categoryId': null,
+        'status': 'pending',
+        'position': _appendPosition(projectId),
+        'remindAt': null,
+        'remindTime': null,
+        'checklist': null,
+        'location': null,
+        'attachments': <Map<String, dynamic>>[],
+        'focusContourId': null,
+        'goals': <dynamic>[],
+        'createdAt': '2026-09-16T12:00:00.000Z',
+        'updatedAt': '2026-09-16T12:00:00.000Z',
+      };
+      tasks.add(row);
+      notes.remove(note);
+      return jsonResponse(row, statusCode: 201);
+    });
+
     backend.on('DELETE', '/notes/:id', (match) {
       final note = _note(match.params['id']!);
       if (note == null) return _notFound('Note');

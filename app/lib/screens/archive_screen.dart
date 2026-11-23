@@ -186,7 +186,7 @@ class _ArchivedProjectTile extends ConsumerWidget {
       title: 'Удалить проект навсегда?',
       message:
           'Будут удалены сам проект «${entry.project.name}», все его задачи '
-          '(${entry.tasks.length}) и все его заметки. Отменить это нельзя, '
+          '(${entry.tasks.length}) и все его идеи. Отменить это нельзя, '
           'и копии на сервере не остаётся.',
       expected: entry.project.name,
       fieldLabel: 'Введите название проекта, чтобы подтвердить',

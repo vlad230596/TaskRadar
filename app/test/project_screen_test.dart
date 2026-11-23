@@ -65,10 +65,6 @@ void main() {
   /// the task editor's quick-add sheet instead. The finder stays scoped to a list rather than
   /// using `find.byType(TextField).first`, because on the desktop both panes
   /// are on screen at once.
-  Finder composerIn(Type list) => find
-      .descendant(of: find.byType(list), matching: find.byType(TextField))
-      .first;
-
   Future<void> pumpProject(
     WidgetTester tester, {
     String? highlightTaskId,
@@ -94,11 +90,12 @@ void main() {
     await settle(tester);
   }
 
-  /// The two halves of the phone's "Задачи · N | Заметки · N" switch (F15).
+  /// The two halves of the phone's "Задачи · N | Идеи · N" switch (F15;
+  /// notes became ideas with the goals iteration).
   ///
   /// It replaced F12's header icon, which nobody found: an icon says neither
   /// that the notes exist nor how many there are.
-  final notesSegment = find.textContaining(RegExp(r'^Заметки( · \d+)?$'));
+  final notesSegment = find.textContaining(RegExp(r'^Идеи( · \d+)?$'));
   final tasksSegment = find.textContaining(RegExp(r'^Задачи · \d+$'));
 
   /// Swaps the body to the notes.
@@ -1104,7 +1101,7 @@ void main() {
       // "Задачи" means at a glance. The notes were fetched on open, so their
       // count is there without visiting them.
       expect(find.text('Задачи · 1'), findsOneWidget);
-      expect(find.text('Заметки · 2'), findsOneWidget);
+      expect(find.text('Идеи · 2'), findsOneWidget);
       // The old header icon is gone.
       expect(find.byTooltip('Заметки проекта'), findsNothing);
     });
@@ -1117,12 +1114,12 @@ void main() {
       holdNotes(gate);
 
       await pumpProject(tester);
-      expect(find.text('Заметки · 4'), findsOneWidget);
+      expect(find.text('Идеи · 4'), findsOneWidget);
 
       gate.complete();
       await settle(tester);
       // The loaded list wins.
-      expect(find.text('Заметки · 0'), findsOneWidget);
+      expect(find.text('Идеи · 0'), findsOneWidget);
     });
 
     testWidgets('with neither, no number at all', (tester) async {
@@ -1130,46 +1127,55 @@ void main() {
       holdNotes(gate);
 
       await pumpProject(tester);
-      expect(find.text('Заметки'), findsOneWidget);
+      expect(find.text('Идеи'), findsOneWidget);
 
       gate.complete();
       await settle(tester);
     });
 
-    testWidgets('an empty notes tab says so', (tester) async {
+    testWidgets('an empty ideas tab says so', (tester) async {
       await pumpProject(tester);
       await openNotesTab(tester);
 
-      expect(find.text('Заметок пока нет'), findsOneWidget);
+      expect(find.text('Идей пока нет'), findsOneWidget);
     });
 
-    testWidgets('notes render as markdown, not as source', (tester) async {
+    testWidgets('an idea card previews its text without the markdown', (
+      tester,
+    ) async {
       server.addNote(
         projectId: projectId,
         title: 'Контекст',
-        content: '# Что помнить\n\n- ключи у соседей',
+        content: '# Что помнить\n\n- ключи у **соседей**',
       );
 
       await pumpProject(tester);
       await openNotesTab(tester);
 
       expect(find.text('Контекст'), findsOneWidget);
-      expect(find.text('Что помнить'), findsOneWidget);
-      expect(find.text('ключи у соседей'), findsOneWidget);
-      expect(find.textContaining('# Что помнить'), findsNothing);
+      expect(find.text('Что помнить ключи у соседей'), findsOneWidget);
+      expect(find.textContaining('#'), findsNothing);
     });
 
-    testWidgets('creating a note takes a title only', (tester) async {
+    testWidgets('«+ Идея» opens an empty idea; «Создать» writes it', (
+      tester,
+    ) async {
       await pumpProject(tester);
       await openNotesTab(tester);
 
-      await tester.enterText(composerIn(NoteListView), 'Контекст');
-      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.tap(find.widgetWithText(FilledButton, 'Идея'));
+      await settle(tester);
+      expect(find.byType(NoteEditorScreen), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, 'Контекст');
+      await settle(tester);
+      await tester.tap(find.text('Создать'));
       await settle(tester);
 
       expect(server.notes.single['title'], 'Контекст');
       expect(server.notes.single['content'], '');
-      expect(find.text('Пусто'), findsOneWidget);
+      // Created: the idea's own actions are there now.
+      expect(find.text('Сделать задачей'), findsOneWidget);
     });
 
     testWidgets('tapping a note opens the editor and saving writes it', (
@@ -1188,19 +1194,24 @@ void main() {
       await settle(tester);
       expect(find.byType(NoteEditorScreen), findsOneWidget);
 
+      // The text shows rendered; a tap on it opens the field.
+      await tester.tap(find.text('старое').last);
+      await settle(tester);
       await tester.enterText(find.byType(TextField).last, '# Новое');
       await settle(tester);
-      // The app bar says there is something to lose.
-      expect(find.text('Заметка · не сохранено'), findsOneWidget);
+      // The header says there is something to lose.
+      expect(find.text('Идея · не сохранено'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Сохранить'));
+      await tester.tap(find.text('Сохранить'));
       await settle(tester);
 
       expect(server.notes.single['content'], '# Новое');
-      expect(find.text('Заметка'), findsOneWidget);
+      expect(find.text('Идея'), findsOneWidget);
     });
 
-    testWidgets('the editor previews the draft as markdown', (tester) async {
+    testWidgets('the editor shows the draft as markdown once left', (
+      tester,
+    ) async {
       server.addNote(projectId: projectId, title: 'Контекст');
 
       await pumpProject(tester);
@@ -1209,7 +1220,8 @@ void main() {
       await settle(tester);
 
       await tester.enterText(find.byType(TextField).last, '- раз\n- два');
-      await tester.tap(find.byTooltip('Просмотр'));
+      // Focus leaves the text: it renders.
+      FocusManager.instance.primaryFocus?.unfocus();
       await settle(tester);
 
       expect(find.text('раз'), findsOneWidget);
@@ -1229,11 +1241,13 @@ void main() {
       await openNotesTab(tester);
       await tester.tap(find.text('старое'));
       await settle(tester);
+      await tester.tap(find.text('старое').last);
+      await settle(tester);
 
       await tester.enterText(find.byType(TextField).last, 'наполовину набрано');
       await settle(tester);
 
-      await tester.tap(find.byTooltip('Back'));
+      await tester.tap(find.byTooltip('Закрыть'));
       await settle(tester);
 
       expect(find.text('Выйти без сохранения?'), findsOneWidget);
@@ -1243,19 +1257,54 @@ void main() {
       expect(find.byType(NoteEditorScreen), findsOneWidget);
     });
 
-    testWidgets('deleting a note asks first', (tester) async {
+    testWidgets('deleting an idea, from its screen, asks first', (
+      tester,
+    ) async {
       server.addNote(projectId: projectId, title: 'Лишняя');
 
       await pumpProject(tester);
       await openNotesTab(tester);
 
-      await tester.tap(find.byTooltip('Удалить заметку'));
+      await tester.tap(find.text('Лишняя'));
+      await settle(tester);
+      await tester.tap(find.byTooltip('Ещё'));
+      await settle(tester);
+      await tester.tap(find.text('Удалить идею'));
       await settle(tester);
       await tester.tap(find.widgetWithText(FilledButton, 'Удалить'));
       await settle(tester);
 
       expect(server.notes, isEmpty);
-      expect(find.text('Заметок пока нет'), findsOneWidget);
+      expect(find.byType(NoteEditorScreen), findsNothing);
+      expect(find.text('Идей пока нет'), findsOneWidget);
+    });
+
+    testWidgets('«Сделать задачей» turns the idea into a task at once', (
+      tester,
+    ) async {
+      server.addNote(
+        projectId: projectId,
+        title: 'Заказать кабель',
+        content: 'Медный, 3×2.5',
+      );
+
+      await pumpProject(tester);
+      await openNotesTab(tester);
+
+      await tester.tap(find.text('Сделать задачей'));
+      await settle(tester);
+
+      // No confirmation: the idea is gone, the task is there, with the text
+      // as its description.
+      expect(server.notes, isEmpty);
+      final task = server.tasks.single;
+      expect(task['title'], 'Заказать кабель');
+      expect(task['description'], 'Медный, 3×2.5');
+      expect(find.textContaining('Теперь это задача в «'), findsOneWidget);
+      expect(find.text('Идеи · 0'), findsOneWidget);
+
+      await openTasksTab(tester);
+      expect(find.text('Заказать кабель'), findsOneWidget);
     });
 
     testWidgets('a failed notes load is reported on that tab alone', (
@@ -1267,7 +1316,7 @@ void main() {
       await pumpProject(tester);
 
       await openNotesTab(tester);
-      expect(find.text('Не удалось загрузить заметки'), findsOneWidget);
+      expect(find.text('Не удалось загрузить идеи'), findsOneWidget);
       expect(find.textContaining('Нет связи с сервером.'), findsOneWidget);
       // The tasks side is untouched.
       await openTasksTab(tester);
@@ -1358,7 +1407,7 @@ void main() {
       // The counters the tabs used to carry are still facts about the project,
       // so they survive the layout change.
       expect(find.text('Задачи · 0/1'), findsOneWidget);
-      expect(find.text('Заметки · 1'), findsOneWidget);
+      expect(find.text('Идеи · 1'), findsOneWidget);
 
       // ...and the content of both is readable at the same time, which is the
       // entire point: the note is the context, the task is what to do about it.
@@ -1372,12 +1421,17 @@ void main() {
         useDesktopWindow(tester);
         await pumpProject(tester);
 
-        await tester.enterText(composerIn(NoteListView), 'Что выяснил');
-        await tester.testTextInput.receiveAction(TextInputAction.done);
+        await tester.tap(find.widgetWithText(FilledButton, 'Идея'));
+        await settle(tester);
+        await tester.enterText(find.byType(TextField).first, 'Что выяснил');
+        await settle(tester);
+        await tester.tap(find.text('Создать'));
+        await settle(tester);
+        await tester.tap(find.byTooltip('Закрыть'));
         await settle(tester);
 
         expect(server.notes.single['title'], 'Что выяснил');
-        expect(find.text('Заметки · 1'), findsOneWidget);
+        expect(find.text('Идеи · 1'), findsOneWidget);
       },
     );
 

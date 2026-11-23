@@ -71,7 +71,7 @@ class ProjectScreen extends ConsumerWidget {
         child: _Message(
           icon: null,
           title: 'Загружаем проект…',
-          body: 'Задачи и заметки грузятся отдельными запросами.',
+          body: 'Задачи и идеи грузятся отдельными запросами.',
         ),
       ),
 
@@ -172,7 +172,7 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
     // requested the moment this screen opens (the `watch` above), so the
     // fallback only has to cover one round trip.
     final noteCount = notes.value?.length ?? view.project.noteCount;
-    final notesLabel = noteCount == null ? 'Заметки' : 'Заметки · $noteCount';
+    final notesLabel = noteCount == null ? 'Идеи' : 'Идеи · $noteCount';
     // The switch counts what is left to do, as the reference does: the done
     // ones are folded away at the bottom of the list and are not what "Задачи"
     // means at a glance.
@@ -192,13 +192,17 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
         children: <Widget>[
           LocalCopyNote(cacheKey: ReadCacheKeys.notes(projectId)),
           Expanded(
-            child: NoteListView(projectId: projectId, notes: value),
+            child: NoteListView(
+              projectId: projectId,
+              projectName: view.project.name,
+              notes: value,
+            ),
           ),
         ],
       ),
       AsyncError(:final error) => _Message(
         icon: Icons.cloud_off,
-        title: 'Не удалось загрузить заметки',
+        title: 'Не удалось загрузить идеи',
         body: describeApiError(error),
         action: TextButton.icon(
           onPressed: () =>
@@ -207,7 +211,7 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
           label: const Text('Повторить'),
         ),
       ),
-      _ => const _Message(icon: null, title: 'Загружаем заметки…', body: ''),
+      _ => const _Message(icon: null, title: 'Загружаем идеи…', body: ''),
     };
 
     if (isWideLayout(context)) {
@@ -243,18 +247,21 @@ class _ProjectBodyState extends ConsumerState<_ProjectBody> {
       // sub-screen -- "микрофон живёт в одном месте". Here it dictates straight
       // into this project, which is the one destination the screen can be sure
       // of.
-      floatingActionButton: MicrophoneSquare(
-        tooltip: 'Задача голосом',
-        onPressed: () => unawaited(
-          AppRoutes.openDictation(
-            context,
-            destination: ProjectDestination(
-              projectId: projectId,
-              name: view.project.name,
+      // The ideas tab has its own microphone in its bar («+ Идея» beside it).
+      floatingActionButton: _notes
+          ? null
+          : MicrophoneSquare(
+              tooltip: 'Задача голосом',
+              onPressed: () => unawaited(
+                AppRoutes.openDictation(
+                  context,
+                  destination: ProjectDestination(
+                    projectId: projectId,
+                    name: view.project.name,
+                  ),
+                ),
+              ),
             ),
-          ),
-        ),
-      ),
     );
   }
 }

@@ -1175,7 +1175,7 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(switch (widget.kind) {
-              ParseKind.note => 'Причесать заметку',
+              ParseKind.note => 'Причесать идею',
               ParseKind.sandbox => 'Причесать строку',
               _ => 'Причесать задачу',
             }, style: AppText.voiceStage),
@@ -1277,7 +1277,7 @@ class _AiTidyScreenState extends ConsumerState<AiTidyScreen> {
           const SizedBox(height: 20),
         ],
         const TidyLabel('ТЕКСТ'),
-        TidyTextField(controller: _body, style: body, hint: 'Текст заметки'),
+        TidyTextField(controller: _body, style: body, hint: 'Текст идеи'),
       ],
       TidiedLine(:final projectId, :final projectName) => <Widget>[
         const TidyLabel('СТРОКА'),

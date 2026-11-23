@@ -22,7 +22,7 @@ String _problemOf(Object error) => switch (error) {
 String _kindName(String kind) => switch (kind) {
   'task' => 'Диктовка в задачу',
   'task_tidy' => 'Причесать задачу',
-  'note' => 'Заметка и описание',
+  'note' => 'Идея и описание',
   'sandbox' => 'Строка песочницы',
   _ => kind,
 };
