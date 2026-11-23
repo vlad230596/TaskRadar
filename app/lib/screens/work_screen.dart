@@ -388,7 +388,9 @@ class _WideSet extends StatelessWidget {
           // The goals as a strip of cards above the big task
           // (`Desk-Focus-Goals.html`).
           const WorkGoalsStrip(),
-          Expanded(child: _WideRow(head: head, rest: rest)),
+          Expanded(
+            child: _WideRow(head: head, rest: rest),
+          ),
         ],
       ),
     );
@@ -404,27 +406,27 @@ class _WideRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          Expanded(child: _HeadCard(task: head, wide: true)),
-          const SizedBox(width: 28),
-          SizedBox(
-            width: 360,
-            child: ListView(
-              children: <Widget>[
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(4, 0, 0, 16),
-                  child: Text('ДАЛЬШЕ В НАБОРЕ', style: AppText.sectionLabel),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Expanded(child: _HeadCard(task: head, wide: true)),
+        const SizedBox(width: 28),
+        SizedBox(
+          width: 360,
+          child: ListView(
+            children: <Widget>[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(4, 0, 0, 16),
+                child: Text('ДАЛЬШЕ В НАБОРЕ', style: AppText.sectionLabel),
+              ),
+              for (final task in rest)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: _NextRow(task: task, wide: true),
                 ),
-                for (final task in rest)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _NextRow(task: task, wide: true),
-                  ),
-              ],
-            ),
+            ],
           ),
-        ],
+        ),
+      ],
     );
   }
 }
@@ -485,33 +487,33 @@ class _HeadCard extends ConsumerWidget {
             ),
             if (!wide) ...<Widget>[const SizedBox(height: 8), since],
           ] else
-          Row(
-            children: <Widget>[
-              _ProjectChip(name: task.project.name, wide: wide),
-              const SizedBox(width: 12),
-              // Подпись у правого края, как в эталоне: чип отвечает «откуда
-              // задача», подпись — «с какого времени», и между ними воздух.
-              Expanded(
-                child: Align(
-                  // На десктопе эталон ставит подпись сразу за чипом: там
-                  // карточка шириной в тысячу пикселей, и у правого края
-                  // подпись оказалась бы в другом конце экрана от того, что
-                  // описывает.
-                  alignment: wide
-                      ? Alignment.centerLeft
-                      : Alignment.centerRight,
-                  child: Text(
-                    blocked ? 'ждёт' : focusedSince(task.focusedAt),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _meta.copyWith(
-                      color: blocked ? AppColors.waitingInk : AppColors.muted,
+            Row(
+              children: <Widget>[
+                _ProjectChip(name: task.project.name, wide: wide),
+                const SizedBox(width: 12),
+                // Подпись у правого края, как в эталоне: чип отвечает «откуда
+                // задача», подпись — «с какого времени», и между ними воздух.
+                Expanded(
+                  child: Align(
+                    // На десктопе эталон ставит подпись сразу за чипом: там
+                    // карточка шириной в тысячу пикселей, и у правого края
+                    // подпись оказалась бы в другом конце экрана от того, что
+                    // описывает.
+                    alignment: wide
+                        ? Alignment.centerLeft
+                        : Alignment.centerRight,
+                    child: Text(
+                      blocked ? 'ждёт' : focusedSince(task.focusedAt),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _meta.copyWith(
+                        color: blocked ? AppColors.waitingInk : AppColors.muted,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           SizedBox(height: wide ? 28 : 16),
           ConstrainedBox(
             constraints: BoxConstraints(maxWidth: wide ? 620 : double.infinity),

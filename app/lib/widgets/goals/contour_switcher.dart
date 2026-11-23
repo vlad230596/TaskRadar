@@ -190,7 +190,13 @@ class ContourSwitcher extends ConsumerWidget {
               children: <Widget>[
                 Icon(Icons.schedule, size: 20, color: AppColors.inkSoft),
                 SizedBox(width: 12),
-                Text('Вернуть по расписанию'),
+                Flexible(
+                  child: Text(
+                    'Вернуть по расписанию',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
@@ -203,7 +209,13 @@ class ContourSwitcher extends ConsumerWidget {
             children: <Widget>[
               Icon(Icons.tune, size: 20, color: AppColors.inkSoft),
               SizedBox(width: 12),
-              Text('Настроить контуры…'),
+              Flexible(
+                child: Text(
+                  'Настроить контуры…',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -221,7 +233,9 @@ class ContourSwitcher extends ConsumerWidget {
         await notifier.followSchedule();
         messenger
           ..clearSnackBars()
-          ..showSnackBar(const SnackBar(content: Text('Контур — по расписанию')));
+          ..showSnackBar(
+            const SnackBar(content: Text('Контур — по расписанию')),
+          );
         return;
       }
       if (choice == active.id && !manual) return;

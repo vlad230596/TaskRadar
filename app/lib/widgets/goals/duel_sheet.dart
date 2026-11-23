@@ -383,12 +383,14 @@ class _DuelSheetState extends State<DuelSheet> {
                     minHeight: 28,
                     maxWidth: 220,
                   ),
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.railActive,
                     borderRadius: BorderRadius.circular(14),
                   ),
-                  alignment: Alignment.centerLeft,
                   child: Text(
                     widget.projectName,
                     maxLines: 1,
@@ -421,6 +423,7 @@ class _DuelSheetState extends State<DuelSheet> {
                   child: OutlinedButton(
                     onPressed: () => _answer(DuelChoice.task),
                     style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.transparent,
                       foregroundColor: AppColors.voiceBright,
                       side: const BorderSide(color: AppColors.voiceLine),
                       shape: RoundedRectangleBorder(

@@ -220,18 +220,14 @@ class GoalBlockItem extends ConsumerWidget {
                     goal.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppText.goalTitle.copyWith(
-                      fontSize: wide ? 17 : 16,
-                    ),
+                    style: AppText.goalTitle.copyWith(fontSize: wide ? 17 : 16),
                   ),
                 ),
                 const SizedBox(width: 8),
                 if (goal.progress.total > 0)
                   Text(
                     '${goal.progress.done}/${goal.progress.total}',
-                    style: AppText.goalCount.copyWith(
-                      fontSize: wide ? 14 : 13,
-                    ),
+                    style: AppText.goalCount.copyWith(fontSize: wide ? 14 : 13),
                   ),
               ],
             ),
@@ -328,9 +324,7 @@ class _StepWell extends ConsumerWidget {
               fontFamily: AppFonts.text,
               fontWeight: FontWeight.w600,
               fontSize: 12,
-              color: blocked
-                  ? AppColors.waitingDotOnInk
-                  : AppColors.voiceMuted,
+              color: blocked ? AppColors.waitingDotOnInk : AppColors.voiceMuted,
             ),
           ),
         ],
@@ -614,8 +608,7 @@ class OtherContoursGoals extends ConsumerWidget {
     final goals = ref.watch(goalListProvider);
     final others = <GoalView>[
       for (final contour in contours)
-        if (contour.id != activeContourId)
-          ..._slotted(goals, contour.id),
+        if (contour.id != activeContourId) ..._slotted(goals, contour.id),
     ];
     if (others.isEmpty) return const SizedBox.shrink();
     final names = <String, String>{
@@ -698,10 +691,7 @@ class OtherContoursGoals extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            InkWell(
-              onTap: () => _othersOpen.value = !open,
-              child: line(open),
-            ),
+            InkWell(onTap: () => _othersOpen.value = !open, child: line(open)),
             if (open)
               for (final goal in others)
                 Padding(

@@ -59,6 +59,48 @@ class FakeGoalsBackend {
   /// Every write, as `METHOD path body`.
   final List<String> writes = <String>[];
 
+  /// The working sets: task id -> contour id (null for "no contour", as a
+  /// task taken by a server from before contours).
+  final Map<String, String?> focused = <String, String?>{};
+
+  /// The stored manual choice, as `GET /contours` answers it.
+  Map<String, dynamic> active = <String, dynamic>{
+    'contourId': 'c_work',
+    'until': null,
+  };
+
+  Map<String, dynamic>? _boardTask(String taskId) {
+    for (final project in board) {
+      for (final task in project['tasks'] as List) {
+        if (task['id'] == taskId) {
+          return <String, dynamic>{
+            ...(task as Map<String, dynamic>),
+            'project': <String, dynamic>{
+              'id': project['id'],
+              'name': project['name'],
+            },
+          };
+        }
+      }
+    }
+    return null;
+  }
+
+  List<Map<String, dynamic>> _focusRows() => <Map<String, dynamic>>[
+    for (final (index, entry) in focused.entries.indexed)
+      <String, dynamic>{
+        ...?_boardTask(entry.key),
+        'focusedAt': DateTime.utc(
+          2026,
+          11,
+          24,
+          9,
+          40 + index,
+        ).toIso8601String(),
+        'focusContourId': entry.value,
+      },
+  ];
+
   /// Paths answered with 409 `slots_full`.
   final Set<String> slotsFullOn = <String>{};
 
@@ -172,9 +214,30 @@ class FakeGoalsBackend {
         '/contours',
         (_) => jsonResponse(<String, dynamic>{
           'contours': contours,
-          'active': <String, dynamic>{'contourId': 'c_work', 'until': null},
+          'active': active,
         }),
       )
+      ..on('PUT', '/contours/active', (match) {
+        writes.add('PUT /contours/active ${match.body['contourId']}');
+        active = <String, dynamic>{
+          'contourId': match.body['contourId'],
+          'until': match.body['contourId'] == null ? null : match.body['until'],
+        };
+        return jsonResponse(active);
+      })
+      ..on('POST', '/tasks/:id/focus', (match) {
+        final id = match.params['id']!;
+        final contourId = match.body['contourId'] as String?;
+        writes.add('POST /tasks/$id/focus ${contourId ?? '-'}');
+        focused[id] = contourId ?? contours.first['id'] as String;
+        return jsonResponse(_boardTask(id));
+      })
+      ..on('DELETE', '/tasks/:id/focus', (match) {
+        final id = match.params['id']!;
+        writes.add('DELETE /tasks/$id/focus');
+        focused.remove(id);
+        return jsonResponse(_boardTask(id));
+      })
       ..on('GET', '/goals', (match) {
         final state = match.options.queryParameters['state'] as String?;
         return jsonResponse(state == 'achieved' ? achieved : goals);
@@ -278,7 +341,18 @@ class FakeGoalsBackend {
       ..on('GET', '/board', (_) => jsonResponse(board))
       ..on('GET', '/scopes', (_) => jsonResponse(defaultScopesJson()))
       ..on('GET', '/inbox', (_) => jsonResponse(<dynamic>[]))
-      ..on('GET', '/focus', (_) => jsonResponse(<dynamic>[]))
+      ..on('GET', '/focus', (_) => jsonResponse(_focusRows()))
+      ..on('GET', '/projects/:id/tasks', (match) {
+        final project = board.firstWhere((p) => p['id'] == match.params['id']);
+        return jsonResponse(project['tasks']);
+      })
+      ..on('GET', '/projects/:id', (match) {
+        final project = Map<String, dynamic>.from(
+          board.firstWhere((p) => p['id'] == match.params['id']),
+        )..remove('tasks');
+        return jsonResponse(project);
+      })
+      ..on('GET', '/projects/:id/categories', (_) => jsonResponse(<dynamic>[]))
       ..on('GET', '/projects/:id/notes', (_) => jsonResponse(<dynamic>[]));
   }
 }

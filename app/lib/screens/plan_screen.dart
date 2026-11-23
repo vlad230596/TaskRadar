@@ -696,14 +696,12 @@ class _GoalsBar extends ConsumerWidget {
                     style: AppText.action.copyWith(color: AppColors.onInk),
                   ),
                   const SizedBox(width: 10),
-                  Flexible(
-                    child: SlotDots(
-                      taken: taken,
-                      total: active.slots,
-                      size: 9,
-                      gap: 5,
-                      ring: true,
-                    ),
+                  SlotDots(
+                    taken: taken,
+                    total: active.slots,
+                    size: 9,
+                    gap: 5,
+                    ring: true,
                   ),
                   const Spacer(),
                   if (expired) ...<Widget>[

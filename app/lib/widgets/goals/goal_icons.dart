@@ -15,12 +15,8 @@ class CrownIcon extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => _GlyphBox(
-    glyph: _Glyph.crown,
-    size: size,
-    color: color,
-    stroke: 2,
-  );
+  Widget build(BuildContext context) =>
+      _GlyphBox(glyph: _Glyph.crown, size: size, color: color, stroke: 2);
 }
 
 /// The idea's bulb (stroke 1.9).

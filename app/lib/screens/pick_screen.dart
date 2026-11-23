@@ -339,9 +339,7 @@ class _TaskChoice extends ConsumerWidget {
     }
 
     // Through the duel: a goal's step may be offered instead.
-    unawaited(
-      takeIntoWork(context, ref, task: task, projectName: projectName),
-    );
+    unawaited(takeIntoWork(context, ref, task: task, projectName: projectName));
   }
 }
 

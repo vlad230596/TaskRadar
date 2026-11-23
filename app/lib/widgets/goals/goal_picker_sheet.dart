@@ -96,7 +96,9 @@ Future<void> _applyLinks(
       ..clearSnackBars()
       ..showSnackBar(
         SnackBar(
-          content: Text('Не удалось связать с целью. ${describeApiError(error)}'),
+          content: Text(
+            'Не удалось связать с целью. ${describeApiError(error)}',
+          ),
         ),
       );
   }
@@ -203,12 +205,8 @@ class _GoalPickerState extends ConsumerState<_GoalPicker> {
                     ),
                   ),
                 for (final goal in <GoalView>[
-                  ...goals.where(
-                    (g) => g.contourId == contour.id && g.inSlot,
-                  ),
-                  ...goals.where(
-                    (g) => g.contourId == contour.id && g.onBench,
-                  ),
+                  ...goals.where((g) => g.contourId == contour.id && g.inSlot),
+                  ...goals.where((g) => g.contourId == contour.id && g.onBench),
                 ])
                   _PickRow(
                     goal: goal,

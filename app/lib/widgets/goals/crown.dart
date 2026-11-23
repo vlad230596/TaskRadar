@@ -175,9 +175,7 @@ Future<void> showCrownMenu(
           height: 48,
           child: Row(
             children: <Widget>[
-              CrownChip(
-                bright: active == null || goal.contourId == active,
-              ),
+              CrownChip(bright: active == null || goal.contourId == active),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
