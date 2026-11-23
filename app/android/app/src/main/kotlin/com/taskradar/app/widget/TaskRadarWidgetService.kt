@@ -23,6 +23,16 @@ class TaskRadarWidgetService : RemoteViewsService() {
         data class Item(val task: HomeWidgetStore.Task) : Row() {
             override val stableId: Long get() = ("t:" + task.id).hashCode().toLong() shl 1 or 1L
         }
+
+        /** A goal step row, above the projects. */
+        data class GoalStep(val goal: HomeWidgetStore.Goal) : Row() {
+            override val stableId: Long get() = ("g:" + goal.goalId).hashCode().toLong() shl 1
+        }
+
+        /** The line between the goal steps and the projects. */
+        object Divider : Row() {
+            override val stableId: Long get() = "divider".hashCode().toLong() shl 1 or 1L
+        }
     }
 
     companion object {
@@ -34,6 +44,10 @@ class TaskRadarWidgetService : RemoteViewsService() {
         fun flatten(snapshot: HomeWidgetStore.Snapshot?, collapsed: Set<String>): List<Row> {
             if (snapshot == null || !snapshot.signedIn) return emptyList()
             val rows = ArrayList<Row>()
+            // The goal steps first, in the same list: a separate container
+            // above it would eat the height of a small widget when scrolled.
+            snapshot.goals.forEach { rows.add(Row.GoalStep(it)) }
+            if (snapshot.goals.isNotEmpty() && snapshot.projects.isNotEmpty()) rows.add(Row.Divider)
             for (project in snapshot.projects) {
                 val isCollapsed = project.id in collapsed
                 rows.add(Row.Header(project, isCollapsed))
@@ -65,6 +79,8 @@ class TaskRadarWidgetService : RemoteViewsService() {
             return when (row) {
                 is Row.Header -> header(row)
                 is Row.Item -> item(row)
+                is Row.GoalStep -> goal(row)
+                Row.Divider -> RemoteViews(context.packageName, R.layout.taskradar_widget_divider)
             }
         }
 
@@ -109,6 +125,67 @@ class TaskRadarWidgetService : RemoteViewsService() {
             }
         }
 
+        /** A colour resource for the current (day or night) configuration. */
+        @Suppress("DEPRECATION")
+        private fun color(id: Int): Int = context.resources.getColor(id)
+
+        private fun goal(row: Row.GoalStep): RemoteViews {
+            val goal = row.goal
+            val stepId = goal.stepId
+            val hasStep = stepId != null
+            return RemoteViews(context.packageName, R.layout.taskradar_widget_goal).apply {
+                setTextViewText(
+                    R.id.widget_goal_step,
+                    if (hasStep) {
+                        goal.stepTitle ?: ""
+                    } else {
+                        context.getString(R.string.widget_goal_discuss, goal.title)
+                    },
+                )
+                if (goal.expired) {
+                    setTextViewText(
+                        R.id.widget_goal_meta,
+                        context.getString(R.string.widget_goal_expired) + " · " + goal.title,
+                    )
+                    setTextColor(R.id.widget_goal_meta, color(R.color.widget_goal_expired))
+                } else {
+                    setTextViewText(
+                        R.id.widget_goal_meta,
+                        context.getString(R.string.widget_goal_meta, goal.title, goal.done, goal.total),
+                    )
+                    setTextColor(R.id.widget_goal_meta, color(R.color.widget_goal_muted))
+                }
+                setViewVisibility(
+                    R.id.widget_goal_take,
+                    if (hasStep && !goal.inWork) View.VISIBLE else View.GONE,
+                )
+                setViewVisibility(
+                    R.id.widget_goal_in_work,
+                    if (hasStep && goal.inWork) View.VISIBLE else View.GONE,
+                )
+                // The row opens the step; a goal with no step opens the app.
+                setOnClickFillInIntent(
+                    R.id.widget_goal_row,
+                    if (stepId != null) {
+                        Intent()
+                            .putExtra(TaskRadarWidgetProvider.EXTRA_ROW_KIND, TaskRadarWidgetProvider.ROW_TASK)
+                            .putExtra(TaskRadarWidgetProvider.EXTRA_TASK_ID, stepId)
+                            .putExtra(TaskRadarWidgetProvider.EXTRA_PROJECT_ID, goal.stepProjectId)
+                    } else {
+                        Intent().putExtra(TaskRadarWidgetProvider.EXTRA_ROW_KIND, TaskRadarWidgetProvider.ROW_APP)
+                    },
+                )
+                if (stepId != null && !goal.inWork) {
+                    setOnClickFillInIntent(
+                        R.id.widget_goal_take,
+                        Intent()
+                            .putExtra(TaskRadarWidgetProvider.EXTRA_ROW_KIND, TaskRadarWidgetProvider.ROW_TAKE)
+                            .putExtra(TaskRadarWidgetProvider.EXTRA_TASK_ID, stepId),
+                    )
+                }
+            }
+        }
+
         /**
          * The project colour from the app's palette, except `ink` on the dark
          * widget: a navy badge on a navy surface is the "cannot tell apart"
@@ -124,7 +201,7 @@ class TaskRadarWidgetService : RemoteViewsService() {
 
         override fun getLoadingView(): RemoteViews? = null
 
-        override fun getViewTypeCount(): Int = 2
+        override fun getViewTypeCount(): Int = 4
 
         override fun getItemId(position: Int): Long = rows.getOrNull(position)?.stableId ?: position.toLong()
 

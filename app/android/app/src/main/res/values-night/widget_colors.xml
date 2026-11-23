@@ -14,4 +14,12 @@
     <color name="widget_dot_waiting">#FFF0A33C</color>    <!-- waitingDotOnInk -->
     <color name="widget_waiting_ink">#FFF0A33C</color>    <!-- waitingDotOnInk -->
     <color name="widget_on_badge">#FFFFFFFF</color>       <!-- onInk -->
+    <!-- Goal step rows: lighter than the dark widget, the chip darker. -->
+    <color name="widget_goal_start">#FF232B6E</color>     <!-- goalRaised -->
+    <color name="widget_goal_end">#FF3A45AE</color>
+    <color name="widget_goal_chip">#FF14183C</color>
+    <color name="widget_crown">#FFFFC94D</color>
+    <color name="widget_goal_ink">#FFFFFFFF</color>
+    <color name="widget_goal_muted">#FFC9CEF0</color>
+    <color name="widget_goal_expired">#FFFF9E86</color>
 </resources>

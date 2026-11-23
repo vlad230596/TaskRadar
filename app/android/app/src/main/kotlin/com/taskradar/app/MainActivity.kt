@@ -91,6 +91,10 @@ class MainActivity : FlutterActivity() {
                         intent.getStringExtra(EXTRA_WIDGET_PROJECT_ID)?.let { put("projectId", it) }
                     }
                 }
+                ACTION_WIDGET_TAKE_STEP -> {
+                    val taskId = intent.getStringExtra(EXTRA_WIDGET_TASK_ID) ?: return false
+                    mapOf("action" to "takeStep", "taskId" to taskId)
+                }
                 ACTION_WIDGET_REFRESH -> mapOf("action" to "refresh")
                 ACTION_WIDGET_DICTATE -> mapOf("action" to "dictate")
                 else -> return false
@@ -109,6 +113,7 @@ class MainActivity : FlutterActivity() {
         const val ACTION_WIDGET_REFRESH = "com.taskradar.app.widget.REFRESH"
         const val ACTION_WIDGET_OPEN_APP = "com.taskradar.app.widget.OPEN_APP"
         const val ACTION_WIDGET_DICTATE = "com.taskradar.app.widget.DICTATE"
+        const val ACTION_WIDGET_TAKE_STEP = "com.taskradar.app.widget.TAKE_STEP"
         const val EXTRA_WIDGET_TASK_ID = "com.taskradar.app.widget.TASK_ID"
         const val EXTRA_WIDGET_PROJECT_ID = "com.taskradar.app.widget.PROJECT_ID"
 
@@ -123,6 +128,10 @@ class MainActivity : FlutterActivity() {
                 .apply { if (projectId != null) putExtra(EXTRA_WIDGET_PROJECT_ID, projectId) }
 
         fun refreshIntent(context: Context): Intent = base(context, ACTION_WIDGET_REFRESH)
+
+        /** A goal step's take button: the step goes into the active contour's set. */
+        fun takeStepIntent(context: Context, taskId: String): Intent =
+            base(context, ACTION_WIDGET_TAKE_STEP).putExtra(EXTRA_WIDGET_TASK_ID, taskId)
 
         /** The widget's microphone: the dictation screen, aimed at the sandbox. */
         fun dictateIntent(context: Context): Intent = base(context, ACTION_WIDGET_DICTATE)

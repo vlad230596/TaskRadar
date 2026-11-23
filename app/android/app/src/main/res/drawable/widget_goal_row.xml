@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A goal step row (design/goals-ideas-spec.md, п. 10): the goal block's
+     gradient, top-left to bottom-right (CSS 135deg is Android's 315), r 14. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="315"
+        android:endColor="@color/widget_goal_end"
+        android:startColor="@color/widget_goal_start"
+        android:type="linear" />
+    <corners android:radius="14dp" />
+</shape>

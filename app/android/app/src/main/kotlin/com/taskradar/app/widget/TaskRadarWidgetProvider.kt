@@ -37,7 +37,11 @@ import java.util.Locale
  * - a **project header** flips its group in [HomeWidgetStore] and redraws the
  *   list. The app is never woken for it;
  * - a **task** starts `MainActivity` with [MainActivity.EXTRA_WIDGET_TASK_ID],
- *   which Dart resolves through the same path a reminder tap takes.
+ *   which Dart resolves through the same path a reminder tap takes;
+ * - a **goal step** row opens its step like a task (a goal with no step opens
+ *   the app), and its take button starts `MainActivity` with
+ *   [MainActivity.ACTION_WIDGET_TAKE_STEP]: Dart takes the step into the
+ *   active contour's set and pushes a new snapshot.
  *
  * The header's refresh arrow and title are activity intents of their own: they
  * open the app, which re-reads the set and pushes a new snapshot. The
@@ -66,6 +70,12 @@ class TaskRadarWidgetProvider : AppWidgetProvider() {
         const val EXTRA_TASK_ID = "taskId"
         const val ROW_PROJECT = "project"
         const val ROW_TASK = "task"
+
+        /** A goal step's take button: the app takes the step into work. */
+        const val ROW_TAKE = "take"
+
+        /** A goal row with no step: just open the app. */
+        const val ROW_APP = "app"
 
         private fun widgetIds(context: Context): IntArray =
             AppWidgetManager.getInstance(context)

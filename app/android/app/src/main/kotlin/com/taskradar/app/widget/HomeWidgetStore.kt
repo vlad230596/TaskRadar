@@ -17,6 +17,10 @@ import org.json.JSONObject
  * "no snapshot" -- the widget then asks the user to open the app, which is the
  * one answer that is always true.
  */
+/** A string field, or null when it is absent, JSON null or empty. */
+private fun JSONObject.optStringOrNull(key: String): String? =
+    if (isNull(key)) null else optString(key).takeIf { it.isNotEmpty() }
+
 object HomeWidgetStore {
     /** Bump together with `HomeWidgetSnapshot.schemaVersion` in Dart. */
     const val SCHEMA_VERSION = 1
@@ -35,11 +39,29 @@ object HomeWidgetStore {
         val tasks: List<Task>,
     )
 
+    /**
+     * A goal step row: the active contour's goal in a slot, its next step (or
+     * none -- «Обсудить»), progress, and whether its window ran out.
+     */
+    data class Goal(
+        val goalId: String,
+        val title: String,
+        val done: Int,
+        val total: Int,
+        val stepId: String?,
+        val stepTitle: String?,
+        val stepProjectId: String?,
+        val expired: Boolean,
+        val inWork: Boolean,
+    )
+
     data class Snapshot(
         val updatedAtMillis: Long,
         val fromCache: Boolean,
         val signedIn: Boolean,
         val projects: List<Project>,
+        /** Above the projects. A snapshot without the key (an older app) has none. */
+        val goals: List<Goal> = emptyList(),
     ) {
         val total: Int get() = projects.sumOf { it.tasks.size }
     }
@@ -107,11 +129,32 @@ object HomeWidgetStore {
                 )
             }
         }
+        val goalsJson = root.optJSONArray("goals")
+        val goals = ArrayList<Goal>()
+        if (goalsJson != null) {
+            for (i in 0 until goalsJson.length()) {
+                val g = goalsJson.getJSONObject(i)
+                goals.add(
+                    Goal(
+                        goalId = g.getString("goalId"),
+                        title = g.optString("title"),
+                        done = g.optInt("done", 0),
+                        total = g.optInt("total", 0),
+                        stepId = g.optStringOrNull("stepId"),
+                        stepTitle = g.optStringOrNull("stepTitle"),
+                        stepProjectId = g.optStringOrNull("stepProjectId"),
+                        expired = g.optBoolean("expired", false),
+                        inWork = g.optBoolean("inWork", false),
+                    ),
+                )
+            }
+        }
         return Snapshot(
             updatedAtMillis = root.optLong("updatedAt", 0L),
             fromCache = root.optBoolean("fromCache", false),
             signedIn = root.optBoolean("signedIn", true),
             projects = projects,
+            goals = goals,
         )
     }
 }

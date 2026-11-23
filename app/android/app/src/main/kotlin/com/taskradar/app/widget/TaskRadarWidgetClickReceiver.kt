@@ -37,6 +37,14 @@ class TaskRadarWidgetClickReceiver : BroadcastReceiver() {
                     ),
                 )
             }
+            TaskRadarWidgetProvider.ROW_TAKE -> {
+                val taskId = intent.getStringExtra(TaskRadarWidgetProvider.EXTRA_TASK_ID) ?: return
+                // Taking into work needs the session and the network, which
+                // live in the app: it comes forward, takes the step, and the
+                // new set redraws the widget.
+                context.startActivity(MainActivity.takeStepIntent(context, taskId))
+            }
+            TaskRadarWidgetProvider.ROW_APP -> context.startActivity(MainActivity.openAppIntent(context))
         }
     }
 }

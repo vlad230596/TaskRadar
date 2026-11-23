@@ -19,4 +19,12 @@
     <color name="widget_dot_waiting">#FFE0A03C</color>    <!-- waitingDot -->
     <color name="widget_waiting_ink">#FF8A5A0B</color>    <!-- waitingInk -->
     <color name="widget_on_badge">#FFFFFFFF</color>       <!-- onInk -->
+    <!-- Goal step rows (design/goals-ideas-spec.md, п. 10) -->
+    <color name="widget_goal_start">#FF14183C</color>     <!-- goalStart -->
+    <color name="widget_goal_end">#FF2B3592</color>       <!-- goalEnd -->
+    <color name="widget_goal_chip">#FF2E377F</color>
+    <color name="widget_crown">#FFFFC94D</color>          <!-- crown -->
+    <color name="widget_goal_ink">#FFFFFFFF</color>
+    <color name="widget_goal_muted">#FFA7AECF</color>     <!-- voiceMuted -->
+    <color name="widget_goal_expired">#FFFF8C70</color>   <!-- goalExpired -->
 </resources>

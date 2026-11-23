@@ -13,4 +13,9 @@
     <string name="widget_waiting">ждёт</string>
     <string name="widget_collapse_project">Свернуть «%1$s»</string>
     <string name="widget_expand_project">Развернуть «%1$s»</string>
+    <string name="widget_goal_take">Взять в работу</string>
+    <string name="widget_goal_in_work">в работе</string>
+    <string name="widget_goal_discuss">Обсудить: %1$s</string>
+    <string name="widget_goal_expired">окно вышло</string>
+    <string name="widget_goal_meta">%1$s · %2$d/%3$d</string>
 </resources>

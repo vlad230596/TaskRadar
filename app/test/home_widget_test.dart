@@ -8,9 +8,11 @@ import 'package:taskradar/domain/project_badge.dart';
 import 'package:taskradar/home_widget/home_widget_gateway.dart';
 import 'package:taskradar/home_widget/home_widget_snapshot.dart';
 import 'package:taskradar/models/focus_task.dart';
+import 'package:taskradar/models/goal.dart';
 import 'package:taskradar/models/task_status.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/focus_providers.dart';
+import 'package:taskradar/providers/goal_providers.dart';
 import 'package:taskradar/providers/home_widget_providers.dart';
 import 'package:taskradar/providers/notification_link_providers.dart';
 import 'package:taskradar/screens/dictation_screen.dart';
@@ -204,8 +206,10 @@ void main() {
         'signedIn',
         'total',
         'projects',
+        'goals',
       ]);
       expect(json['v'], HomeWidgetSnapshot.schemaVersion);
+      expect(json['goals'], isEmpty);
       final project =
           (json['projects']! as List<Object?>).single! as Map<String, Object?>;
       expect(project.keys, <String>[
@@ -262,6 +266,17 @@ void main() {
         HomeWidgetAction.fromMap(<Object?, Object?>{'action': 'dictate'}),
         const HomeWidgetDictate(),
       );
+      expect(
+        HomeWidgetAction.fromMap(<Object?, Object?>{
+          'action': 'takeStep',
+          'taskId': 's1',
+        }),
+        const HomeWidgetTakeStep(taskId: 's1'),
+      );
+      expect(
+        HomeWidgetAction.fromMap(<Object?, Object?>{'action': 'takeStep'}),
+        isNull,
+      );
     });
 
     test('ignores what it does not understand', () {
@@ -274,6 +289,92 @@ void main() {
         HomeWidgetAction.fromMap(<Object?, Object?>{'action': 'openTask'}),
         isNull,
       );
+    });
+  });
+
+  group('goal rows', () {
+    test('only the active contour\'s goals in slots, in their order', () {
+      final rows = buildHomeWidgetGoals(
+        <GoalView>[
+          _goal('g1', contour: 'work', step: 's1', done: 2, total: 5),
+          _goal('g2', contour: 'home', step: 's2'),
+          _goal('g3', contour: 'work', state: GoalState.bench, step: 's3'),
+          _goal('g4', contour: 'work'),
+          _goal('g5', contour: 'work', step: 's5', expired: true),
+        ],
+        activeContourId: 'work',
+        setIds: <String>{'s5'},
+      );
+
+      expect(rows.map((row) => row.goalId), <String>['g1', 'g4', 'g5']);
+      expect(rows[0].stepId, 's1');
+      expect(rows[0].stepTitle, 'Шаг s1');
+      expect(rows[0].stepProjectId, 'p1');
+      expect((rows[0].done, rows[0].total), (2, 5));
+      expect(rows[0].inWork, isFalse);
+      // No step: «Обсудить», no take button.
+      expect(rows[1].stepId, isNull);
+      expect(rows[1].stepTitle, isNull);
+      // The window ran out; the step is already in the set.
+      expect(rows[2].expired, isTrue);
+      expect(rows[2].inWork, isTrue);
+    });
+
+    test('no active contour known: no goal rows', () {
+      expect(
+        buildHomeWidgetGoals(
+          <GoalView>[_goal('g1', contour: 'work', step: 's1')],
+          activeContourId: null,
+          setIds: const <String>{},
+        ),
+        isEmpty,
+      );
+    });
+
+    test('round-trip and pin the goal row wire format', () {
+      final snapshot = buildHomeWidgetSnapshot(
+        <FocusTask>[row('t1', project: 'p1')],
+        updatedAt: at,
+        goals: const <HomeWidgetGoal>[
+          HomeWidgetGoal(
+            goalId: 'g1',
+            title: 'Новое поколение TaskRadar',
+            done: 2,
+            total: 5,
+            stepId: 's1',
+            stepTitle: 'Спроектировать экран целей',
+            stepProjectId: 'p1',
+          ),
+          HomeWidgetGoal(goalId: 'g2', title: 'Отпуск', done: 0, total: 0),
+        ],
+      );
+      final json = jsonDecode(snapshot.encode()) as Map<String, Object?>;
+      final goal =
+          (json['goals']! as List<Object?>).first! as Map<String, Object?>;
+      expect(goal, <String, Object?>{
+        'goalId': 'g1',
+        'title': 'Новое поколение TaskRadar',
+        'done': 2,
+        'total': 5,
+        'stepId': 's1',
+        'stepTitle': 'Спроектировать экран целей',
+        'stepProjectId': 'p1',
+        'expired': false,
+        'inWork': false,
+      });
+      // The widget's count is the set, not the goal rows.
+      expect(json['total'], 1);
+
+      final back = HomeWidgetSnapshot.decode(snapshot.encode());
+      expect(back.goals, snapshot.goals);
+    });
+
+    test('a snapshot from an older app reads as no goals', () {
+      final old = HomeWidgetSnapshot.decode(
+        '{"v": 1, "updatedAt": 0, "fromCache": false, "signedIn": true, '
+        '"total": 0, "projects": []}',
+      );
+      expect(old.goals, isEmpty);
     });
   });
 
@@ -328,6 +429,7 @@ void main() {
             homeWidgetGatewayProvider.overrideWithValue(gateway),
             focusSetProvider.overrideWith(() => focus),
             notificationLinkProvider.overrideWith(() => link),
+            ..._noGoals,
           ],
           child: const HomeWidgetScope(child: SizedBox()),
         ),
@@ -372,6 +474,7 @@ void main() {
           overrides: [
             homeWidgetGatewayProvider.overrideWithValue(gateway),
             focusSetProvider.overrideWith(() => focus),
+            ..._noGoals,
           ],
           child: MaterialApp(
             home: const HomeWidgetScope(child: SizedBox()),
@@ -393,6 +496,59 @@ void main() {
       await tester.pump();
 
       expect(pushed, <String?>[AppRoutes.dictation]);
+    });
+
+    testWidgets('publishes the active contour\'s set and goal steps, and '
+        'takes a step from the widget', (tester) async {
+      final gateway = _RecordingGateway();
+      final focus = _FakeFocusSet(<FocusTask>[
+        row('t1', project: 'p1', projectName: 'Дом')
+            .copyWith(focusContourId: 'work'),
+        row('t2', project: 'p1', projectName: 'Дом')
+            .copyWith(focusContourId: 'home'),
+      ]);
+      final goals = _FakeGoals(<GoalView>[
+        _goal('g1', contour: 'work', step: 's1', done: 1, total: 3),
+        _goal('g2', contour: 'home', step: 's2'),
+      ]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            homeWidgetGatewayProvider.overrideWithValue(gateway),
+            focusSetProvider.overrideWith(() => focus),
+            goalsProvider.overrideWith(() => goals),
+            contoursProvider.overrideWith(_FakeContours.new),
+          ],
+          child: const HomeWidgetScope(child: SizedBox()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      var last = HomeWidgetSnapshot.decode(gateway.published.last);
+      // Only the active contour («work», the first) -- its set and its goal.
+      expect(last.total, 1);
+      expect(last.projects.single.tasks.single.id, 't1');
+      expect(last.goals.single.goalId, 'g1');
+      expect(last.goals.single.stepId, 's1');
+      expect(last.goals.single.inWork, isFalse);
+
+      // The take button on the widget.
+      gateway.actions.add(const HomeWidgetTakeStep(taskId: 's1'));
+      gateway.listener!();
+      await tester.pump();
+      await tester.pump();
+      expect(focus.takenSteps, <String>['s1']);
+
+      // The goals change: the widget follows.
+      goals.set(<GoalView>[
+        _goal('g1', contour: 'work', step: 's3', done: 2, total: 3),
+      ]);
+      await tester.pump();
+      last = HomeWidgetSnapshot.decode(gateway.published.last);
+      expect(last.goals.single.stepId, 's3');
+      expect(last.goals.single.done, 2);
     });
 
     testWidgets('does nothing at all where there is no widget', (tester) async {
@@ -448,6 +604,11 @@ class _FakeFocusSet extends FocusSet {
 
   void set(List<FocusTask> rows) => state = AsyncData(rows);
 
+  final List<String> takenSteps = <String>[];
+
+  @override
+  Future<void> takeStep(GoalTask step) async => takenSteps.add(step.id);
+
   @override
   Future<void> syncQuietly() async {}
 }
@@ -457,4 +618,68 @@ class _RecordingLink extends NotificationLink {
 
   @override
   Future<void> open(String taskId) async => opened.add(taskId);
+}
+
+GoalView _goal(
+  String id, {
+  required String contour,
+  GoalState state = GoalState.slot,
+  String? step,
+  int done = 0,
+  int total = 1,
+  bool expired = false,
+}) => GoalView(
+  id: id,
+  contourId: contour,
+  title: 'Цель $id',
+  state: state,
+  windowExpired: expired,
+  position: 1000,
+  createdAt: '2026-11-01T09:00:00.000Z',
+  nextStep: step == null
+      ? null
+      : GoalTask(
+          id: step,
+          title: 'Шаг $step',
+          status: TaskStatus.pending,
+          projectId: 'p1',
+          projectName: 'Дом',
+        ),
+  progress: GoalProgress(done: done, total: total),
+);
+
+class _FakeGoals extends Goals {
+  _FakeGoals(this._initial);
+
+  final List<GoalView> _initial;
+
+  @override
+  Future<List<GoalView>> build() async => _initial;
+
+  void set(List<GoalView> rows) => state = AsyncData(rows);
+
+  @override
+  Future<void> syncQuietly() async {}
+}
+
+class _FakeContours extends Contours {
+  @override
+  Future<ContourList> build() async => const ContourList(
+    contours: <Contour>[
+      Contour(id: 'work', name: 'Работа', position: 1000),
+      Contour(id: 'home', name: 'Личное', position: 2000),
+    ],
+  );
+}
+
+/// Goals and contours that never touch the network: none of either, which
+/// is what an app talking to a server from before goals sees.
+final _noGoals = [
+  goalsProvider.overrideWith(() => _FakeGoals(const <GoalView>[])),
+  contoursProvider.overrideWith(_NoContours.new),
+];
+
+class _NoContours extends Contours {
+  @override
+  Future<ContourList> build() async => const ContourList(contours: <Contour>[]);
 }

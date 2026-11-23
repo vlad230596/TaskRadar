@@ -25,6 +25,10 @@ sealed class HomeWidgetAction {
               ? projectId
               : null,
         );
+      case 'takeStep':
+        final taskId = map['taskId'];
+        if (taskId is! String || taskId.isEmpty) return null;
+        return HomeWidgetTakeStep(taskId: taskId);
       case 'refresh':
         return const HomeWidgetRefresh();
       case 'dictate':
@@ -50,6 +54,21 @@ class HomeWidgetOpenTask extends HomeWidgetAction {
 
   @override
   int get hashCode => Object.hash(taskId, projectId);
+}
+
+/// The take button of a goal step row was tapped: the step goes into the
+/// active contour's set.
+class HomeWidgetTakeStep extends HomeWidgetAction {
+  const HomeWidgetTakeStep({required this.taskId});
+
+  final String taskId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HomeWidgetTakeStep && other.taskId == taskId;
+
+  @override
+  int get hashCode => Object.hash(HomeWidgetTakeStep, taskId);
 }
 
 /// The microphone in the widget's header was tapped: a thought to the

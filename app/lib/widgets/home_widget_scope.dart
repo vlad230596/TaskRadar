@@ -6,8 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../home_widget/home_widget_gateway.dart';
 import '../home_widget/home_widget_snapshot.dart';
 import '../models/focus_task.dart';
+import '../models/goal.dart';
 import '../navigation/app_routes.dart';
 import '../providers/focus_providers.dart';
+import '../providers/goal_providers.dart';
 import '../providers/home_widget_providers.dart';
 import '../providers/notification_link_providers.dart';
 import '../providers/read_cache_providers.dart';
@@ -18,8 +20,9 @@ import '../storage/read_cache_store.dart';
 ///
 /// ## What goes out
 ///
-/// A [HomeWidgetSnapshot] of `focusSetProvider` -- the work mode's own set --
-/// every time that set changes: the first load (cache or network), a take,
+/// A [HomeWidgetSnapshot] of `activeFocusSetProvider` -- the work mode's own
+/// set, the active contour's -- with the active contour's goal steps above it
+/// (`design/goals-ideas-spec.md`, п. 10), every time either changes: the first load (cache or network), a take,
 /// drop or «сделано», a refresh, and the quiet re-read on resume. The widget
 /// draws the last snapshot it got, so offline it keeps showing the set with
 /// the time it was true.
@@ -32,7 +35,10 @@ import '../storage/read_cache_store.dart';
 /// - a task tap: handed to `NotificationLink.open`, the same path a reminder
 ///   tap takes -- the board lookup, the archive fallback, the «нет связи»
 ///   dialog, and the navigation in `NotificationLinkScope`;
-/// - the refresh arrow: a quiet re-read of the set ([FocusSet.syncQuietly]).
+/// - the refresh arrow: a quiet re-read of the set ([FocusSet.syncQuietly])
+///   and of the goals;
+/// - a goal row's take button: the step goes into the active contour's set
+///   ([FocusSet.takeStep]); the new set republishes itself.
 ///
 /// Collapse and expand never reach Dart -- the widget does them itself.
 ///
@@ -81,7 +87,7 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
     // and `NotificationLinkScope` above is mounted by then.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _publishFrom(ref.read(focusSetProvider));
+      _publish();
       _drainActions();
     });
   }
@@ -100,6 +106,8 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
     super.dispose();
   }
 
+  void _publish() => _publishFrom(ref.read(activeFocusSetProvider));
+
   void _publishFrom(AsyncValue<List<FocusTask>> set) {
     final rows = set.value;
     if (rows == null) return;
@@ -111,10 +119,38 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
       rows,
       updatedAt: cachedAt ?? DateTime.now(),
       fromCache: cachedAt != null,
+      goals: buildHomeWidgetGoals(
+        ref.read(goalListProvider),
+        activeContourId: ref.read(activeContourIdProvider),
+        setIds: <String>{for (final row in rows) row.id},
+      ),
     ).encode();
     if (json == _lastPublished) return;
     _lastPublished = json;
     unawaited(_gateway.publish(json));
+  }
+
+  /// The widget's take button: the step of whichever goal names [taskId] as
+  /// its next step, into the active contour's set. A step the goals no longer
+  /// know (the snapshot was older than the goal) is left alone -- the
+  /// republish after the next read redraws the row.
+  Future<void> _takeStep(String taskId) async {
+    GoalTask? step;
+    for (final goal in ref.read(goalListProvider)) {
+      if (goal.nextStep?.id == taskId) {
+        step = goal.nextStep;
+        break;
+      }
+    }
+    if (step == null) {
+      await ref.read(goalsProvider.notifier).syncQuietly();
+      return;
+    }
+    try {
+      await ref.read(focusSetProvider.notifier).takeStep(step);
+    } catch (error) {
+      debugPrint('Home widget take step failed: $error');
+    }
   }
 
   void _syncIfStale() {
@@ -137,7 +173,12 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
           unawaited(ref.read(notificationLinkProvider.notifier).open(taskId));
         case HomeWidgetRefresh():
           _lastFresh = null;
-          await ref.read(focusSetProvider.notifier).syncQuietly();
+          await Future.wait(<Future<void>>[
+            ref.read(focusSetProvider.notifier).syncQuietly(),
+            ref.read(goalsProvider.notifier).syncQuietly(),
+          ]);
+        case HomeWidgetTakeStep(:final taskId):
+          await _takeStep(taskId);
         case HomeWidgetDictate():
           // Not awaited: the screen stays open for as long as the user
           // speaks, and a second tap meanwhile should still be taken.
@@ -151,15 +192,19 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
   Widget build(BuildContext context) {
     if (_gateway.supported) {
       ref.listen<AsyncValue<List<FocusTask>>>(
-        focusSetProvider,
+        activeFocusSetProvider,
         (_, next) => _publishFrom(next),
       );
+      // The goal rows: a goal slotted, benched, achieved, its step done or
+      // reordered -- and the contour switching, which changes both halves.
+      ref.listen<List<GoalView>>(goalListProvider, (_, _) => _publish());
+      ref.listen<String?>(activeContourIdProvider, (_, _) => _publish());
       // The set can stay the same object while its provenance changes (a
       // cached copy confirmed by the network): the stamp on the widget must
       // follow.
       ref.listen<DateTime?>(
         cachedReadsProvider.select((reads) => reads[ReadCacheKeys.focus]),
-        (_, _) => _publishFrom(ref.read(focusSetProvider)),
+        (_, _) => _publish(),
       );
     }
     return widget.child;
