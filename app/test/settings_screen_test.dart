@@ -9,6 +9,7 @@ import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
+import 'package:taskradar/screens/contours_screen.dart';
 import 'package:taskradar/screens/settings_screen.dart';
 
 import 'support/fake_backend.dart';
@@ -239,6 +240,28 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(NotificationBenchScreen), findsOneWidget);
+  });
+
+  testWidgets('«Цели» lists the contours and opens them', (tester) async {
+    backend.on(
+      'GET',
+      '/contours',
+      (match) => jsonResponse(<String, dynamic>{
+        'contours': <dynamic>[
+          <String, dynamic>{'id': 'c1', 'name': 'Работа', 'position': 1000},
+          <String, dynamic>{'id': 'c2', 'name': 'Личное', 'position': 2000},
+        ],
+        'active': <String, dynamic>{'contourId': null, 'until': null},
+      }),
+    );
+    await pumpSettings(tester);
+
+    expect(find.text('ЦЕЛИ'), findsOneWidget);
+    expect(find.text('Работа, Личное'), findsOneWidget);
+
+    await tester.tap(find.text('Контуры'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ContoursScreen), findsOneWidget);
   });
 
   /// The speech model (F9). A quarter of a gigabyte is a decision, so it is

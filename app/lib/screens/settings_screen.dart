@@ -9,8 +9,10 @@ import '../domain/ai_level.dart';
 import '../domain/reminder_schedule.dart';
 import '../geofence/geofence_syncer.dart';
 import '../geofence/location_access.dart';
+import '../navigation/goal_routes.dart';
 import '../providers/dictation_providers.dart';
 import '../providers/geofence_providers.dart';
+import '../providers/goal_providers.dart';
 import '../providers/reminder_providers.dart';
 import '../providers/voice_providers.dart';
 import '../theme/app_theme.dart';
@@ -96,6 +98,8 @@ class SettingsScreen extends ConsumerWidget {
                           ),
                         ],
                       ),
+                      _SectionLabel('Цели'),
+                      _SettingsGroup(children: <Widget>[_ContoursTile()]),
                       _SectionLabel('Диагностика'),
                       _SettingsGroup(
                         children: <Widget>[
@@ -636,6 +640,26 @@ class _AiModelsTile extends ConsumerWidget {
         : 'первая: ${on.first.title}';
     return '${models.length} в списке, $first'
         '${off > 0 ? ' · выключено: $off' : ''}';
+  }
+}
+
+/// «Контуры»: the sets of goal slots in force at different times
+/// (`design/goals-ideas-spec.md`, п. 9).
+class _ContoursTile extends ConsumerWidget {
+  const _ContoursTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final contours = ref.watch(contourListProvider);
+    return _SettingRow(
+      icon: Icons.workspace_premium_outlined,
+      title: 'Контуры',
+      description: contours.isEmpty
+          ? 'Наборы слотов для целей и свои наборы задач в работе.'
+          : contours.map((contour) => contour.name).join(', '),
+      trailing: const _Chevron(),
+      onTap: () => openContours(context),
+    );
   }
 }
 
