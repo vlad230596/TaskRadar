@@ -23,6 +23,7 @@ import '../models/task_location.dart';
 import '../models/task_status.dart';
 import '../navigation/app_routes.dart';
 import '../providers/board_providers.dart';
+import '../providers/goal_providers.dart';
 import '../providers/history_providers.dart';
 import '../providers/project_providers.dart';
 import '../theme/app_theme.dart';
@@ -36,6 +37,7 @@ import '../widgets/dictation.dart';
 import '../widgets/editor/attachment_section.dart';
 import '../widgets/editor/attribute_bar.dart';
 import '../widgets/editor/editor_theme.dart';
+import '../widgets/editor/goals_section.dart';
 import '../widgets/editor/link_cards.dart';
 import '../widgets/editor/reminder_sheet.dart';
 import '../widgets/editor/sections.dart';
@@ -234,6 +236,9 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
   final GlobalKey _titleKey = GlobalKey();
   final EditorExtras _extras = EditorExtras();
 
+  /// The goals chosen for a task not created yet (`goals_section.dart`).
+  final EditorGoals _goals = EditorGoals();
+
   /// Whether the field had the focus when the finger went down: a tap on a
   /// link in a field that is not being edited opens the link; in a field
   /// being edited it places the caret.
@@ -317,6 +322,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     _title.addListener(_onTitleChanged);
     _note.addListener(_changed);
     _extras.addListener(_changed);
+    _goals.addListener(_changed);
   }
 
   @override
@@ -324,6 +330,8 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     _title.removeListener(_onTitleChanged);
     _note.removeListener(_changed);
     _extras.removeListener(_changed);
+    _goals.removeListener(_changed);
+    _goals.dispose();
     _title.dispose();
     _note.dispose();
     _titleFocus.dispose();
@@ -484,6 +492,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
       _reminder != null ||
       _categoryId != null ||
       _newStatus != TaskStatus.pending ||
+      !_goals.isEmpty ||
       _extras.isDirty;
 
   bool _reminderDiffers(Task task) =>
@@ -596,6 +605,8 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     final category = _categoryOf(null);
     final messenger = ScaffoldMessenger.of(context);
     final projectName = _projectName(project);
+    final goalIds = _goals.ids;
+    final goals = ref.read(goalsProvider.notifier);
 
     _creating = true;
     final outcome = await runMutationFor<WriteOutcome>(
@@ -614,6 +625,14 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     _creating = false;
     if (outcome == null || !mounted) return;
     await _extras.afterCreate(projectId: project, outcome: outcome);
+    // Goals are linked once the server has the task (online-only writes).
+    await linkCreatedTask(
+      messenger,
+      goals,
+      taskId: outcome.taskId,
+      queued: outcome.isQueued,
+      goalIds: goalIds,
+    );
     if (!mounted) return;
 
     // Said only where the result is not in view: another project's list, or
@@ -654,6 +673,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     _newStatus = TaskStatus.pending;
     _tidyParseId = null;
     _extras.clear();
+    _goals.clear();
     _rememberValues();
   }
 
@@ -1610,6 +1630,7 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
               const SizedBox(height: 10),
               LinkCards(links: links),
             ],
+            _slot(GoalsSection(task: task, pending: _goals)),
             _slot(EditorSlots.checklist(scope)),
             _slot(EditorSlots.attachments(scope)),
             _slot(EditorSlots.location(scope)),
@@ -1817,6 +1838,9 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
                 : () => unawaited(_setReminderByHand(null)),
             clearTooltip: 'Убрать напоминание',
           ),
+        // Second, right after the reminder: a goal matters more than a list
+        // or a picture, and the row scrolls sideways (spec, п. 6).
+        GoalsChip(task: task, pending: _goals),
         ...EditorSlots.chips(
           scope,
           onOpen: () => setState(() => _expanded = true),

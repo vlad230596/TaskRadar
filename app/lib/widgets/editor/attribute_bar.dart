@@ -55,10 +55,15 @@ class AttributeChip extends StatefulWidget {
     this.alarm = false,
     this.aiMark = false,
     this.note,
+    this.leading,
     super.key,
   });
 
   final IconData icon;
+
+  /// Drawn instead of [icon] when given: a glyph Material does not have (the
+  /// goal chip's crown).
+  final Widget? leading;
   final String label;
   final bool filled;
   final VoidCallback onTap;
@@ -159,7 +164,7 @@ class _AttributeChipState extends State<AttributeChip>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: <Widget>[
-                      Icon(widget.icon, size: 17, color: ink),
+                      widget.leading ?? Icon(widget.icon, size: 17, color: ink),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
