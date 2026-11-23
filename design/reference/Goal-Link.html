@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Задачи в цель — выбор по всем проектам</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#14183C;color:#EDEEF7;-webkit-font-smoothing:antialiased}
+a{color:#AEB7F5;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+/* Заголовок группы 40: значок проекта 22 r 7 + имя 13/700 #D6DBFF + число #A7AECF */
+.gh{height:40px;display:flex;align-items:center;gap:10px;margin-top:6px}
+.badge{width:22px;height:22px;border-radius:7px;color:#FFFFFF;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center}
+/* Строка 52: чекбокс 24 r 7 · текст 15/500 · корона-чип 18 справа */
+.r{min-height:52px;display:flex;align-items:center;gap:12px}
+.cb{width:24px;height:24px;border-radius:7px;box-sizing:border-box;border:2px solid #39407A;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.on{background:#FFFFFF;border-color:#FFFFFF}
+.t{flex-grow:1;font-size:15px;font-weight:500;line-height:1.3;color:#EDEEF7}
+.cc{width:18px;height:18px;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. Лист 0.92 поверх цели. Отмечены 2 задачи; одна уже в цели (неактивна). -->
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0E1130; position: relative; overflow: hidden;">
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 776px; box-sizing: border-box; background: #14183C; border-radius: 24px 24px 0 0; border-top: 1px solid #39407A; padding: 8px 20px 0; display: flex; flex-direction: column;">
+    <span style="align-self: center; width: 36px; height: 4px; border-radius: 2px; background: #39407A;"></span>
+    <div style="margin-top: 8px; height: 44px; display: flex; align-items: center;">
+      <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-size: 17px; font-weight: 700;">Задачи в цель</span>
+      <button aria-label="Закрыть" style="width: 44px; height: 44px; margin-right: -10px; border: none; background: transparent; color: #A7AECF; display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #A7AECF;">
+      <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>Новое поколение TaskRadar
+    </div>
+
+    <!-- поиск: 48, r 16, #1F2552, рамка #39407A -->
+    <div style="margin-top: 14px; height: 48px; box-sizing: border-box; border-radius: 16px; background: #1F2552; border: 1px solid #39407A; padding: 0 14px; display: flex; align-items: center; gap: 10px; color: #7F88C4; font-size: 15px; font-weight: 500;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#A7AECF" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      Найти задачу во всех проектах
+    </div>
+
+    <!-- фильтры: 36, r 18 -->
+    <div style="margin-top: 10px; display: flex; gap: 8px;">
+      <span style="height: 36px; padding: 0 14px; border-radius: 18px; background: #333A73; color: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Открытые
+      </span>
+      <span style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #39407A; color: #D6DBFF; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600;">Все проекты
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+      </span>
+    </div>
+
+    <div style="flex-grow: 1; overflow: hidden; margin-top: 6px;">
+      <div class="gh"><span class="badge" style="background: #4A56BE;">T</span><span style="font-size: 13px; font-weight: 700; color: #D6DBFF;">TaskRadar</span><span style="font-size: 13px; font-weight: 600; color: #A7AECF;">8</span></div>
+      <div class="r" style="opacity: 0.55;"><span class="cb on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="t">Шаги целей в виджете<span style="display: block; font-size: 12px; font-weight: 600; color: #A7AECF;">уже в цели</span></span></div>
+      <div class="r"><span class="cb on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="t">Иконка для тёмной темы виджета</span></div>
+      <div class="r"><span class="cb"></span><span class="t">Написать пост про голосовой ввод в TaskRadar</span><span class="cc" style="background: #2B3592;"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg></span></div>
+      <div class="r"><span class="cb on"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span><span class="t">Поправить отступы в настройках</span></div>
+
+      <div class="gh"><span class="badge" style="background: #1F5F73;">П</span><span style="font-size: 13px; font-weight: 700; color: #D6DBFF;">Публикации</span><span style="font-size: 13px; font-weight: 600; color: #A7AECF;">3</span></div>
+      <div class="r"><span class="cb"></span><span class="t">Набросать план статьи про локальную диктовку</span><span class="cc" style="background: #2B3592;"><svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg></span></div>
+      <div class="r"><span class="cb"></span><span class="t">Снять скринкаст диктовки</span></div>
+
+      <div class="gh"><span class="badge" style="background: #2A6B4E;">Д</span><span style="font-size: 13px; font-weight: 700; color: #D6DBFF;">Дом</span><span style="font-size: 13px; font-weight: 600; color: #A7AECF;">6</span></div>
+      <div class="r"><span class="cb"></span><span class="t">Купить лампочки</span></div>
+    </div>
+
+    <div style="padding: 12px 0 22px; background: linear-gradient(180deg, rgba(20,24,60,0) 0%, #14183C 22%);">
+      <button style="width: 100%; height: 64px; border: none; border-radius: 22px; background: #FFFFFF; color: #14183C; font-size: 18px; font-weight: 700;">Связать · 2</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Идея — правка и «Сделать задачей»</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#14183C;color:#EDEEF7;-webkit-font-smoothing:antialiased}
+a{color:#AEB7F5;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.tl{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. Тёмный экран идеи — та же семья, что редактор задачи и цели. Лампочка #B9AEF5 на #2A2466. Правок нет — внизу действия идеи. -->
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #14183C; display: flex; flex-direction: column; overflow: hidden;">
+
+  <div style="padding: 10px 8px 0 6px; display: flex; align-items: center; gap: 4px;">
+    <a href="Ideas.html" aria-label="Закрыть" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #A7AECF;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </a>
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-size: 16px; font-weight: 600;">Идея</span>
+    <span style="height: 32px; padding: 0 12px; border-radius: 16px; background: #333A73; color: #D6DBFF; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700;">Публикации</span>
+    <button aria-label="Ещё: удалить идею" style="width: 44px; height: 44px; border: none; background: transparent; color: #A7AECF; display: flex; align-items: center; justify-content: center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+    </button>
+  </div>
+
+  <div style="padding: 0 16px; flex-grow: 1; overflow: hidden;">
+    <!-- плитка 40×40 r 13 #2A2466, лампочка 22 #B9AEF5 -->
+    <span style="margin: 16px 0 12px 4px; width: 40px; height: 40px; border-radius: 13px; background: #2A2466; display: flex; align-items: center; justify-content: center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#B9AEF5" stroke-width="1.9" aria-hidden="true"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>
+    </span>
+    <div style="font-size: 22px; font-weight: 600; line-height: 1.3; color: #FFFFFF; padding: 0 4px;">Статья: диктовка без облака</div>
+
+    <!-- текст: колодец #1F2552, r 20, мин. 220, 17/400; микрофон — как у задачи -->
+    <div style="margin-top: 14px; background: #1F2552; border-radius: 20px; padding: 14px 16px 12px; min-height: 220px; box-sizing: border-box; display: flex; flex-direction: column;">
+      <div style="font-size: 17px; line-height: 1.45; color: #EDEEF7;">
+        Whisper на телефоне, гонка моделей, почему аудио не уходит на сервер.<br>
+        — сравнить с Google Recorder<br>
+        — показать «Причесать» до и после<br>
+        — цифры: сколько секунд на фразу на Pixel 7
+      </div>
+      <span style="flex-grow: 1;"></span>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+        <span style="width: 44px; height: 44px; border-radius: 14px; border: 1px solid #39407A; display: flex; align-items: center; justify-content: center; color: #D6DBFF;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/></svg></span>
+        <span style="width: 44px; height: 44px; border-radius: 14px; background: #4A56BE; display: flex; align-items: center; justify-content: center; color: #FFFFFF;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span>
+      </div>
+    </div>
+
+    <div class="tl" style="margin: 18px 0 8px 4px;">Цели</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <!-- чип цели на тёмном: 32, r 16, #2B3592, корона 13 #FFC94D, 13/700 #FFF -->
+      <span style="height: 32px; padding: 0 12px 0 10px; border-radius: 16px; background: #2B3592; color: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700;">
+        <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>Первая публикация
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#A7AECF" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg>
+      </span>
+      <span style="height: 32px; padding: 0 12px; border-radius: 16px; border: 1px solid #39407A; color: #D6DBFF; display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 700;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Цель
+      </span>
+    </div>
+  </div>
+
+  <div style="padding: 12px 20px 22px; display: flex; flex-direction: column; gap: 10px;">
+    <button style="height: 48px; border-radius: 16px; border: 1px solid #39407A; background: transparent; color: #D6DBFF; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#8C91B8"/><path d="M5 21h14" stroke="#8C91B8" stroke-width="2.4" stroke-linecap="round"/></svg>Связать с целью
+    </button>
+    <button style="height: 64px; border: none; border-radius: 22px; background: #FFFFFF; color: #14183C; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;">
+      Сделать задачей
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+  </div>
+</div>
+</body>
+</html>

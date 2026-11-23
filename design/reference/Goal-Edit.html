@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Цель — правка, задачи по порядку</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#14183C;color:#EDEEF7;-webkit-font-smoothing:antialiased}
+a{color:#AEB7F5;text-decoration:none}a:hover{color:#D6DBFF}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.tl{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+/* Строка задачи цели: 56, ручка 20 #4A5088 · кружок 22 · текст 15/500 + проект 12/600 · × 44 */
+.tr{min-height:56px;display:flex;align-items:center;gap:10px;padding:0 0 0 4px;border-radius:14px}
+.handle{width:14px;flex-shrink:0}
+.x{width:44px;height:44px;border:none;background:transparent;color:#A7AECF;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.st{width:22px;height:22px;border-radius:11px;box-sizing:border-box;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.tt{display:block;font-size:15px;font-weight:500;line-height:1.3;color:#EDEEF7}
+.tp{display:block;margin-top:2px;font-size:12px;font-weight:600;color:#A7AECF}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. Тёмный экран — семья редактора задачи: фон #14183C, колодцы #1F2552, линии #39407A.
+     Цель в слоте контура «Работа». Следующий шаг подсвечен #232B6E (goalRaised) и подписан «ШАГ». -->
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #14183C; display: flex; flex-direction: column; overflow: hidden; position: relative;">
+
+  <div style="padding: 10px 8px 0 6px; display: flex; align-items: center; gap: 4px;">
+    <a href="Goals.html" aria-label="Закрыть" style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; color: #A7AECF;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </a>
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-size: 16px; font-weight: 600; color: #EDEEF7;">Цель</span>
+    <!-- чип контура: 36, r 18, #1F2552, рамка #39407A -->
+    <button style="height: 36px; padding: 0 12px; border-radius: 18px; border: 1px solid #39407A; background: #1F2552; color: #D6DBFF; display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 600;">
+      <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>Работа
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <button aria-label="Ещё: удалить цель" style="width: 44px; height: 44px; border: none; background: transparent; color: #A7AECF; display: flex; align-items: center; justify-content: center;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+    </button>
+  </div>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 0 16px;">
+    <!-- плашка состояния: 36, r 18, #232B6E -->
+    <div style="margin-top: 10px; height: 36px; padding: 0 12px; border-radius: 18px; background: #232B6E; display: flex; align-items: center; gap: 8px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <span style="flex-grow: 1; font-size: 13px; font-weight: 700; color: #FFFFFF;">В слоте · ещё 3 д</span>
+      <span style="font-size: 13px; font-weight: 600; color: #D6DBFF; display: inline-flex; align-items: center; gap: 4px;">окно 7 д <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></span>
+    </div>
+
+    <!-- название: колодец #1F2552, r 20, 22/600 -->
+    <div style="margin-top: 12px; background: #1F2552; border-radius: 20px; padding: 14px 16px; font-size: 22px; font-weight: 600; line-height: 1.3; color: #FFFFFF; min-height: 58px;">Новое поколение TaskRadar</div>
+
+    <div class="tl" style="margin: 16px 0 6px 4px;">Зачем</div>
+    <div style="background: #1F2552; border-radius: 16px; padding: 12px 16px; font-size: 17px; font-weight: 400; line-height: 1.4; color: #EDEEF7;">Чтобы задачи выбирались по пользе, а не по свежести</div>
+
+    <div style="margin: 18px 0 4px 4px; display: flex; align-items: center;">
+      <span class="tl" style="flex-grow: 1;">Задачи · 2/5</span>
+      <a href="Goal-Link.html" style="height: 36px; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; color: #D6DBFF;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Добавить
+      </a>
+    </div>
+
+    <!-- сделано: заливка #7FD1A8, галочка #14183C; текст зачёркнут #A7AECF -->
+    <div class="tr">
+      <svg class="handle" width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><g fill="#4A5088"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="4" cy="16" r="1.6"/><circle cx="10" cy="16" r="1.6"/></g></svg>
+      <span class="st" style="background: #7FD1A8;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+      <a href="Edit-Goals.html" style="flex-grow: 1;"><span class="tt" style="color: #A7AECF; text-decoration: line-through;">Записать боль: задачи выбираются по свежести</span><span class="tp">TaskRadar</span></a>
+      <button class="x" aria-label="Отвязать"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+    <div class="tr">
+      <svg class="handle" width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><g fill="#4A5088"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="4" cy="16" r="1.6"/><circle cx="10" cy="16" r="1.6"/></g></svg>
+      <span class="st" style="background: #7FD1A8;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#14183C" stroke-width="3" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg></span>
+      <a href="Edit-Goals.html" style="flex-grow: 1;"><span class="tt" style="color: #A7AECF; text-decoration: line-through;">Описать контуры в контракте</span><span class="tp">TaskRadar</span></a>
+      <button class="x" aria-label="Отвязать"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+    <!-- следующий шаг: фон #232B6E, r 14, «ШАГ» 10.5/700 #FFC94D -->
+    <div class="tr" style="background: #232B6E; padding-top: 6px; padding-bottom: 6px;">
+      <svg class="handle" width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><g fill="#4A5088"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="4" cy="16" r="1.6"/><circle cx="10" cy="16" r="1.6"/></g></svg>
+      <span class="st" style="border: 2px solid #39407A;"></span>
+      <a href="Edit-Goals.html" style="flex-grow: 1;"><span style="display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ШАГ</span><span class="tt" style="color: #FFFFFF; font-weight: 600;">Спроектировать экран целей и дуэль</span><span class="tp">TaskRadar · в работе</span></a>
+      <button class="x" aria-label="Отвязать"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+    <!-- блокер: кольцо #F0A33C с паузой -->
+    <div class="tr">
+      <svg class="handle" width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><g fill="#4A5088"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="4" cy="16" r="1.6"/><circle cx="10" cy="16" r="1.6"/></g></svg>
+      <span class="st" style="border: 2px solid #F0A33C;"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M3.3 2v6M6.7 2v6" stroke="#F0A33C" stroke-width="1.8"/></svg></span>
+      <a href="Edit-Goals.html" style="flex-grow: 1;"><span class="tt">Миграция: контуры и цели</span><span class="tp" style="color: #F0A33C;">TaskRadar · ждёт 1 д</span></a>
+      <button class="x" aria-label="Отвязать"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+    <div class="tr">
+      <svg class="handle" width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><g fill="#4A5088"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="10" r="1.6"/><circle cx="10" cy="10" r="1.6"/><circle cx="4" cy="16" r="1.6"/><circle cx="10" cy="16" r="1.6"/></g></svg>
+      <span class="st" style="border: 2px solid #39407A;"></span>
+      <a href="Edit-Goals.html" style="flex-grow: 1;"><span class="tt">Шаги целей в виджете</span><span class="tp">TaskRadar</span></a>
+      <button class="x" aria-label="Отвязать"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+
+    <div style="margin: 14px 0 4px 4px; display: flex; align-items: center;">
+      <span class="tl" style="flex-grow: 1;">Идеи · 1</span>
+      <a href="Ideas.html" style="height: 36px; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700; color: #D6DBFF;">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Идея
+      </a>
+    </div>
+    <!-- идея: лампочка 18 #B9AEF5 -->
+    <div class="tr" style="padding-left: 6px;">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B9AEF5" stroke-width="1.9" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/></svg>
+      <a href="Idea-Edit.html" style="flex-grow: 1;"><span class="tt">Корона в строке задачи вместо тега</span><span class="tp">TaskRadar</span></a>
+      <button class="x" aria-label="Отвязать"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+    </div>
+  </div>
+
+  <!-- Низ (прибит): две контурные 48 + «Достигнута» белая 64, r 22 -->
+  <div style="padding: 14px 20px 22px; display: flex; flex-direction: column; gap: 10px; background: linear-gradient(180deg, rgba(20,24,60,0) 0%, #14183C 18%);">
+    <div style="display: flex; gap: 10px;">
+      <button style="flex: 1; height: 48px; border-radius: 16px; border: 1px solid #39407A; background: transparent; color: #D6DBFF; font-size: 15px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 7px;">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M4 10h16M4 14h16M6 14v5M18 14v5M6 10V7M18 10V7"/></svg>На скамейку
+      </button>
+      <button style="flex: 1; height: 48px; border-radius: 16px; border: 1px solid #39407A; background: transparent; color: #D6DBFF; font-size: 15px; font-weight: 600;">Продлить окно</button>
+    </div>
+    <button style="height: 64px; border: none; border-radius: 22px; background: #FFFFFF; color: #14183C; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Достигнута
+    </button>
+  </div>
+</div>
+</body>
+</html>

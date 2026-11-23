@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>История — достигнутые цели</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#F3F3F7;color:#1B2050;-webkit-font-smoothing:antialiased}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.label{font-size:13px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#61637E}
+/* Строка достигнутой цели: 64, белая, рамка #DEDEE8, r 16; плитка 40×40 r 12 #14183C, корона 20 #FFC94D */
+.ar{min-height:64px;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:16px;display:flex;align-items:center;gap:12px;padding:0 10px 0 12px;color:#1B2050}
+.tile{width:40px;height:40px;border-radius:12px;background:#14183C;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. История за 30 дней: сверху сводка (как History.html), затем «Достигнутые цели» — первая крупно в градиенте, остальные строками. -->
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F3F7; display: flex; flex-direction: column; overflow: hidden;">
+
+  <header style="padding: 18px 16px 10px; display: flex; align-items: center; gap: 12px;">
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px; letter-spacing: -0.01em;">История</span>
+    <button style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #C3C6DE; background: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #3A3C5C;">30 дней
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+  </header>
+
+  <div style="flex-grow: 1; overflow: hidden; padding: 0 16px;">
+    <section style="margin-top: 4px; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 22px; padding: 16px; display: flex; gap: 20px; align-items: center;">
+      <div>
+        <div class="num" style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1; color: #2A6B4E;">31</div>
+        <div style="margin-top: 6px; font-size: 13px; font-weight: 600; color: #3A3C5C;">сделано</div>
+      </div>
+      <div>
+        <div class="num" style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 44px; line-height: 1; color: #1B2050; display: flex; align-items: center; gap: 8px;">2
+          <svg width="26" height="26" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#C99A1E"/><path d="M5 21h14" stroke="#C99A1E" stroke-width="2" stroke-linecap="round"/></svg>
+        </div>
+        <div style="margin-top: 6px; font-size: 13px; font-weight: 600; color: #3A3C5C;">цели достигнуты</div>
+      </div>
+    </section>
+
+    <div style="margin: 20px 0 8px; display: flex; align-items: center; gap: 8px;">
+      <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#C99A1E"/><path d="M5 21h14" stroke="#C99A1E" stroke-width="2.4" stroke-linecap="round"/></svg>
+      <span class="label">Достигнутые цели · 2</span>
+      <span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span>
+    </div>
+
+    <!-- крупная: градиент #14183C→#2B3592, r 24, отступы 16 18 -->
+    <a href="Goal-Edit.html" style="display: block; border-radius: 24px; background: linear-gradient(135deg, #14183C 0%, #2B3592 100%); box-shadow: 0 6px 18px rgba(20,24,60,0.18); padding: 16px 18px 18px; color: #FFFFFF;">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+        <span style="flex-grow: 1;"></span>
+        <span style="font-size: 12px; font-weight: 700; color: #7FD1A8; display: inline-flex; align-items: center; gap: 4px;"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>Достигнута 21.11</span>
+      </div>
+      <div style="margin-top: 10px; font-size: 18px; font-weight: 700; line-height: 1.3;">Голос, который работает без сети</div>
+      <div style="margin-top: 4px; font-size: 13px; font-weight: 500; color: #A7AECF;">Диктовка не должна зависеть от сервера</div>
+      <div style="margin-top: 14px; display: flex; gap: 22px;">
+        <div><span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 700; color: #7FD1A8;">5</span><div style="font-size: 12.5px; font-weight: 600; color: #D6DBFF;">задач закрыто</div></div>
+        <div><span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 22px; font-weight: 700; color: #FFFFFF;">12</span><div style="font-size: 12.5px; font-weight: 600; color: #D6DBFF;">дней от начала</div></div>
+      </div>
+    </a>
+
+    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+      <a href="Goal-Edit.html" class="ar">
+        <span class="tile"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg></span>
+        <span style="flex-grow: 1; min-width: 0;">
+          <span style="display: block; font-size: 15.5px; font-weight: 600;">Перевезти семейные фото в облако</span>
+          <span class="num" style="display: block; margin-top: 2px; font-size: 12.5px; font-weight: 500; color: #61637E;">08.11 · 3 задачи · Личное</span>
+        </span>
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#61637E" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </a>
+    </div>
+
+    <div style="margin: 20px 0 8px; display: flex; align-items: center; gap: 8px;">
+      <span class="label">Закрыто</span>
+      <span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span>
+    </div>
+    <div style="font-size: 14px; color: #61637E;">… список закрытых задач, как в History.html</div>
+  </div>
+
+  <nav style="height: 82px; flex-shrink: 0; box-sizing: border-box; border-top: 1px solid #DEDEE8; background: #FFFFFF; display: flex; align-items: flex-start; padding: 8px 10px 0; gap: 6px;">
+    <a href="Main.html" style="flex-grow: 1; height: 54px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #61637E;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></svg>
+      <span style="font-size: 11px; font-weight: 600;">План</span>
+    </a>
+    <a href="Focus-Goals.html" style="flex-grow: 1; height: 54px; border-radius: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #61637E;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>
+      <span style="font-size: 11px; font-weight: 600;">Работа</span>
+    </a>
+    <a href="History-Goals.html" style="flex-grow: 1; height: 54px; border-radius: 16px; background: #E6E8F7; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #2C3480;">
+      <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></svg>
+      <span style="font-size: 11px; font-weight: 700;">История</span>
+    </a>
+    <a href="Dictate.html" style="width: 84px; flex-shrink: 0; height: 54px; border-radius: 16px; background: #4A56BE; color: #FFFFFF; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+      <span style="font-size: 11px; font-weight: 700;">Голос</span>
+    </a>
+  </nav>
+</div>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Дуэль — что берём в работу</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;background:#14183C;color:#EDEEF7;-webkit-font-smoothing:antialiased}
+a{color:#AEB7F5;text-decoration:none}a:hover{color:#D6DBFF}
+button{font:inherit;color:inherit;cursor:pointer}
+</style>
+<style>
+html,body{background:#E7E7ED}
+body{display:flex;align-items:flex-start;justify-content:center;padding:0}
+</style>
+</head>
+<body>
+<!-- 390×844. Лист поверх проекта «Дом» (скрим rgba(27,32,80,.5)). Лист: #14183C, r 24 сверху, ручка 36×4 #39407A.
+     Человек нажал «в работу» на задаче «Купить лампочки» (без короны) — у контура «Работа» есть шаг цели не в наборе. -->
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #F3F3F7; position: relative; overflow: hidden;">
+  <div style="position: absolute; inset: 0; background: rgba(27,32,80,0.5);"></div>
+
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 776px; box-sizing: border-box; background: #14183C; border-radius: 24px 24px 0 0; padding: 8px 20px 22px; display: flex; flex-direction: column; color: #EDEEF7;">
+    <span style="align-self: center; width: 36px; height: 4px; border-radius: 2px; background: #39407A;"></span>
+
+    <div style="margin-top: 8px; height: 44px; display: flex; align-items: center;">
+      <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-size: 19px; font-weight: 700;">Что берём?</span>
+      <button aria-label="Ничего не брать" style="width: 44px; height: 44px; margin-right: -10px; border: none; background: transparent; color: #A7AECF; display: flex; align-items: center; justify-content: center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <p style="margin: 2px 0 0; font-size: 14px; font-weight: 500; color: #A7AECF;">У цели есть шаг, которого нет в наборе.</p>
+
+    <!-- Карточка цели: градиент #14183C→#2B3592, рамка 1.5 rgba(255,201,77,.45), r 24, отступы 18 -->
+    <section style="margin-top: 18px; border-radius: 24px; background: linear-gradient(135deg, #232B6E 0%, #2B3592 100%); border: 1.5px solid rgba(255,201,77,0.45); padding: 18px; box-shadow: 0 10px 30px rgba(0,0,0,0.25);">
+      <div style="display: flex; align-items: center; gap: 7px;">
+        <span style="font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ЦЕЛЬ</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#FFC94D"/><path d="M5 21h14" stroke="#FFC94D" stroke-width="2" stroke-linecap="round"/></svg>
+        <span style="font-size: 14px; font-weight: 700; color: #D6DBFF;">Новое поколение TaskRadar</span>
+      </div>
+      <h2 style="margin: 12px 0 0; font-size: 21px; font-weight: 600; line-height: 1.3; color: #FFFFFF;">Спроектировать экран целей и дуэль</h2>
+      <!-- «зачем» цитатой: полоса 3 px #FFC94D, отступ 10, 14.5/500 #D6DBFF -->
+      <div style="margin-top: 12px; border-left: 3px solid #FFC94D; padding-left: 10px; font-size: 14.5px; font-weight: 500; line-height: 1.4; color: #D6DBFF;">Чтобы задачи выбирались по пользе, а не по свежести</div>
+      <div style="margin-top: 12px; font-size: 12.5px; font-weight: 600; color: #A7AECF;">TaskRadar · шаг 3 из 5 · ещё 3 д</div>
+      <button style="margin-top: 16px; width: 100%; height: 64px; border: none; border-radius: 22px; background: #FFFFFF; color: #14183C; font-size: 18px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="#14183C"/><path d="M5 21h14" stroke="#14183C" stroke-width="2" stroke-linecap="round"/></svg>
+        Беру шаг цели
+      </button>
+    </section>
+
+    <!-- Другая цель: строка 44 -->
+    <button style="margin-top: 4px; height: 44px; border: none; background: transparent; color: #D6DBFF; font-size: 13.5px; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 0;">
+      Другая цель: Первая публикация
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+    </button>
+
+    <!-- «или» -->
+    <div style="margin-top: 6px; display: flex; align-items: center; gap: 12px;">
+      <span style="flex-grow: 1; height: 1px; background: #39407A;"></span>
+      <span style="font-size: 13px; font-weight: 700; color: #A7AECF;">или</span>
+      <span style="flex-grow: 1; height: 1px; background: #39407A;"></span>
+    </div>
+
+    <!-- Карточка задачи: #1F2552, рамка #39407A, r 20, отступы 16 -->
+    <section style="margin-top: 14px; border-radius: 20px; background: #1F2552; border: 1px solid #39407A; padding: 16px;">
+      <span style="height: 28px; padding: 0 12px; border-radius: 14px; background: #333A73; color: #D6DBFF; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700;">Дом</span>
+      <div style="margin-top: 10px; font-size: 17px; font-weight: 500; line-height: 1.35; color: #EDEEF7;">Купить лампочки</div>
+      <button style="margin-top: 14px; width: 100%; height: 52px; border-radius: 18px; border: 1px solid #39407A; background: transparent; color: #D6DBFF; font-size: 15px; font-weight: 600;">Всё равно эту</button>
+    </section>
+
+    <span style="flex-grow: 1;"></span>
+  </div>
+</div>
+</body>
+</html>
