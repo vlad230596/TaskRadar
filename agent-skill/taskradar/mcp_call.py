@@ -16,6 +16,12 @@ import os
 import sys
 import urllib.request
 
+# Windows consoles default to cp1252, and every answer here is Russian: without
+# this the first Cyrillic character in a reply aborts the print with
+# UnicodeEncodeError. `-I` (which the skill recommends) ignores
+# PYTHONIOENCODING, so the fix has to live in the script.
+sys.stdout.reconfigure(encoding="utf-8")
+
 DEFAULT_URL = "https://task-radar.duckdns.org:8443/mcp"
 
 claude_srv = {}
