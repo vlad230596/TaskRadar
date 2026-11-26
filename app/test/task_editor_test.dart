@@ -158,25 +158,20 @@ void main() {
   }
 
   /// A new task's editor, full height, pushed over the host.
-  Future<void> pumpNew(WidgetTester tester, {TaskDraft? prefill}) =>
-      pumpHost(
-        tester,
-        (context) => Navigator.of(context).push<void>(
-          MaterialPageRoute<void>(
-            builder: (_) => TaskEditor(
-              projectId: projectId,
-              prefill: prefill,
-              clock: clock,
-            ),
-          ),
-        ),
-      );
+  Future<void> pumpNew(WidgetTester tester, {TaskDraft? prefill}) => pumpHost(
+    tester,
+    (context) => Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            TaskEditor(projectId: projectId, prefill: prefill, clock: clock),
+      ),
+    ),
+  );
 
   Finder titleField() => find.byType(TextField).first;
 
   SmartTextController titleController(WidgetTester tester) =>
-      tester.widget<TextField>(titleField()).controller!
-          as SmartTextController;
+      tester.widget<TextField>(titleField()).controller! as SmartTextController;
 
   Finder chip(String tooltip) => find.byTooltip(tooltip);
 
@@ -205,7 +200,10 @@ void main() {
       // Two lines of 22 px, not a fixed box.
       expect(shortHeight, lessThan(90));
 
-      await tester.enterText(titleField(), 'Посмотреть, почему не работает ' * 8);
+      await tester.enterText(
+        titleField(),
+        'Посмотреть, почему не работает ' * 8,
+      );
       await tester.pump();
       expect(tester.getSize(titleField()).height, greaterThan(shortHeight));
       expect(tester.takeException(), isNull);
@@ -313,42 +311,49 @@ void main() {
       expect(titleController(tester).text, 'Купить кабель');
       await settle(tester);
       expect(find.byType(AiTidyScreen), findsNothing);
-      expect(find.widgetWithText(TextField, 'Длина два метра.'), findsOneWidget);
+      expect(
+        find.widgetWithText(TextField, 'Длина два метра.'),
+        findsOneWidget,
+      );
       // Not saved behind the user's back.
       expect(server.tasks.single['title'], 'ну купить кабель');
     });
 
-    testWidgets('"Причесать", saved: one PATCH of both fields, with the record', (
-      tester,
-    ) async {
-      final id = server.addTask(projectId: projectId, title: 'ну купить кабель');
-      backend.on('POST', '/dictation/parse', (match) {
-        return sseResponse(<String>[
-          sseEvent('accepted'),
-          sseEvent('result', <String, dynamic>{
-            'title': 'Купить кабель',
-            'description': null,
-            'parseId': 'dp-11',
-          }),
-        ]);
-      });
-      await pumpTask(tester, id);
+    testWidgets(
+      '"Причесать", saved: one PATCH of both fields, with the record',
+      (tester) async {
+        final id = server.addTask(
+          projectId: projectId,
+          title: 'ну купить кабель',
+        );
+        backend.on('POST', '/dictation/parse', (match) {
+          return sseResponse(<String>[
+            sseEvent('accepted'),
+            sseEvent('result', <String, dynamic>{
+              'title': 'Купить кабель',
+              'description': null,
+              'parseId': 'dp-11',
+            }),
+          ]);
+        });
+        await pumpTask(tester, id);
 
-      await tester.tap(find.text('Причесать'));
-      await settle(tester);
-      await tester.tap(find.text('Готово'));
-      await settle(tester);
-      await settle(tester);
-      await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
-      await settle(tester);
+        await tester.tap(find.text('Причесать'));
+        await settle(tester);
+        await tester.tap(find.text('Готово'));
+        await settle(tester);
+        await settle(tester);
+        await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
+        await settle(tester);
 
-      expect(server.patches.single.body, <String, dynamic>{
-        'title': 'Купить кабель',
-        'description': null,
-        'dictationParseId': 'dp-11',
-      });
-      expect(server.tasks.single['title'], 'Купить кабель');
-    });
+        expect(server.patches.single.body, <String, dynamic>{
+          'title': 'Купить кабель',
+          'description': null,
+          'dictationParseId': 'dp-11',
+        });
+        expect(server.tasks.single['title'], 'Купить кабель');
+      },
+    );
 
     testWidgets('"Причесать" on the description alone, as a note', (
       tester,
@@ -383,7 +388,10 @@ void main() {
       await settle(tester);
 
       expect(titleController(tester).text, 'Купить кабель');
-      expect(find.widgetWithText(TextField, 'Длина два метра.'), findsOneWidget);
+      expect(
+        find.widgetWithText(TextField, 'Длина два метра.'),
+        findsOneWidget,
+      );
 
       await tester.tap(find.widgetWithText(FilledButton, 'Сохранить'));
       await settle(tester);
@@ -394,9 +402,7 @@ void main() {
       });
     });
 
-    testWidgets('the description microphone appends the words', (
-      tester,
-    ) async {
+    testWidgets('the description microphone appends the words', (tester) async {
       final id = server.addTask(
         projectId: projectId,
         title: 'Купить кабель',
@@ -567,9 +573,7 @@ void main() {
       expect(chip('Напоминание'), findsNothing);
     });
 
-    testWidgets('the description is a labelled block at 17 px', (
-      tester,
-    ) async {
+    testWidgets('the description is a labelled block at 17 px', (tester) async {
       final id = server.addTask(
         projectId: projectId,
         title: 'Вентилятор',
@@ -583,9 +587,7 @@ void main() {
       expect(note.style?.fontSize, 17);
     });
 
-    testWidgets('the life of the task is one line until asked', (
-      tester,
-    ) async {
+    testWidgets('the life of the task is one line until asked', (tester) async {
       final id = server.addTask(projectId: projectId, title: 'Вентилятор');
       await pumpTask(tester, id);
 
@@ -771,7 +773,10 @@ void main() {
           archivedAt: FakeProjectBackend.archivedAtStamp,
         );
         server.addTask(projectId: 'prj_dacha', title: 'Скосить траву');
-        final id = server.addTask(projectId: projectId, title: 'Покрасить забор');
+        final id = server.addTask(
+          projectId: projectId,
+          title: 'Покрасить забор',
+        );
         await pumpPushed(tester, id);
 
         await tester.tap(find.byTooltip('Перенести в проект…'));
@@ -792,7 +797,9 @@ void main() {
           findsNothing,
         );
 
-        await tester.tap(find.descendant(of: sheet, matching: find.text('Дача')));
+        await tester.tap(
+          find.descendant(of: sheet, matching: find.text('Дача')),
+        );
         await settle(tester);
         await settle(tester);
 
@@ -805,7 +812,10 @@ void main() {
 
       testWidgets('closing the sheet moves nothing', (tester) async {
         server.addProject(name: 'Дача', id: 'prj_dacha');
-        final id = server.addTask(projectId: projectId, title: 'Покрасить забор');
+        final id = server.addTask(
+          projectId: projectId,
+          title: 'Покрасить забор',
+        );
         await pumpPushed(tester, id);
 
         await tester.tap(find.byTooltip('Перенести в проект…'));
@@ -822,7 +832,10 @@ void main() {
       });
 
       testWidgets('with no other project, says how to get one', (tester) async {
-        final id = server.addTask(projectId: projectId, title: 'Покрасить забор');
+        final id = server.addTask(
+          projectId: projectId,
+          title: 'Покрасить забор',
+        );
         await pumpPushed(tester, id);
 
         await tester.tap(find.byTooltip('Перенести в проект…'));
@@ -903,7 +916,10 @@ void main() {
 
       await tester.tap(find.text('+ Время'));
       await settle(tester);
-      expect(find.text('Пуш в это время. Без времени — без пуша.'), findsOneWidget);
+      expect(
+        find.text('Пуш в это время. Без времени — без пуша.'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('15:00'));
       await settle(tester);
       expect(server.patches.last.body, <String, dynamic>{
@@ -925,7 +941,10 @@ void main() {
       tester,
     ) async {
       server.addProject(name: 'Дача', id: 'prj_dacha');
-      final shopping = server.addCategory(projectId: 'prj_dacha', name: 'Покупки');
+      final shopping = server.addCategory(
+        projectId: 'prj_dacha',
+        name: 'Покупки',
+      );
       await pumpNew(tester);
 
       expect(find.text('Новая задача'), findsOneWidget);
@@ -1260,9 +1279,7 @@ void main() {
       expect(find.byType(TaskEditor), findsNothing);
     });
 
-    testWidgets('"Добавить и ещё" keeps the sheet open, empty', (
-      tester,
-    ) async {
+    testWidgets('"Добавить и ещё" keeps the sheet open, empty', (tester) async {
       await openSheet(tester);
 
       await tester.enterText(titleField(), 'Первая');
@@ -1353,22 +1370,20 @@ void main() {
       variant: desktop,
     );
 
-    testWidgets(
-      'a new task with only a picture asks before it is closed',
-      (tester) async {
-        clipboard.image = png;
-        await pumpNew(tester);
-        await tester.showKeyboard(titleField());
-        await pressCtrlV(tester);
-        expect(find.byType(AttachmentTile), findsOneWidget);
+    testWidgets('a new task with only a picture asks before it is closed', (
+      tester,
+    ) async {
+      clipboard.image = png;
+      await pumpNew(tester);
+      await tester.showKeyboard(titleField());
+      await pressCtrlV(tester);
+      expect(find.byType(AttachmentTile), findsOneWidget);
 
-        await tester.tap(find.byTooltip('Закрыть'));
-        await settle(tester);
-        expect(find.text('Выйти без сохранения?'), findsOneWidget);
-        expect(find.text('Новая задача не будет создана.'), findsOneWidget);
-      },
-      variant: desktop,
-    );
+      await tester.tap(find.byTooltip('Закрыть'));
+      await settle(tester);
+      expect(find.text('Выйти без сохранения?'), findsOneWidget);
+      expect(find.text('Новая задача не будет создана.'), findsOneWidget);
+    }, variant: desktop);
 
     testWidgets('an empty new task still closes on «Добавить» quietly', (
       tester,

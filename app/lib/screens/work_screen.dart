@@ -88,9 +88,7 @@ class WorkScreen extends ConsumerWidget {
           );
 
     final Widget body = switch (set) {
-      AsyncData(:final value) when value.isEmpty => _NoSet(
-        header: goalsHeader,
-      ),
+      AsyncData(:final value) when value.isEmpty => _NoSet(header: goalsHeader),
       // Everything in the set is a goal step or in «Сегодня»: it is in work
       // up there, and the list under it has nothing of its own.
       AsyncData(:final value)
@@ -192,9 +190,7 @@ class WorkHeader extends ConsumerWidget {
                           taken: tasks.length,
                           current: current == null
                               ? null
-                              : tasks.indexWhere(
-                                  (task) => task.id == current,
-                                ),
+                              : tasks.indexWhere((task) => task.id == current),
                           size: wide ? 12 : 11,
                           gap: wide ? 7 : 6,
                         ),
@@ -573,7 +569,7 @@ class _HeadCard extends ConsumerWidget {
             // A wrap: with the day column beside it (`Desk-Focus-Today.html`)
             // the card is narrower than the three buttons on a 1440 window.
             Wrap(
-              spacing: 14,
+              spacing: 10,
               runSpacing: 12,
               children: <Widget>[
                 _DoneButton(task: task, wide: true),
@@ -636,7 +632,7 @@ class _DoneButton extends ConsumerWidget {
         backgroundColor: AppColors.done,
         foregroundColor: AppColors.onInk,
         minimumSize: Size(0, wide ? 76 : 68),
-        padding: EdgeInsets.symmetric(horizontal: wide ? 40 : 20),
+        padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 20),
         textStyle: wide ? _doneLabelWide : _doneLabel,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(wide ? Radii.large : 22),
@@ -674,7 +670,7 @@ class _SecondaryButton extends StatelessWidget {
         backgroundColor: AppColors.card,
         side: const BorderSide(color: AppColors.line),
         minimumSize: Size(0, wide ? 76 : 52),
-        padding: EdgeInsets.symmetric(horizontal: wide ? 26 : 12),
+        padding: EdgeInsets.symmetric(horizontal: wide ? 16 : 12),
         textStyle: wide
             ? AppText.action.copyWith(fontSize: 16)
             : _secondaryLabel,
@@ -1198,7 +1194,10 @@ class _Filler extends StatelessWidget {
               ? Center(child: content)
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[header!, Center(child: content)],
+                  children: <Widget>[
+                    header!,
+                    Center(child: content),
+                  ],
                 ),
         ),
       ),

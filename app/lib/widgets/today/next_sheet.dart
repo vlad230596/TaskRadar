@@ -186,10 +186,11 @@ class _NextSheetState extends State<NextSheet> {
               Row(
                 children: <Widget>[
                   Container(
-                    height: 28,
                     constraints: const BoxConstraints(maxWidth: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    alignment: Alignment.center,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.railActive,
                       borderRadius: BorderRadius.circular(14),
@@ -248,6 +249,8 @@ class _NextSheetState extends State<NextSheet> {
                       ),
                       decoration: InputDecoration(
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
                         filled: false,
                         hintText: 'что дальше по: ${widget.afterTitle}',
                         hintMaxLines: 2,
@@ -419,37 +422,37 @@ void showDoneSnackBar(
             // snackbar goes, which the pushed route does not depend on.
             Builder(
               builder: (snackContext) => TextButton.icon(
-              key: const ValueKey<String>('snack-next'),
-              onPressed: () {
-                final context =
-                    appNavigatorKey.currentContext ?? snackContext;
-                unawaited(
-                  showNextSheet(
-                    context,
-                    projectId: projectId,
-                    projectName: projectName,
-                    afterTitle: title,
+                key: const ValueKey<String>('snack-next'),
+                onPressed: () {
+                  final context =
+                      appNavigatorKey.currentContext ?? snackContext;
+                  unawaited(
+                    showNextSheet(
+                      context,
+                      projectId: projectId,
+                      projectName: projectName,
+                      afterTitle: title,
+                    ),
+                  );
+                  hide();
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.snackAction,
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  textStyle: const TextStyle(
+                    fontFamily: AppFonts.text,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14.5,
                   ),
-                );
-                hide();
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.snackAction,
-                minimumSize: const Size(0, 44),
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                textStyle: const TextStyle(
-                  fontFamily: AppFonts.text,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14.5,
                 ),
+                icon: const TodayIcon(
+                  TodayGlyph.next,
+                  size: 16,
+                  color: AppColors.snackAction,
+                ),
+                label: const Text('Следом…'),
               ),
-              icon: const TodayIcon(
-                TodayGlyph.next,
-                size: 16,
-                color: AppColors.snackAction,
-              ),
-              label: const Text('Следом…'),
-            ),
             ),
             TextButton(
               onPressed: () {
@@ -519,11 +522,7 @@ class TaskDateMeta extends StatelessWidget {
     return Row(
       children: <Widget>[
         if (icon) ...<Widget>[
-          TodayIcon(
-            TodayGlyph.calendar,
-            size: 13,
-            color: leadColor ?? colour,
-          ),
+          TodayIcon(TodayGlyph.calendar, size: 13, color: leadColor ?? colour),
           const SizedBox(width: 6),
         ],
         Flexible(

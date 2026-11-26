@@ -51,7 +51,9 @@ void main() {
       ProviderScope(
         overrides: [
           apiClientProvider.overrideWithValue(backend.client),
-          boardSnapshotStoreProvider.overrideWithValue(FakeBoardSnapshotStore()),
+          boardSnapshotStoreProvider.overrideWithValue(
+            FakeBoardSnapshotStore(),
+          ),
           notificationGatewayProvider.overrideWithValue(
             FakeNotificationGateway(),
           ),
@@ -95,7 +97,9 @@ void main() {
       expect(find.textContaining('3 дн. назад'), findsOneWidget);
       expect(find.textContaining('вчера'), findsOneWidget);
       final first = tester.getTopLeft(find.text('Позвонить в ЖЭК')).dy;
-      final second = tester.getTopLeft(find.text('Скинуть Лене презентацию')).dy;
+      final second = tester
+          .getTopLeft(find.text('Скинуть Лене презентацию'))
+          .dy;
       expect(first, lessThan(second));
     });
 
@@ -359,7 +363,10 @@ void main() {
 
       await tester.drag(find.text('Купить лампочки'), const Offset(-140, 0));
       await settle(tester);
-      expect(find.byKey(const ValueKey<String>('swipe-tomorrow')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('swipe-tomorrow')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey<String>('swipe-tomorrow')));
       await settle(tester);
 

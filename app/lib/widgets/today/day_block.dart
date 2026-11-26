@@ -178,20 +178,28 @@ class _TailCardState extends ConsumerState<TailCard> {
                     color: AppColors.waitingInk,
                   ),
                   const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      'С прошлых дней',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _headStyle,
+                  Expanded(
+                    child: Row(
+                      children: <Widget>[
+                        const Flexible(
+                          child: Text(
+                            'С прошлых дней',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _headStyle,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${tail.length}',
+                          style: _headStyle.copyWith(
+                            color: AppColors.waitingInk,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 6),
-                  Text(
-                    '${tail.length}',
-                    style: _headStyle.copyWith(color: AppColors.waitingInk),
-                  ),
-                  const Spacer(),
+                  const SizedBox(width: 8),
                   SizedBox(
                     height: 36,
                     child: OutlinedButton(
@@ -392,8 +400,7 @@ class _TailRow extends ConsumerWidget {
       height: wide ? 32 : 36,
       child: FilledButton(
         key: ValueKey<String>('tail-today-${task.id}'),
-        onPressed: () =>
-            unawaited(moveTaskDate(context, task, date: today)),
+        onPressed: () => unawaited(moveTaskDate(context, task, date: today)),
         style: FilledButton.styleFrom(
           backgroundColor: AppColors.ink,
           foregroundColor: AppColors.onInk,
@@ -609,7 +616,11 @@ class _TodayCardState extends ConsumerState<TodayCard> {
               for (final entry in group.tasks)
                 entry.task.status == TaskStatus.blocked
                     ? _BlockedRow(entry: entry, wide: widget.wide)
-                    : _TodayRow(entry: entry, today: view.date, wide: widget.wide),
+                    : _TodayRow(
+                        entry: entry,
+                        today: view.date,
+                        wide: widget.wide,
+                      ),
             ],
             if (done.isNotEmpty) ...<Widget>[
               if (view.today.isNotEmpty)
@@ -672,7 +683,9 @@ class _Progress extends StatelessWidget {
               duration: const Duration(milliseconds: 200),
               height: 4,
               decoration: BoxDecoration(
-                color: i < done ? AppColors.todayProgress : AppColors.todayTrack,
+                color: i < done
+                    ? AppColors.todayProgress
+                    : AppColors.todayTrack,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -698,7 +711,9 @@ class _ScopeHeading extends StatelessWidget {
           children: <Widget>[
             Text(name.toUpperCase(), style: AppText.scopeLabel),
             const SizedBox(width: 8),
-            const Expanded(child: Divider(height: 1, color: AppColors.lineFaint)),
+            const Expanded(
+              child: Divider(height: 1, color: AppColors.lineFaint),
+            ),
           ],
         ),
       ),
@@ -786,7 +801,11 @@ Future<void> completeDayTask(BuildContext context, DayTask entry) async {
 }
 
 class _TodayRow extends ConsumerStatefulWidget {
-  const _TodayRow({required this.entry, required this.today, this.wide = false});
+  const _TodayRow({
+    required this.entry,
+    required this.today,
+    this.wide = false,
+  });
 
   final DayTask entry;
   final String today;
@@ -1013,7 +1032,9 @@ class _BlockedRow extends ConsumerWidget {
     } catch (error) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Не удалось разблокировать. ${describeApiError(error)}'),
+          content: Text(
+            'Не удалось разблокировать. ${describeApiError(error)}',
+          ),
         ),
       );
       return;
@@ -1128,7 +1149,9 @@ class _BlockedRow extends ConsumerWidget {
                       task.title,
                       maxLines: wide ? 2 : 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppText.todayRow.copyWith(color: AppColors.inkSoft),
+                      style: AppText.todayRow.copyWith(
+                        color: AppColors.inkSoft,
+                      ),
                     ),
                   ),
                 ),
@@ -1237,9 +1260,12 @@ class _DoneRow extends ConsumerWidget {
                     ProviderScope.containerOf(context, listen: false),
                     task,
                     TaskStatus.pending,
-                  ).then<void>((_) {}, onError: (Object error) {
-                    debugPrint('Reopening from «Сегодня» failed: $error');
-                  }),
+                  ).then<void>(
+                    (_) {},
+                    onError: (Object error) {
+                      debugPrint('Reopening from «Сегодня» failed: $error');
+                    },
+                  ),
                 ),
                 child: const SizedBox(
                   width: 44,

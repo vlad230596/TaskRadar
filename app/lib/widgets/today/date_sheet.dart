@@ -253,8 +253,7 @@ class _TimeSheet extends StatelessWidget {
                   _Pill(
                     label: formatClock(preset),
                     selected: current == preset,
-                    onTap: () =>
-                        Navigator.of(context).pop(SheetChoice(preset)),
+                    onTap: () => Navigator.of(context).pop(SheetChoice(preset)),
                   ),
                 _Pill(label: 'Другое…', onTap: () => _other(context)),
               ],
@@ -331,10 +330,7 @@ class _SheetHeader extends StatelessWidget {
             ),
           ],
         ),
-        Text(
-          subtitle,
-          style: AppText.voiceNote.copyWith(fontSize: 14),
-        ),
+        Text(subtitle, style: AppText.voiceNote.copyWith(fontSize: 14)),
       ],
     );
   }
@@ -485,11 +481,13 @@ class _MonthGrid extends StatelessWidget {
           onPick: onPick,
         ),
     ];
-    return GridView.count(
-      crossAxisCount: 7,
+    return GridView(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 7,
+        mainAxisExtent: 42,
+      ),
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 44 / 40,
       children: cells,
     );
   }
@@ -556,7 +554,11 @@ class _DayCell extends StatelessWidget {
 }
 
 class _Pill extends StatelessWidget {
-  const _Pill({required this.label, required this.onTap, this.selected = false});
+  const _Pill({
+    required this.label,
+    required this.onTap,
+    this.selected = false,
+  });
 
   final String label;
   final VoidCallback onTap;
@@ -602,6 +604,7 @@ class _OutlinedDark extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.transparent,
           foregroundColor: AppColors.voiceBright,
           side: const BorderSide(color: AppColors.voiceLine),
           shape: RoundedRectangleBorder(

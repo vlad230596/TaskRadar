@@ -69,7 +69,9 @@ bool _open(Task task) => task.status != TaskStatus.done;
 /// «Позже»: open, and dated after [today] + [horizonDays].
 bool isLater(Task task, String today, int horizonDays) {
   final day = taskDay(task.remindAt);
-  return _open(task) && day != null && day.compareTo(addDays(today, horizonDays)) > 0;
+  return _open(task) &&
+      day != null &&
+      day.compareTo(addDays(today, horizonDays)) > 0;
 }
 
 /// A task of the day block, with where it lives.
@@ -223,9 +225,13 @@ DayView dayViewOf(Iterable<DayTask> tasks, String today) {
     if (bt != null) return 1;
     return _boardOrder(a, b);
   });
-  doneToday.sort((a, b) => (a.task.doneAt ?? '').compareTo(b.task.doneAt ?? ''));
+  doneToday.sort(
+    (a, b) => (a.task.doneAt ?? '').compareTo(b.task.doneAt ?? ''),
+  );
   tail.sort((a, b) {
-    final byDay = taskDay(a.task.remindAt)!.compareTo(taskDay(b.task.remindAt)!);
+    final byDay = taskDay(
+      a.task.remindAt,
+    )!.compareTo(taskDay(b.task.remindAt)!);
     return byDay != 0 ? byDay : _boardOrder(a, b);
   });
 
@@ -354,7 +360,9 @@ TaskDateLabel? formatTaskDate(
   if (diff < -1) return TaskDateLabel('${-diff} дн. назад', DateTone.overdue);
   if (diff == 0) return TaskDateLabel(withTime('сегодня'), DateTone.today);
   if (diff == 1) return TaskDateLabel(withTime('завтра'), DateTone.soon);
-  if (diff <= 6) return TaskDateLabel(withTime(weekdayDate(day)), DateTone.soon);
+  if (diff <= 6) {
+    return TaskDateLabel(withTime(weekdayDate(day)), DateTone.soon);
+  }
   final date = _utcDay(day);
   final todayYear = _utcDay(today).year;
   final base = '${date.day} ${kMonthsShort[date.month - 1]}';

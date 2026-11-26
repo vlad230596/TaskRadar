@@ -94,7 +94,9 @@ class _RhythmSheetState extends ConsumerState<RhythmSheet> {
       if (mounted) setState(() => _saving = false);
       messenger?.showSnackBar(
         SnackBar(
-          content: Text('Не удалось сохранить ритм. ${describeApiError(error)}'),
+          content: Text(
+            'Не удалось сохранить ритм. ${describeApiError(error)}',
+          ),
         ),
       );
     }
@@ -251,10 +253,13 @@ class _RhythmRow extends StatelessWidget {
       child: OutlinedButton(
         onPressed: next == null ? null : () => onChanged(next),
         style: OutlinedButton.styleFrom(
+          backgroundColor: Colors.transparent,
           padding: EdgeInsets.zero,
           foregroundColor: ink,
           side: BorderSide(color: line),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
         child: Icon(icon, size: 18, semanticLabel: tip),
       ),
@@ -306,6 +311,7 @@ class _RhythmRow extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: () => onChanged(fallback),
                 style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
                   foregroundColor: ink,
                   side: BorderSide(
                     color: dark ? AppColors.voiceLine : AppColors.lineStrong,
@@ -340,7 +346,10 @@ class _RhythmRow extends StatelessWidget {
                 IconButton(
                   tooltip: 'Убрать',
                   onPressed: () => onChanged(null),
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 44),
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 44,
+                  ),
                   padding: EdgeInsets.zero,
                   icon: Icon(Icons.close, size: 18, color: muted),
                 ),

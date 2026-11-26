@@ -451,7 +451,8 @@ class TaskSections {
     }
     // Nearest first: the folded row names the nearest one.
     later.sort(
-      (a, b) => (taskDay(a.remindAt) ?? '').compareTo(taskDay(b.remindAt) ?? ''),
+      (a, b) =>
+          (taskDay(a.remindAt) ?? '').compareTo(taskDay(b.remindAt) ?? ''),
     );
     return TaskSections._(
       inWork: inWork,

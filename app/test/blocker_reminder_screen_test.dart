@@ -146,32 +146,36 @@ void main() {
       expect(find.textContaining('без даты'), findsOneWidget);
     });
 
-    testWidgets('picking a day sends that calendar day, and the chip shows it', (
-      tester,
-    ) async {
-      server.addTask(
-        projectId: projectId,
-        title: 'Жду кабель',
-        status: 'blocked',
-      );
-      await pumpProject(tester);
-      await openTask(tester, 'Жду кабель');
+    testWidgets(
+      'picking a day sends that calendar day, and the chip shows it',
+      (tester) async {
+        server.addTask(
+          projectId: projectId,
+          title: 'Жду кабель',
+          status: 'blocked',
+        );
+        await pumpProject(tester);
+        await openTask(tester, 'Жду кабель');
 
-      await openDateSheet(tester);
-      expect(find.text('Когда этим заняться'), findsOneWidget);
-      // No time step behind the day: a date alone is the common case.
-      await pickDay(tester, DateTime.now().day);
+        await openDateSheet(tester);
+        expect(find.text('Когда этим заняться'), findsOneWidget);
+        // No time step behind the day: a date alone is the common case.
+        await pickDay(tester, DateTime.now().day);
 
-      final patch = server.patches.last;
-      expect(patch.body['remindTime'], isNull);
-      expect(
-        patch.body['remindAt'],
-        today(),
-        reason: 'a bare calendar date, not an instant',
-      );
-      expect(chip('Сегодня'), findsOneWidget);
-      expect(find.text('Пуш в это время. Без времени — без пуша.'), findsNothing);
-    });
+        final patch = server.patches.last;
+        expect(patch.body['remindTime'], isNull);
+        expect(
+          patch.body['remindAt'],
+          today(),
+          reason: 'a bare calendar date, not an instant',
+        );
+        expect(chip('Сегодня'), findsOneWidget);
+        expect(
+          find.text('Пуш в это время. Без времени — без пуша.'),
+          findsNothing,
+        );
+      },
+    );
 
     testWidgets('a time is its own step after the day, and goes with it', (
       tester,
@@ -186,7 +190,10 @@ void main() {
       await pickDay(tester, DateTime.now().day);
       await tester.tap(find.text('+ Время'));
       await tester.pumpAndSettle();
-      expect(find.text('Пуш в это время. Без времени — без пуша.'), findsOneWidget);
+      expect(
+        find.text('Пуш в это время. Без времени — без пуша.'),
+        findsOneWidget,
+      );
       await tester.tap(find.text('15:00'));
       await settle(tester);
 
@@ -307,7 +314,10 @@ void main() {
       // The sheet holds the stored calendar day rather than one either side
       // of it -- which is what `DateTime.parse(...).toLocal()` would have
       // produced west of UTC.
-      expect(tester.widget<DateSheet>(find.byType(DateSheet)).current, dayAt(3));
+      expect(
+        tester.widget<DateSheet>(find.byType(DateSheet)).current,
+        dayAt(3),
+      );
     });
 
     testWidgets('closing the date sheet changes nothing', (tester) async {

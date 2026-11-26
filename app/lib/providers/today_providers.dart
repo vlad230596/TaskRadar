@@ -96,7 +96,9 @@ class OwnerSettingsState extends _$OwnerSettingsState {
           .read(readCacheStoreProvider)
           .write(ReadCacheKeys.ownerSettings, saved.toJson()),
     );
-    ref.read(cachedReadsProvider.notifier).markFresh(ReadCacheKeys.ownerSettings);
+    ref
+        .read(cachedReadsProvider.notifier)
+        .markFresh(ReadCacheKeys.ownerSettings);
     state = AsyncData(saved);
     // The review's due moment moves with its day and time.
     ref.invalidate(reviewStatusStateProvider);
@@ -229,7 +231,8 @@ Future<WriteOutcome> setTaskDate(
     return await onProjectTasks(
       container,
       base.projectId,
-      (tasks) => tasks.setRemindAt(base, date, time: date == null ? null : time),
+      (tasks) =>
+          tasks.setRemindAt(base, date, time: date == null ? null : time),
     );
   } finally {
     overrides.clear(<String>[base.id]);
@@ -244,7 +247,9 @@ Future<WriteOutcome> setDayTaskStatus(
 ) async {
   final base = freshTask(container, task);
   if (base.status == status) return WriteOutcome.sent;
-  final wasInFocus = container.read(anyFocusedTaskIdsProvider).contains(base.id);
+  final wasInFocus = container
+      .read(anyFocusedTaskIdsProvider)
+      .contains(base.id);
   final overrides = container.read(dayOverridesProvider.notifier);
   overrides.put(
     base.copyWith(
@@ -425,7 +430,9 @@ Future<Task> reopenTask(ProviderContainer container, Task task) async {
     final rows = await container
         .read(projectApiProvider)
         .fetchTasks(task.projectId);
-    container.read(boardProvider.notifier).applyProjectTasks(task.projectId, rows);
+    container
+        .read(boardProvider.notifier)
+        .applyProjectTasks(task.projectId, rows);
     final provider = projectTasksProvider(task.projectId);
     if (container.exists(provider)) {
       container.read(provider.notifier).adopt(rows);

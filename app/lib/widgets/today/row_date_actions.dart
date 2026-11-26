@@ -191,7 +191,8 @@ class _DateSwipeState extends State<DateSwipe>
     super.initState();
     _settle.addListener(() {
       setState(
-        () => _dx = _from + (_to - _from) * Curves.easeOut.transform(_settle.value),
+        () => _dx =
+            _from + (_to - _from) * Curves.easeOut.transform(_settle.value),
       );
     });
   }
@@ -225,9 +226,8 @@ class _DateSwipeState extends State<DateSwipe>
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onHorizontalDragStart: (_) => _settle.stop(),
-          onHorizontalDragUpdate: (details) => setState(
-            () => _dx = (_dx + details.delta.dx).clamp(-width, 0.0),
-          ),
+          onHorizontalDragUpdate: (details) =>
+              setState(() => _dx = (_dx + details.delta.dx).clamp(-width, 0.0)),
           onHorizontalDragEnd: (_) {
             if (-_dx > width * 0.6 && !widget.alreadyToday) {
               _act(widget.onToday);
@@ -349,7 +349,10 @@ class HoverDateButtons extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = AppText.action.copyWith(fontSize: 13, fontWeight: FontWeight.w700);
+    final text = AppText.action.copyWith(
+      fontSize: 13,
+      fontWeight: FontWeight.w700,
+    );
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -359,6 +362,7 @@ class HoverDateButtons extends StatelessWidget {
             child: OutlinedButton(
               onPressed: onToday,
               style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.transparent,
                 foregroundColor: AppColors.ink,
                 side: const BorderSide(color: AppColors.lineStrong),
                 padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -537,10 +541,7 @@ class _DashedBorder extends CustomPainter {
       ..strokeWidth = 1.5;
     final path = Path()
       ..addRRect(
-        RRect.fromRectAndRadius(
-          Offset.zero & size,
-          const Radius.circular(16),
-        ),
+        RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(16)),
       );
     for (final metric in path.computeMetrics()) {
       var distance = 0.0;

@@ -96,7 +96,11 @@ void main() {
         ),
         // No date: in «Сделано», never in «Сегодня» (answer 5).
         placed(
-          task('done-undated', status: TaskStatus.done, doneAt: localAt(today, 8)),
+          task(
+            'done-undated',
+            status: TaskStatus.done,
+            doneAt: localAt(today, 8),
+          ),
         ),
         // Closed yesterday.
         placed(
@@ -157,11 +161,19 @@ void main() {
       expect(isLater(task('x', date: '2026-12-07'), today, 10), isFalse);
       expect(isLater(task('x', date: '2026-12-08'), today, 10), isTrue);
       expect(
-        isLater(task('x', date: '2026-12-08', status: TaskStatus.blocked), today, 10),
+        isLater(
+          task('x', date: '2026-12-08', status: TaskStatus.blocked),
+          today,
+          10,
+        ),
         isTrue,
       );
       expect(
-        isLater(task('x', date: '2026-12-08', status: TaskStatus.done), today, 10),
+        isLater(
+          task('x', date: '2026-12-08', status: TaskStatus.done),
+          today,
+          10,
+        ),
         isFalse,
       );
       expect(isLater(task('x'), today, 10), isFalse);
@@ -177,7 +189,10 @@ void main() {
 
     test('the table of the spec', () {
       expect(label(null), isNull);
-      expect(label('2026-11-26'), const TaskDateLabel('вчера', DateTone.overdue));
+      expect(
+        label('2026-11-26'),
+        const TaskDateLabel('вчера', DateTone.overdue),
+      );
       expect(
         label('2026-11-24'),
         const TaskDateLabel('3 дн. назад', DateTone.overdue),
@@ -191,8 +206,14 @@ void main() {
         label('2026-11-28', '09:30'),
         const TaskDateLabel('завтра · 9:30', DateTone.soon),
       );
-      expect(label('2026-11-29'), const TaskDateLabel('вс 29.11', DateTone.soon));
-      expect(label('2026-12-03'), const TaskDateLabel('чт 3.12', DateTone.soon));
+      expect(
+        label('2026-11-29'),
+        const TaskDateLabel('вс 29.11', DateTone.soon),
+      );
+      expect(
+        label('2026-12-03'),
+        const TaskDateLabel('чт 3.12', DateTone.soon),
+      );
       expect(label('2027-02-25').toString(), contains('25 фев 2027'));
       expect(label('2026-12-25'), const TaskDateLabel('25 дек', DateTone.soon));
     });
