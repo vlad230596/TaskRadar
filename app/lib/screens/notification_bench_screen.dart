@@ -151,8 +151,7 @@ class _NotificationBenchScreenState
     // `.value ?? default` rather than awaiting the future: this is a diagnostic
     // button, and the settled hour is on screen right next to it. See
     // `_OneOffTestsCard`.
-    final at =
-        ref.read(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
+    const at = ReminderTime.defaultMorning;
     final today = tz.TZDateTime.now(location);
     final fireAt = tz.TZDateTime(
       location,
@@ -219,30 +218,35 @@ class _NotificationBenchScreenState
         taskId: 'synthetic-yesterday',
         taskTitle: 'Вчерашнее напоминание (должно быть пропущено)',
         remindAt: isoDay(-1),
+        remindTime: '09:00',
         projectName: 'Стенд',
       ),
       TaskReminder(
         taskId: 'synthetic-today',
         taskTitle: 'Сегодня (сработает, только если час ещё не прошёл)',
         remindAt: isoDay(0),
+        remindTime: '09:00',
         projectName: 'Стенд',
       ),
       TaskReminder(
         taskId: 'synthetic-tomorrow',
         taskTitle: 'Завтра — жду кабель',
         remindAt: isoDay(1),
+        remindTime: '09:00',
         projectName: 'Стенд',
       ),
       TaskReminder(
         taskId: 'synthetic-in-3-days',
         taskTitle: 'Через три дня — перезвонить в сервис',
         remindAt: isoDay(3),
+        remindTime: '09:00',
         projectName: 'Стенд',
       ),
       const TaskReminder(
         taskId: 'synthetic-broken',
         taskTitle: 'Битая дата (должна быть пропущена с причиной)',
         remindAt: 'не-дата',
+        remindTime: '09:00',
         projectName: 'Стенд',
       ),
     ]);
@@ -384,9 +388,7 @@ class _OneOffTestsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final at =
-        ref.watch(reminderSettingsProvider).value ??
-        ReminderTime.defaultMorning;
+    const at = ReminderTime.defaultMorning;
 
     return _Section(
       title: 'Разовые проверки',
@@ -519,6 +521,7 @@ class _SyncReportCard extends StatelessWidget {
   static String _skipLabel(SkipReason reason) => switch (reason) {
     SkipReason.malformedDate => 'битая дата',
     SkipReason.inThePast => 'в прошлом',
+    SkipReason.noTime => 'без времени',
     SkipReason.idCollision => 'коллизия id',
   };
 }

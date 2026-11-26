@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../domain/project_badge.dart';
+import '../domain/today_view.dart';
 import '../models/focus_task.dart';
 import '../models/goal.dart';
 import '../models/task_status.dart';
@@ -43,6 +44,7 @@ class HomeWidgetSnapshot {
     required this.signedIn,
     required this.projects,
     this.goals = const <HomeWidgetGoal>[],
+    this.today,
   });
 
   /// The snapshot the widget gets when the user signs out: no tasks, and a
@@ -79,6 +81,10 @@ class HomeWidgetSnapshot {
   /// 1 so an older widget simply ignores them.
   final List<HomeWidgetGoal> goals;
 
+  /// The «Сегодня 3 из 7» row (`design/today-history-spec.md` §12), or null
+  /// when there is nothing to say (no day block known yet).
+  final HomeWidgetToday? today;
+
   /// All tasks in the snapshot, across projects.
   int get total => projects.fold(0, (sum, project) => sum + project.count);
 
@@ -90,6 +96,7 @@ class HomeWidgetSnapshot {
     'total': total,
     'projects': <Object?>[for (final project in projects) project.toJson()],
     'goals': <Object?>[for (final goal in goals) goal.toJson()],
+    'today': ?today?.toJson(),
   };
 
   String encode() => jsonEncode(toJson());
@@ -120,6 +127,11 @@ class HomeWidgetSnapshot {
           ),
         ),
       ),
+      today: json['today'] is Map
+          ? HomeWidgetToday.fromJson(
+              (json['today']! as Map<Object?, Object?>).cast<String, Object?>(),
+            )
+          : null,
     );
   }
 
@@ -338,6 +350,7 @@ HomeWidgetSnapshot buildHomeWidgetSnapshot(
   required DateTime updatedAt,
   bool fromCache = false,
   List<HomeWidgetGoal> goals = const <HomeWidgetGoal>[],
+  HomeWidgetToday? today,
 }) {
   final order = <String>[];
   final names = <String, String>{};
@@ -370,6 +383,7 @@ HomeWidgetSnapshot buildHomeWidgetSnapshot(
     fromCache: fromCache,
     signedIn: true,
     goals: goals,
+    today: today,
     projects: List<HomeWidgetProject>.unmodifiable(<HomeWidgetProject>[
       for (final id in order)
         HomeWidgetProject(
@@ -380,5 +394,98 @@ HomeWidgetSnapshot buildHomeWidgetSnapshot(
           tasks: List<HomeWidgetTask>.unmodifiable(tasks[id]!),
         ),
     ]),
+  );
+}
+
+/// The widget's «Сегодня» row: «Сегодня 3 из 7» and the nearest timed task
+/// («15:00 Встретить курьера»). Computed in the app from the day block, so it
+/// works offline; the widget only draws it.
+@immutable
+class HomeWidgetToday {
+  const HomeWidgetToday({
+    required this.done,
+    required this.total,
+    this.tail = 0,
+    this.time,
+    this.title,
+  });
+
+  /// «N из M»: N closed today, M = today + closed today.
+  final int done;
+  final int total;
+
+  /// «С прошлых дней»: shown instead when M = 0 (coordinator, answer 7).
+  final int tail;
+
+  /// The nearest open task today with a time: `9:30` and its title.
+  final String? time;
+  final String? title;
+
+  /// Whether the row is drawn at all: M = 0 with no tail hides it.
+  bool get visible => total > 0 || tail > 0;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'done': done,
+    'total': total,
+    'tail': tail,
+    'time': time,
+    'title': title,
+  };
+
+  factory HomeWidgetToday.fromJson(Map<String, Object?> json) =>
+      HomeWidgetToday(
+        done: json['done'] as int? ?? 0,
+        total: json['total'] as int? ?? 0,
+        tail: json['tail'] as int? ?? 0,
+        time: json['time'] as String?,
+        title: json['title'] as String?,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is HomeWidgetToday &&
+      other.done == done &&
+      other.total == total &&
+      other.tail == tail &&
+      other.time == time &&
+      other.title == title;
+
+  @override
+  int get hashCode => Object.hash(done, total, tail, time, title);
+}
+
+/// The «Сегодня» row from [view] at [now]: the nearest timed open task that
+/// has not passed, else the nearest one that has; no timed task, no line.
+HomeWidgetToday buildHomeWidgetToday(DayView view, {required DateTime now}) {
+  final minute = now.hour * 60 + now.minute;
+  DayTask? ahead;
+  int? aheadAt;
+  DayTask? passed;
+  int? passedAt;
+  for (final entry in view.today) {
+    final time = entry.time;
+    if (time == null) continue;
+    final parts = time.split(':');
+    final at = int.parse(parts[0]) * 60 + int.parse(parts[1]);
+    if (at >= minute) {
+      if (aheadAt == null || at < aheadAt) {
+        ahead = entry;
+        aheadAt = at;
+      }
+    } else if (passedAt == null || at > passedAt) {
+      passed = entry;
+      passedAt = at;
+    }
+  }
+  final shown = ahead ?? passed;
+  final title = shown?.task.title.trim();
+  return HomeWidgetToday(
+    done: view.doneCount,
+    total: view.total,
+    tail: view.tail.length,
+    time: shown == null ? null : formatClock(shown.time!),
+    title: shown == null
+        ? null
+        : (title == null || title.isEmpty ? 'Без названия' : title),
   );
 }

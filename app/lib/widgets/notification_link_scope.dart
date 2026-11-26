@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
 import '../navigation/app_routes.dart';
+import '../navigation/review_routes.dart';
 import '../providers/notification_action_providers.dart';
 import '../providers/notification_link_providers.dart';
 
@@ -114,6 +115,10 @@ class _NotificationLinkScopeState extends ConsumerState<NotificationLinkScope> {
           // symptom this iteration must not have.
           debugPrint('Deep link to $projectId/$taskId found no navigator');
         }
+
+      case NotificationLinkReview():
+        ref.read(notificationLinkProvider.notifier).ack();
+        openReviewCard(ProviderScope.containerOf(context, listen: false));
 
       case NotificationLinkNotFound():
         _report(

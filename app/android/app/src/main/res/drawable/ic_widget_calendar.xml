@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The calendar (design/today-history-spec.md, п. 2); tinted by the layout. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="16dp"
+    android:height="16dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M6.5,5h11a3,3 0,0 1,3 3v9.5a3,3 0,0 1,-3 3h-11a3,3 0,0 1,-3 -3v-9.5a3,3 0,0 1,3 -3zM3.5,10h17M8,3v4M16,3v4"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="2" />
+</vector>

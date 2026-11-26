@@ -13,6 +13,9 @@ import '../providers/goal_providers.dart';
 import '../providers/home_widget_providers.dart';
 import '../providers/notification_link_providers.dart';
 import '../providers/read_cache_providers.dart';
+import '../providers/shell_providers.dart';
+import '../providers/today_providers.dart';
+import '../domain/today_view.dart';
 import '../storage/read_cache_store.dart';
 
 /// Keeps the Android home-screen widget («В работе») in step with the app, and
@@ -124,6 +127,10 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
         activeContourId: ref.read(activeContourIdProvider),
         setIds: <String>{for (final row in rows) row.id},
       ),
+      today: switch (ref.read(dayViewProvider)) {
+        final DayView view => buildHomeWidgetToday(view, now: DateTime.now()),
+        null => null,
+      },
     ).encode();
     if (json == _lastPublished) return;
     _lastPublished = json;
@@ -179,6 +186,9 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
           ]);
         case HomeWidgetTakeStep(:final taskId):
           await _takeStep(taskId);
+        case HomeWidgetOpenWork():
+          appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+          unawaited(ref.read(shellModeProvider.notifier).select(AppMode.work));
         case HomeWidgetDictate():
           // Not awaited: the screen stays open for as long as the user
           // speaks, and a second tap meanwhile should still be taken.
@@ -199,6 +209,8 @@ class _HomeWidgetScopeState extends ConsumerState<HomeWidgetScope> {
       // reordered -- and the contour switching, which changes both halves.
       ref.listen<List<GoalView>>(goalListProvider, (_, _) => _publish());
       ref.listen<String?>(activeContourIdProvider, (_, _) => _publish());
+      // The «Сегодня» row: any date, status or closing in the day block.
+      ref.listen<DayView?>(dayViewProvider, (_, _) => _publish());
       // The set can stay the same object while its provenance changes (a
       // cached copy confirmed by the network): the stamp on the widget must
       // follow.

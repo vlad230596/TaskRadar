@@ -330,6 +330,7 @@ void main() {
             title: 'Жду кабель',
             status: blocked ? 'blocked' : 'done',
             remindAt: remindAt(2),
+            remindTime: '12:00',
           ),
           taskJson(id: 'tsk_next', title: 'Покрасить забор', isCurrent: true),
         ],

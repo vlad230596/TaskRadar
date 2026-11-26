@@ -33,6 +33,8 @@ sealed class HomeWidgetAction {
         return const HomeWidgetRefresh();
       case 'dictate':
         return const HomeWidgetDictate();
+      case 'openWork':
+        return const HomeWidgetOpenWork();
       default:
         return null;
     }
@@ -81,6 +83,17 @@ class HomeWidgetDictate extends HomeWidgetAction {
 
   @override
   int get hashCode => (HomeWidgetDictate).hashCode;
+}
+
+/// The «Сегодня» row was tapped: the app opens on «Работа».
+class HomeWidgetOpenWork extends HomeWidgetAction {
+  const HomeWidgetOpenWork();
+
+  @override
+  bool operator ==(Object other) => other is HomeWidgetOpenWork;
+
+  @override
+  int get hashCode => (HomeWidgetOpenWork).hashCode;
 }
 
 /// The refresh arrow in the widget's header was tapped.

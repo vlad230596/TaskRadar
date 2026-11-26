@@ -77,6 +77,9 @@ class TaskRadarWidgetProvider : AppWidgetProvider() {
         /** A goal row with no step: just open the app. */
         const val ROW_APP = "app"
 
+        /** The «Сегодня» row: the app, on «Работа». */
+        const val ROW_WORK = "work"
+
         private fun widgetIds(context: Context): IntArray =
             AppWidgetManager.getInstance(context)
                 .getAppWidgetIds(ComponentName(context, TaskRadarWidgetProvider::class.java))

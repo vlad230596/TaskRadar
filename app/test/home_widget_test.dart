@@ -7,7 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/domain/project_badge.dart';
 import 'package:taskradar/home_widget/home_widget_gateway.dart';
 import 'package:taskradar/home_widget/home_widget_snapshot.dart';
+import 'package:taskradar/domain/today_view.dart';
 import 'package:taskradar/models/focus_task.dart';
+import 'package:taskradar/models/task.dart';
+import 'package:taskradar/providers/shell_providers.dart';
+import 'package:taskradar/providers/today_providers.dart';
 import 'package:taskradar/models/goal.dart';
 import 'package:taskradar/models/task_status.dart';
 import 'package:taskradar/navigation/app_routes.dart';
@@ -292,6 +296,178 @@ void main() {
     });
   });
 
+  group('the «Сегодня» row', () {
+    DayTask day(
+      String id, {
+      TaskStatus status = TaskStatus.pending,
+      String? time,
+      String date = '2026-11-27',
+      String? doneAt,
+    }) => DayTask(
+      task: Task(
+        id: id,
+        projectId: 'p1',
+        title: 'Задача $id',
+        description: null,
+        status: status,
+        position: 1000,
+        remindAt: '${date}T00:00:00.000Z',
+        remindTime: time,
+        doneAt: doneAt,
+        createdAt: '2026-11-01T00:00:00.000Z',
+        updatedAt: '2026-11-01T00:00:00.000Z',
+        isCurrent: false,
+      ),
+      projectName: 'Дом',
+    );
+
+    DayView view({
+      List<DayTask> today = const <DayTask>[],
+      int done = 0,
+      int tail = 0,
+    }) => DayView(
+      date: '2026-11-27',
+      today: today,
+      doneToday: <DayTask>[
+        for (var i = 0; i < done; i++)
+          day('d$i', status: TaskStatus.done, doneAt: '2026-11-27T07:00:00Z'),
+      ],
+      tail: <DayTask>[
+        for (var i = 0; i < tail; i++) day('old$i', date: '2026-11-20'),
+      ],
+    );
+
+    final noon = DateTime(2026, 11, 27, 12);
+
+    test('counts N of M and names the nearest timed task ahead', () {
+      final row = buildHomeWidgetToday(
+        view(
+          today: <DayTask>[
+            day('a', time: '09:30'),
+            day('b', time: '15:00'),
+            day('c', time: '18:00'),
+            day('d'),
+          ],
+          done: 3,
+        ),
+        now: noon,
+      );
+      expect(row.done, 3);
+      expect(row.total, 7);
+      expect(row.time, '15:00');
+      expect(row.title, 'Задача b');
+      expect(row.visible, isTrue);
+    });
+
+    test('with every time gone by, the nearest passed one', () {
+      final row = buildHomeWidgetToday(
+        view(
+          today: <DayTask>[
+            day('a', time: '09:30'),
+            day('b', time: '11:00'),
+          ],
+        ),
+        now: noon,
+      );
+      expect(row.time, '11:00');
+      expect(row.title, 'Задача b');
+    });
+
+    test('no timed task: no second line', () {
+      final row = buildHomeWidgetToday(
+        view(today: <DayTask>[day('a')], done: 1),
+        now: noon,
+      );
+      expect(row.time, isNull);
+      expect(row.title, isNull);
+    });
+
+    test('an empty day is hidden -- unless the tail waits', () {
+      expect(buildHomeWidgetToday(view(), now: noon).visible, isFalse);
+      final tail = buildHomeWidgetToday(view(tail: 14), now: noon);
+      expect(tail.visible, isTrue);
+      expect(tail.total, 0);
+      expect(tail.tail, 14);
+    });
+
+    test('round-trips and pins the wire format; older snapshots have none', () {
+      final snapshot = buildHomeWidgetSnapshot(
+        const <FocusTask>[],
+        updatedAt: DateTime.utc(2026, 11, 27, 9),
+        today: const HomeWidgetToday(
+          done: 3,
+          total: 7,
+          tail: 2,
+          time: '15:00',
+          title: 'Встретить курьера',
+        ),
+      );
+      final json = jsonDecode(snapshot.encode()) as Map<String, dynamic>;
+      expect(json['today'], <String, dynamic>{
+        'done': 3,
+        'total': 7,
+        'tail': 2,
+        'time': '15:00',
+        'title': 'Встретить курьера',
+      });
+      expect(
+        HomeWidgetSnapshot.decode(snapshot.encode()).today,
+        snapshot.today,
+      );
+
+      final older = buildHomeWidgetSnapshot(
+        const <FocusTask>[],
+        updatedAt: DateTime.utc(2026, 11, 27, 9),
+      );
+      expect(jsonDecode(older.encode()), isNot(contains('today')));
+      expect(HomeWidgetSnapshot.decode(older.encode()).today, isNull);
+    });
+
+    test('a tap on the row is «open Работа»', () {
+      expect(
+        HomeWidgetAction.fromMap(<Object?, Object?>{'action': 'openWork'}),
+        const HomeWidgetOpenWork(),
+      );
+    });
+
+    testWidgets('the scope publishes the row and a tap opens «Работа»', (
+      tester,
+    ) async {
+      final gateway = _RecordingGateway();
+      final focus = _FakeFocusSet(<FocusTask>[row('t1', project: 'p1')]);
+      final container = ProviderContainer(
+        overrides: [
+          homeWidgetGatewayProvider.overrideWithValue(gateway),
+          focusSetProvider.overrideWith(() => focus),
+          ..._noGoals.take(2),
+          dayViewProvider.overrideWithValue(
+            view(today: <DayTask>[day('a', time: '23:59')], done: 1),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const HomeWidgetScope(child: SizedBox()),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final today = HomeWidgetSnapshot.decode(gateway.published.last).today;
+      expect(today?.done, 1);
+      expect(today?.total, 2);
+      expect(today?.time, '23:59');
+
+      gateway.actions.add(const HomeWidgetOpenWork());
+      gateway.listener!();
+      await tester.pump();
+      await tester.pump();
+      expect(container.read(shellModeProvider), AppMode.work);
+    });
+  });
+
   group('goal rows', () {
     test('only the active contour\'s goals in slots, in their order', () {
       final rows = buildHomeWidgetGoals(
@@ -502,10 +678,16 @@ void main() {
         'takes a step from the widget', (tester) async {
       final gateway = _RecordingGateway();
       final focus = _FakeFocusSet(<FocusTask>[
-        row('t1', project: 'p1', projectName: 'Дом')
-            .copyWith(focusContourId: 'work'),
-        row('t2', project: 'p1', projectName: 'Дом')
-            .copyWith(focusContourId: 'home'),
+        row(
+          't1',
+          project: 'p1',
+          projectName: 'Дом',
+        ).copyWith(focusContourId: 'work'),
+        row(
+          't2',
+          project: 'p1',
+          projectName: 'Дом',
+        ).copyWith(focusContourId: 'home'),
       ]);
       final goals = _FakeGoals(<GoalView>[
         _goal('g1', contour: 'work', step: 's1', done: 1, total: 3),
@@ -519,6 +701,7 @@ void main() {
             focusSetProvider.overrideWith(() => focus),
             goalsProvider.overrideWith(() => goals),
             contoursProvider.overrideWith(_FakeContours.new),
+            dayViewProvider.overrideWithValue(null),
           ],
           child: const HomeWidgetScope(child: SizedBox()),
         ),
@@ -677,6 +860,7 @@ class _FakeContours extends Contours {
 final _noGoals = [
   goalsProvider.overrideWith(() => _FakeGoals(const <GoalView>[])),
   contoursProvider.overrideWith(_NoContours.new),
+  dayViewProvider.overrideWithValue(null),
 ];
 
 class _NoContours extends Contours {

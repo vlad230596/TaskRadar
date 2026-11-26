@@ -6,18 +6,25 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../api/api_exception.dart';
 import '../api/dictation_api.dart';
 import '../domain/ai_level.dart';
-import '../domain/reminder_schedule.dart';
 import '../geofence/geofence_syncer.dart';
 import '../geofence/location_access.dart';
 import '../navigation/goal_routes.dart';
+import '../providers/board_providers.dart';
 import '../providers/dictation_providers.dart';
 import '../providers/geofence_providers.dart';
 import '../providers/goal_providers.dart';
 import '../providers/reminder_providers.dart';
+import '../providers/read_cache_providers.dart';
+import '../providers/today_providers.dart';
+import '../domain/today_view.dart';
+import '../models/today_history.dart';
+import '../storage/read_cache_store.dart';
+import '../widgets/today/today_icons.dart';
 import '../providers/voice_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../voice/voice_model.dart';
+import '../widgets/ime_text_controller.dart';
 import '../widgets/mutation_feedback.dart';
 import 'agent_access_screen.dart';
 import 'ai_insights_screens.dart';
@@ -25,13 +32,10 @@ import 'ai_models_screen.dart';
 import 'dictation_archive_screen.dart';
 import 'notification_bench_screen.dart';
 
-/// Settings (F4). One real setting, and the two diagnostics that belong next to
-/// it.
-///
-/// The setting is the hour reminders fire at. It is a *setting* rather than
-/// something derived from the data because `remindAt` has day granularity and no
-/// time-of-day component at all: the user picked a date, and "at what time on
-/// that date" is a preference about mornings, not a fact about the task.
+/// Settings. The dates group holds the two server settings of
+/// `design/today-history-contract.md` -- the «Позже» horizon and the review's
+/// day and time -- shared by every device, so they need the network to
+/// change.
 ///
 /// The permission block is here rather than only on the bench because a denied
 /// `POST_NOTIFICATIONS` is completely silent -- `zonedSchedule` succeeds, the
@@ -63,7 +67,7 @@ class SettingsScreen extends ConsumerWidget {
                       24,
                     ),
                     children: const <Widget>[
-                      _SectionLabel('Напоминания'),
+                      _SectionLabel('Даты и пересмотр'),
                       _RemindersGroup(),
                       _SectionLabel('Голос'),
                       _SettingsGroup(children: <Widget>[_VoiceModelTile()]),
@@ -121,8 +125,10 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// The reminders group: the hour, the permissions, and -- on Android only,
-/// where zones exist -- «Напоминания по месту».
+/// «Даты и пересмотр» (`design/today-history-spec.md` §11): the «Позже»
+/// horizon and the review's day and time (both on the server), the
+/// permissions, and -- on Android only, where zones exist -- «Напоминания по
+/// месту». The F4 reminder hour is gone: a task without a time does not push.
 class _RemindersGroup extends ConsumerWidget {
   const _RemindersGroup();
 
@@ -131,7 +137,8 @@ class _RemindersGroup extends ConsumerWidget {
     final places = ref.watch(geofenceGatewayProvider).supported;
     return _SettingsGroup(
       children: <Widget>[
-        const _ReminderTimeTile(),
+        const _HorizonTile(),
+        const _ReviewTimeTile(),
         const _PermissionsTile(),
         if (places) const _PlaceRemindersTile(),
       ],
@@ -493,58 +500,512 @@ class _VoiceModelTile extends ConsumerWidget {
   }
 }
 
-class _ReminderTimeTile extends ConsumerWidget {
-  const _ReminderTimeTile();
+/// Whether the server settings can be changed now: they live on the server,
+/// so offline (or showing the local copy) the rows are inactive and say
+/// «нужна сеть», keeping the last known value on screen.
+bool _settingsOnline(WidgetRef ref) {
+  final settings = ref.watch(ownerSettingsStateProvider);
+  final cached = ref
+      .watch(cachedReadsProvider)
+      .containsKey(ReadCacheKeys.ownerSettings);
+  final board = ref.watch(boardViewProvider);
+  final boardDown =
+      board is BoardUnavailable && board.error is NetworkException;
+  return settings.hasValue &&
+      !cached &&
+      !boardDown &&
+      !ref.watch(appOfflineProvider);
+}
+
+/// «пн 9:00».
+String reviewMomentLabel(OwnerSettings settings) =>
+    '${kWeekdaysShort[(settings.reviewWeekday - 1).clamp(0, 6)]} '
+    '${formatClock(settings.reviewTime)}';
+
+/// «Горизонт «Позже»»: tasks dated further than this are folded at the
+/// bottom of their project.
+class _HorizonTile extends ConsumerWidget {
+  const _HorizonTile();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final settings = ref.watch(reminderSettingsProvider);
-    final time = settings.value;
-
+    final settings = ref.watch(ownerSettingsStateProvider).value;
+    final online = _settingsOnline(ref);
     return _SettingRow(
-      icon: Icons.alarm,
-      title: 'Время утреннего напоминания',
-      description: time == null
-          // The read is a disk round trip, so there is a frame or two with no
-          // answer. Showing the default during it would be a lie that
-          // occasionally flashes the wrong number at someone who set 07:30.
+      key: const ValueKey<String>('settings-horizon'),
+      glyph: TodayGlyph.later,
+      title: 'Горизонт «Позже»',
+      description: online
+          ? 'Задачи дальше — свёрнуты внизу проекта'
+          : settings == null
           ? 'Загружаем…'
-          : 'Напоминания без времени приходят в ${time.format()} по '
-                'местному времени в выбранный день.',
-      // The value is the point of the row, so it is set as one of the
-      // screen's few numbers -- the same chip the app gives an age.
-      trailing: time == null ? null : _ValueChip(time.format()),
-      onTap: time == null ? null : () => _pick(context, ref, time),
+          : 'Задачи дальше — свёрнуты внизу проекта · нужна сеть',
+      trailing: settings == null
+          ? null
+          : _ValueChip('${settings.laterHorizonDays} дн.'),
+      onTap: online && settings != null
+          ? () => _open(context, ref, settings)
+          : null,
     );
   }
 
-  Future<void> _pick(
+  Future<void> _open(
     BuildContext context,
     WidgetRef ref,
-    ReminderTime current,
+    OwnerSettings current,
   ) async {
-    final picked = await showTimePicker(
+    final days = await showModalBottomSheet<int>(
       context: context,
-      initialTime: TimeOfDay(hour: current.hour, minute: current.minute),
-      helpText: 'Когда напоминать',
-      cancelText: 'Отмена',
-      confirmText: 'Готово',
+      isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => HorizonSheet(current: current.laterHorizonDays),
     );
-    if (picked == null || !context.mounted) return;
-
-    // Saving the setting is the *entire* action. Nothing here mentions the
-    // scheduler: `reminderSync` watches this provider, so changing it re-arms
-    // every queued alarm at the new hour by itself. A "reschedule" call here
-    // would be a second place that has to remember to fire, which is exactly
-    // what F1 designed the graph to avoid.
+    if (days == null || days == current.laterHorizonDays || !context.mounted) {
+      return;
+    }
     await runMutation(
       context,
       () => ref
-          .read(reminderSettingsProvider.notifier)
-          .setTime(ReminderTime(picked.hour, picked.minute)),
-      failure: 'Время применено, но сохранить его не удалось.',
+          .read(ownerSettingsStateProvider.notifier)
+          .save(laterHorizonDays: days),
+      failure: 'Не удалось сохранить горизонт.',
     );
   }
+}
+
+/// «Пересмотр»: the day and time of the weekly review's one push.
+class _ReviewTimeTile extends ConsumerWidget {
+  const _ReviewTimeTile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final settings = ref.watch(ownerSettingsStateProvider).value;
+    final online = _settingsOnline(ref);
+    return _SettingRow(
+      key: const ValueKey<String>('settings-review'),
+      glyph: TodayGlyph.review,
+      title: 'Пересмотр',
+      description: online
+          ? 'Один пуш в неделю, если пересмотр не пройден'
+          : settings == null
+          ? 'Загружаем…'
+          : 'Один пуш в неделю, если пересмотр не пройден · нужна сеть',
+      trailing: settings == null
+          ? null
+          : _ValueChip(reviewMomentLabel(settings)),
+      onTap: online && settings != null
+          ? () => _open(context, ref, settings)
+          : null,
+    );
+  }
+
+  Future<void> _open(
+    BuildContext context,
+    WidgetRef ref,
+    OwnerSettings current,
+  ) async {
+    final chosen = await showModalBottomSheet<OwnerSettings>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.background,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => ReviewTimeSheet(current: current),
+    );
+    if (chosen == null || chosen == current || !context.mounted) return;
+    await runMutation(
+      context,
+      () => ref
+          .read(ownerSettingsStateProvider.notifier)
+          .save(
+            reviewWeekday: chosen.reviewWeekday,
+            reviewTime: chosen.reviewTime,
+          ),
+      failure: 'Не удалось сохранить время пересмотра.',
+    );
+  }
+}
+
+/// The horizon sheet: 3 | 7 | 10 | 14 | 30 | Своё, a number 1–90 for «Своё».
+class HorizonSheet extends StatefulWidget {
+  const HorizonSheet({required this.current, super.key});
+
+  final int current;
+
+  static const List<int> presets = <int>[3, 7, 10, 14, 30];
+
+  @override
+  State<HorizonSheet> createState() => _HorizonSheetState();
+}
+
+class _HorizonSheetState extends State<HorizonSheet> {
+  late int? _preset = HorizonSheet.presets.contains(widget.current)
+      ? widget.current
+      : null;
+  late final TextEditingController _own = ImeTextController(
+    text: '${widget.current}',
+  );
+
+  @override
+  void dispose() {
+    _own.dispose();
+    super.dispose();
+  }
+
+  int? get _value {
+    final preset = _preset;
+    if (preset != null) return preset;
+    final own = int.tryParse(_own.text.trim());
+    return own != null && own >= 1 && own <= 90 ? own : null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final value = _value;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const _SheetHandle(),
+              const _SheetTitle('Горизонт «Позже»'),
+              const SizedBox(height: 4),
+              Text(
+                'Задачи с датой дальше стольких дней сворачиваются внизу '
+                'проекта в строку «Позже». В свой день задача появится в '
+                '«Сегодня».',
+                style: AppText.hint,
+              ),
+              const SizedBox(height: 16),
+              _Segment(
+                labels: <String>[
+                  for (final days in HorizonSheet.presets) '$days',
+                  'Своё',
+                ],
+                selected: _preset == null
+                    ? HorizonSheet.presets.length
+                    : HorizonSheet.presets.indexOf(_preset!),
+                onSelected: (index) => setState(
+                  () => _preset = index < HorizonSheet.presets.length
+                      ? HorizonSheet.presets[index]
+                      : null,
+                ),
+              ),
+              if (_preset == null) ...<Widget>[
+                const SizedBox(height: 12),
+                TextField(
+                  key: const ValueKey<String>('horizon-own'),
+                  controller: _own,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  onChanged: (_) => setState(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Дней, от 1 до 90',
+                    suffixText: 'дн.',
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              _DoneButton(
+                onPressed: value == null
+                    ? null
+                    : () => Navigator.of(context).pop(value),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The review sheet: one of seven days, and the time.
+class ReviewTimeSheet extends StatefulWidget {
+  const ReviewTimeSheet({required this.current, super.key});
+
+  final OwnerSettings current;
+
+  @override
+  State<ReviewTimeSheet> createState() => _ReviewTimeSheetState();
+}
+
+class _ReviewTimeSheetState extends State<ReviewTimeSheet> {
+  late int _day = widget.current.reviewWeekday;
+  late String _time = widget.current.reviewTime;
+
+  Future<void> _pickTime() async {
+    final parts = _time.split(':');
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+        hour: int.tryParse(parts.first) ?? 9,
+        minute: int.tryParse(parts.last) ?? 0,
+      ),
+      helpText: 'Время пересмотра',
+      cancelText: 'Отмена',
+      confirmText: 'Готово',
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+        child: child!,
+      ),
+    );
+    if (picked == null || !mounted) return;
+    setState(
+      () => _time =
+          '${picked.hour.toString().padLeft(2, '0')}:'
+          '${picked.minute.toString().padLeft(2, '0')}',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const _SheetHandle(),
+            const _SheetTitle('Пересмотр'),
+            const SizedBox(height: 4),
+            Text(
+              'Один пуш в этот день и час, если пересмотр не пройден. '
+              'Пропущен — метка на «Истории», без повторов.',
+              style: AppText.hint,
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: <Widget>[
+                for (var day = 1; day <= 7; day++)
+                  _DayCircle(
+                    label: kWeekdaysShort[day - 1],
+                    selected: day == _day,
+                    onTap: () => setState(() => _day = day),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              height: 52,
+              child: OutlinedButton.icon(
+                key: const ValueKey<String>('review-time'),
+                onPressed: _pickTime,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.ink,
+                  backgroundColor: AppColors.card,
+                  side: const BorderSide(color: AppColors.line),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  textStyle: AppText.numberSmall.copyWith(fontSize: 17),
+                ),
+                icon: const TodayIcon(
+                  TodayGlyph.clock,
+                  size: 18,
+                  color: AppColors.muted,
+                ),
+                label: Text(formatClock(_time)),
+              ),
+            ),
+            const SizedBox(height: 18),
+            _DoneButton(
+              onPressed: () => Navigator.of(context).pop(
+                widget.current.copyWith(reviewWeekday: _day, reviewTime: _time),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SheetHandle extends StatelessWidget {
+  const _SheetHandle();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Container(
+      width: 36,
+      height: 4,
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: AppColors.lineStrong,
+        borderRadius: BorderRadius.circular(2),
+      ),
+    ),
+  );
+}
+
+class _SheetTitle extends StatelessWidget {
+  const _SheetTitle(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: <Widget>[
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontFamily: AppFonts.display,
+            fontWeight: FontWeight.w700,
+            fontSize: 17,
+            color: AppColors.ink,
+          ),
+        ),
+      ),
+      IconButton(
+        tooltip: 'Закрыть',
+        onPressed: () => Navigator.of(context).pop(),
+        icon: const Icon(Icons.close, color: AppColors.muted),
+      ),
+    ],
+  );
+}
+
+/// The contour window's segment: 44 high, white, the chosen one in ink.
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.labels,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 44,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        border: Border.all(color: AppColors.line),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: <Widget>[
+          for (var i = 0; i < labels.length; i++)
+            Expanded(
+              child: Semantics(
+                button: true,
+                selected: i == selected,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => onSelected(i),
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: i == selected ? AppColors.ink : null,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Text(
+                      labels[i],
+                      maxLines: 1,
+                      style: TextStyle(
+                        fontFamily: AppFonts.text,
+                        fontWeight: i == selected
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        fontSize: 14,
+                        color: i == selected
+                            ? AppColors.onInk
+                            : AppColors.muted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DayCircle extends StatelessWidget {
+  const _DayCircle({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Container(
+              width: 40,
+              height: 40,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: selected ? AppColors.ink : AppColors.card,
+                border: selected ? null : Border.all(color: AppColors.line),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontFamily: AppFonts.text,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13.5,
+                  color: selected ? AppColors.onInk : AppColors.inkSoft,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// «Готово»: 56, ink.
+class _DoneButton extends StatelessWidget {
+  const _DoneButton({required this.onPressed});
+
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 56,
+    child: FilledButton(
+      onPressed: onPressed,
+      style: FilledButton.styleFrom(
+        backgroundColor: AppColors.ink,
+        foregroundColor: AppColors.onInk,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        textStyle: AppText.action.copyWith(fontSize: 16),
+      ),
+      child: const Text('Готово'),
+    ),
+  );
 }
 
 /// How hard AI works a text over by default (`domain/ai_level.dart`). Each
@@ -898,7 +1359,14 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
       child: Row(
         children: <Widget>[
-          Text(name.toUpperCase(), style: AppText.sectionLabel),
+          Flexible(
+            child: Text(
+              name.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.sectionLabel,
+            ),
+          ),
           const SizedBox(width: 8),
           const Expanded(child: Divider(color: AppColors.line, height: 1)),
         ],
@@ -973,7 +1441,9 @@ enum _Tone {
 /// nowhere to land.
 class _SettingRow extends StatelessWidget {
   const _SettingRow({
-    required this.icon,
+    super.key,
+    this.icon = Icons.circle_outlined,
+    this.glyph,
     required this.title,
     this.description,
     this.descriptionColor,
@@ -986,6 +1456,9 @@ class _SettingRow extends StatelessWidget {
   static const double iconBox = 36;
 
   final IconData icon;
+
+  /// One of the spec's own icons instead of [icon] (hourglass, review).
+  final TodayGlyph? glyph;
   final String title;
   final String? description;
   final Color? descriptionColor;
@@ -1015,7 +1488,11 @@ class _SettingRow extends StatelessWidget {
                   color: tone.fill,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(icon, size: 20, color: tone.ink),
+                child: glyph == null
+                    ? Icon(icon, size: 20, color: tone.ink)
+                    : Center(
+                        child: TodayIcon(glyph!, size: 20, color: tone.ink),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(

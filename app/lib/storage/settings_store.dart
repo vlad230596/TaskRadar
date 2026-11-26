@@ -1,10 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../domain/reminder_schedule.dart';
-
-/// The app's persisted preferences. Exactly one of them so far (F4): the hour
-/// the morning reminders fire at.
+/// The app's persisted, per-device preferences. (The F4 reminder hour is
+/// gone: since `design/today-history-contract.md` only a task with a time
+/// pushes, and the review's day and time live on the server.)
 ///
 /// ## Why a separate store rather than the board snapshot's machinery
 ///
@@ -33,13 +32,6 @@ import '../domain/reminder_schedule.dart';
 /// between tests in the same file and cannot express "the write failed", which
 /// is a state the settings screen has to survive.
 abstract interface class SettingsStore {
-  /// The saved reminder hour, or null when nothing has been saved yet or the
-  /// stored value is unusable.
-  Future<ReminderTime?> readReminderTime();
-
-  /// Persists the reminder hour. May throw; the caller decides what to do.
-  Future<void> writeReminderTime(ReminderTime time);
-
   /// The scope the board was last showing, or null if none was ever chosen
   /// (F7).
   ///
@@ -106,12 +98,6 @@ class PreferencesSettingsStore implements SettingsStore {
   PreferencesSettingsStore({Future<SharedPreferences> Function()? preferences})
     : _preferences = preferences ?? SharedPreferences.getInstance;
 
-  /// Stored as two ints rather than one `"HH:mm"` string: a string would need
-  /// parsing and therefore a malformed-value branch, and the two are already
-  /// how [ReminderTime] is shaped.
-  static const String hourKey = 'reminders.hour';
-  static const String minuteKey = 'reminders.minute';
-
   /// F7. A plain string; an unknown or deleted id reads as "nothing saved"
   /// wherever it is resolved, which is the same answer a missing key gives.
   ///
@@ -160,45 +146,9 @@ class PreferencesSettingsStore implements SettingsStore {
     await preferences.setString(key, value);
   }
 
-  @override
-  Future<ReminderTime?> readReminderTime() async {
-    try {
-      final preferences = await _preferences();
-      final hour = preferences.getInt(hourKey);
-      final minute = preferences.getInt(minuteKey);
-      if (hour == null || minute == null) return null;
-
-      // Range-checked here rather than left to `ReminderTime`'s asserts, which
-      // are compiled out of a release build: a file edited by hand, or written
-      // by a future version with a different encoding, must not be able to arm
-      // alarms at hour 47. Out of range reads as "nothing saved", i.e. the
-      // default -- the same answer as a missing key, which is the only answer
-      // that cannot make the app worse.
-      if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-        debugPrint('Discarding out-of-range reminder time $hour:$minute');
-        return null;
-      }
-
-      return ReminderTime(hour, minute);
-    } catch (error) {
-      // A platform channel that is not there (the `flutter test` VM, a stripped
-      // ROM) must cost the default hour, not a crash on the first frame.
-      debugPrint('Could not read the reminder time: $error');
-      return null;
-    }
-  }
-
-  @override
-  Future<void> writeReminderTime(ReminderTime time) async {
-    final preferences = await _preferences();
-    await preferences.setInt(hourKey, time.hour);
-    await preferences.setInt(minuteKey, time.minute);
-  }
-
   /// An empty string is not an id, and treating it as one would send the board
   /// looking for a scope that cannot exist. A missing platform channel costs
-  /// the default ("all spaces"), not a crash -- same contract as the
-  /// reminder hour.
+  /// the default ("all spaces"), not a crash.
   @override
   Future<String?> readSelectedScopeId() => _readString(selectedScopeKey);
 

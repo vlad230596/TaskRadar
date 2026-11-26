@@ -10,9 +10,8 @@ part of 'reminder_providers.dart';
 // ignore_for_file: type=lint, type=warning
 /// Riverpod wiring for the reminder machinery.
 ///
-/// The shape to notice: [reminderSync] *watches* [reminderTargets] and
-/// [reminderSettings]. Nobody calls "reschedule" after changing either of them
-/// -- changing them **is** the reschedule. That is the property F4 needs: the
+/// The shape to notice: [reminderSync] *watches* [reminderTargets]. Nobody
+/// calls "reschedule" after changing it -- changing it **is** the reschedule. That is the property F4 needs: the
 /// board provider will replace the targets after every `GET /board` and the
 /// queue follows, with no second place that has to remember to fire.
 ///
@@ -25,9 +24,8 @@ final notificationGatewayProvider = NotificationGatewayProvider._();
 
 /// Riverpod wiring for the reminder machinery.
 ///
-/// The shape to notice: [reminderSync] *watches* [reminderTargets] and
-/// [reminderSettings]. Nobody calls "reschedule" after changing either of them
-/// -- changing them **is** the reschedule. That is the property F4 needs: the
+/// The shape to notice: [reminderSync] *watches* [reminderTargets]. Nobody
+/// calls "reschedule" after changing it -- changing it **is** the reschedule. That is the property F4 needs: the
 /// board provider will replace the targets after every `GET /board` and the
 /// queue follows, with no second place that has to remember to fire.
 ///
@@ -45,9 +43,8 @@ final class NotificationGatewayProvider
     with $Provider<NotificationGateway> {
   /// Riverpod wiring for the reminder machinery.
   ///
-  /// The shape to notice: [reminderSync] *watches* [reminderTargets] and
-  /// [reminderSettings]. Nobody calls "reschedule" after changing either of them
-  /// -- changing them **is** the reschedule. That is the property F4 needs: the
+  /// The shape to notice: [reminderSync] *watches* [reminderTargets]. Nobody
+  /// calls "reschedule" after changing it -- changing it **is** the reschedule. That is the property F4 needs: the
   /// board provider will replace the targets after every `GET /board` and the
   /// queue follows, with no second place that has to remember to fire.
   ///
@@ -183,140 +180,6 @@ final class DeviceTimeZoneNameProvider
 String _$deviceTimeZoneNameHash() =>
     r'9576fa0e157a8e0345b7c7e1e20a682bbd6896a7';
 
-/// The hour reminders fire at, persisted (F4).
-///
-/// ## Why this became asynchronous
-///
-/// F1 kept it in memory with a default and said the only F4 change would be
-/// where `build()` reads from. It is one step bigger than that, and the step is
-/// worth taking: reading from disk is a future, so the choice is between
-///
-/// - publishing the default immediately and overwriting it when the store
-///   answers -- which arms the whole queue at 09:00, then cancels and re-arms it
-///   at the saved hour a few milliseconds later, on every single cold start; or
-/// - making the settle part of the value, so [ReminderSync] simply waits.
-///
-/// The second is both cheaper and honest, and it costs nothing downstream:
-/// [reminderSync] is already async (the plugin and the timezone are), so one
-/// more awaited input changes no consumer's shape. The property F1 built the
-/// graph around is untouched -- changing this **is** the reschedule, and nothing
-/// calls the scheduler.
-///
-/// A store that cannot be read is not an error state: [SettingsStore] answers
-/// null and the default applies. A settings screen that showed a red error
-/// because a preference file was missing would be absurd.
-
-@ProviderFor(ReminderSettings)
-final reminderSettingsProvider = ReminderSettingsProvider._();
-
-/// The hour reminders fire at, persisted (F4).
-///
-/// ## Why this became asynchronous
-///
-/// F1 kept it in memory with a default and said the only F4 change would be
-/// where `build()` reads from. It is one step bigger than that, and the step is
-/// worth taking: reading from disk is a future, so the choice is between
-///
-/// - publishing the default immediately and overwriting it when the store
-///   answers -- which arms the whole queue at 09:00, then cancels and re-arms it
-///   at the saved hour a few milliseconds later, on every single cold start; or
-/// - making the settle part of the value, so [ReminderSync] simply waits.
-///
-/// The second is both cheaper and honest, and it costs nothing downstream:
-/// [reminderSync] is already async (the plugin and the timezone are), so one
-/// more awaited input changes no consumer's shape. The property F1 built the
-/// graph around is untouched -- changing this **is** the reschedule, and nothing
-/// calls the scheduler.
-///
-/// A store that cannot be read is not an error state: [SettingsStore] answers
-/// null and the default applies. A settings screen that showed a red error
-/// because a preference file was missing would be absurd.
-final class ReminderSettingsProvider
-    extends $AsyncNotifierProvider<ReminderSettings, ReminderTime> {
-  /// The hour reminders fire at, persisted (F4).
-  ///
-  /// ## Why this became asynchronous
-  ///
-  /// F1 kept it in memory with a default and said the only F4 change would be
-  /// where `build()` reads from. It is one step bigger than that, and the step is
-  /// worth taking: reading from disk is a future, so the choice is between
-  ///
-  /// - publishing the default immediately and overwriting it when the store
-  ///   answers -- which arms the whole queue at 09:00, then cancels and re-arms it
-  ///   at the saved hour a few milliseconds later, on every single cold start; or
-  /// - making the settle part of the value, so [ReminderSync] simply waits.
-  ///
-  /// The second is both cheaper and honest, and it costs nothing downstream:
-  /// [reminderSync] is already async (the plugin and the timezone are), so one
-  /// more awaited input changes no consumer's shape. The property F1 built the
-  /// graph around is untouched -- changing this **is** the reschedule, and nothing
-  /// calls the scheduler.
-  ///
-  /// A store that cannot be read is not an error state: [SettingsStore] answers
-  /// null and the default applies. A settings screen that showed a red error
-  /// because a preference file was missing would be absurd.
-  ReminderSettingsProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'reminderSettingsProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$reminderSettingsHash();
-
-  @$internal
-  @override
-  ReminderSettings create() => ReminderSettings();
-}
-
-String _$reminderSettingsHash() => r'8a5cb3f1f811c4e3ce542a20167c62dfd63fb84c';
-
-/// The hour reminders fire at, persisted (F4).
-///
-/// ## Why this became asynchronous
-///
-/// F1 kept it in memory with a default and said the only F4 change would be
-/// where `build()` reads from. It is one step bigger than that, and the step is
-/// worth taking: reading from disk is a future, so the choice is between
-///
-/// - publishing the default immediately and overwriting it when the store
-///   answers -- which arms the whole queue at 09:00, then cancels and re-arms it
-///   at the saved hour a few milliseconds later, on every single cold start; or
-/// - making the settle part of the value, so [ReminderSync] simply waits.
-///
-/// The second is both cheaper and honest, and it costs nothing downstream:
-/// [reminderSync] is already async (the plugin and the timezone are), so one
-/// more awaited input changes no consumer's shape. The property F1 built the
-/// graph around is untouched -- changing this **is** the reschedule, and nothing
-/// calls the scheduler.
-///
-/// A store that cannot be read is not an error state: [SettingsStore] answers
-/// null and the default applies. A settings screen that showed a red error
-/// because a preference file was missing would be absurd.
-
-abstract class _$ReminderSettings extends $AsyncNotifier<ReminderTime> {
-  FutureOr<ReminderTime> build();
-  @$mustCallSuper
-  @override
-  void runBuild() {
-    final ref = this.ref as $Ref<AsyncValue<ReminderTime>, ReminderTime>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<AsyncValue<ReminderTime>, ReminderTime>,
-              AsyncValue<ReminderTime>,
-              Object?,
-              Object?
-            >;
-    element.handleCreate(ref, build);
-  }
-}
-
 /// The set of reminders that *should* be armed right now.
 ///
 /// The seam between F1 and the rest of the plan. F1's bench screen writes
@@ -437,17 +300,17 @@ final class ReminderSchedulerProvider
 
 String _$reminderSchedulerHash() => r'422ee94dec1cfb5cce27d6e8f296b3e07f47a73b';
 
-/// Runs a resync whenever the targets or the configured hour change, and holds
+/// Runs a resync whenever the targets change, and holds
 /// the report of the last one.
 
 @ProviderFor(ReminderSync)
 final reminderSyncProvider = ReminderSyncProvider._();
 
-/// Runs a resync whenever the targets or the configured hour change, and holds
+/// Runs a resync whenever the targets change, and holds
 /// the report of the last one.
 final class ReminderSyncProvider
     extends $AsyncNotifierProvider<ReminderSync, ReminderSyncReport> {
-  /// Runs a resync whenever the targets or the configured hour change, and holds
+  /// Runs a resync whenever the targets change, and holds
   /// the report of the last one.
   ReminderSyncProvider._()
     : super(
@@ -468,9 +331,9 @@ final class ReminderSyncProvider
   ReminderSync create() => ReminderSync();
 }
 
-String _$reminderSyncHash() => r'1e7cf6d2209ef3aee76fc24ca842c82809d65454';
+String _$reminderSyncHash() => r'9e80c28777653e318516553d829a27be20e6007b';
 
-/// Runs a resync whenever the targets or the configured hour change, and holds
+/// Runs a resync whenever the targets change, and holds
 /// the report of the last one.
 
 abstract class _$ReminderSync extends $AsyncNotifier<ReminderSyncReport> {

@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:taskradar/domain/reminder_schedule.dart';
+import 'package:taskradar/models/today_history.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
 import 'package:taskradar/providers/dependencies.dart';
+import 'package:taskradar/providers/read_cache_providers.dart';
+import 'package:taskradar/storage/read_cache_store.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
 import 'package:taskradar/providers/voice_providers.dart';
 import 'package:taskradar/screens/notification_bench_screen.dart';
@@ -15,6 +17,8 @@ import 'package:taskradar/screens/settings_screen.dart';
 import 'support/fake_backend.dart';
 import 'support/fake_notification_gateway.dart';
 import 'support/fake_settings_store.dart';
+import 'support/fake_today_backend.dart';
+import 'support/memory_read_cache_store.dart';
 import 'support/fake_voice.dart';
 
 /// The settings screen (F4): the one real setting, and the diagnostic that
@@ -24,6 +28,7 @@ void main() {
   late FakeSettingsStore settings;
   late FakeVoiceModelStore voiceModels;
   late FakeBackend backend;
+  late FakeTodayServer today;
 
   /// What `GET /dictation/models` answers (null: no model on the server),
   /// and every `PUT` and re-enable received. The fake stores like the
@@ -34,6 +39,8 @@ void main() {
 
   setUp(() {
     backend = FakeBackend();
+    today = FakeTodayServer(backend);
+    backend.on('GET', '/board', (_) => jsonResponse(<dynamic>[]));
     roster = <String, dynamic>{
       'models': <dynamic>[],
       'defaultModel': 'stealth/space-bunny-alpha',
@@ -101,7 +108,10 @@ void main() {
         );
   });
 
-  Future<void> pumpSettings(WidgetTester tester) async {
+  Future<void> pumpSettings(
+    WidgetTester tester, {
+    MemoryReadCacheStore? readCache,
+  }) async {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -113,6 +123,8 @@ void main() {
           notificationGatewayProvider.overrideWithValue(gateway),
           settingsStoreProvider.overrideWithValue(settings),
           voiceModelStoreProvider.overrideWithValue(voiceModels),
+          if (readCache != null)
+            readCacheStoreProvider.overrideWithValue(readCache),
         ],
         child: const MaterialApp(home: SettingsScreen()),
       ),
@@ -120,66 +132,94 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('the reminder hour', () {
-    testWidgets('shows the default when nothing has been saved', (
-      tester,
-    ) async {
+  group('Даты и пересмотр', () {
+    testWidgets('the group shows the server horizon and review moment, and '
+        'no reminder hour', (tester) async {
+      today.settings = const OwnerSettings(
+        laterHorizonDays: 14,
+        reviewWeekday: 3,
+        reviewTime: '18:30',
+      );
       await pumpSettings(tester);
 
-      expect(find.text('09:00'), findsOneWidget);
-      expect(find.textContaining('по местному времени'), findsOneWidget);
+      expect(find.text('ДАТЫ И ПЕРЕСМОТР'), findsOneWidget);
+      expect(find.text('Горизонт «Позже»'), findsOneWidget);
+      expect(find.text('14 дн.'), findsOneWidget);
+      expect(find.text('ср 18:30'), findsOneWidget);
+      expect(find.text('Время утреннего напоминания'), findsNothing);
+      expect(find.textContaining('Напоминания без времени'), findsNothing);
     });
 
-    testWidgets('shows the saved hour, not the default', (tester) async {
-      settings.time = const ReminderTime(7, 30);
+    testWidgets('choosing a horizon saves it on the server', (tester) async {
       await pumpSettings(tester);
+      expect(find.text('10 дн.'), findsOneWidget);
 
-      expect(find.text('07:30'), findsOneWidget);
-      expect(find.text('09:00'), findsNothing);
-    });
-
-    testWidgets('picking a new hour saves it', (tester) async {
-      await pumpSettings(tester);
-
-      await tester.tap(find.text('Время утреннего напоминания'));
+      await tester.tap(find.text('Горизонт «Позже»'));
       await tester.pumpAndSettle();
-      expect(find.text('Когда напоминать'), findsOneWidget);
-
-      // The dial is awkward to drive; the keyboard entry mode is the same code
-      // path for the value that matters.
-      await tester.tap(find.byIcon(Icons.keyboard_outlined));
-      await tester.pumpAndSettle();
-
-      final fields = find.byType(TextField);
-      await tester.enterText(fields.first, '6');
-      await tester.enterText(fields.last, '45');
+      await tester.tap(find.text('30'));
+      await tester.pump();
       await tester.tap(find.text('Готово'));
       await tester.pumpAndSettle();
 
-      expect(settings.writes, <ReminderTime>[const ReminderTime(6, 45)]);
-      expect(find.text('06:45'), findsOneWidget);
+      expect(today.patches, <Map<String, dynamic>>[
+        <String, dynamic>{'laterHorizonDays': 30},
+      ]);
+      expect(find.text('30 дн.'), findsOneWidget);
     });
 
-    testWidgets('a failed save is reported without losing the choice', (
-      tester,
-    ) async {
+    testWidgets('«Своё» takes a number from 1 to 90', (tester) async {
       await pumpSettings(tester);
-      settings.writeFailure = StateError('disk full');
+      await tester.tap(find.text('Горизонт «Позже»'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Своё'));
+      await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Время утреннего напоминания'));
+      await tester.enterText(find.byKey(const ValueKey('horizon-own')), '120');
+      await tester.pump();
+      final done = find.widgetWithText(FilledButton, 'Готово');
+      expect(tester.widget<FilledButton>(done).onPressed, isNull);
+
+      await tester.enterText(find.byKey(const ValueKey('horizon-own')), '21');
+      await tester.pump();
+      await tester.tap(done);
       await tester.pumpAndSettle();
-      await tester.tap(find.byIcon(Icons.keyboard_outlined));
+      expect(today.patches.single, <String, dynamic>{'laterHorizonDays': 21});
+    });
+
+    testWidgets('the review day is picked from seven circles', (tester) async {
+      await pumpSettings(tester);
+      expect(find.text('пн 9:00'), findsOneWidget);
+
+      await tester.tap(find.text('Пересмотр'));
       await tester.pumpAndSettle();
-      final fields = find.byType(TextField);
-      await tester.enterText(fields.first, '6');
-      await tester.enterText(fields.last, '45');
+      await tester.tap(find.text('вс'));
+      await tester.pump();
       await tester.tap(find.text('Готово'));
       await tester.pumpAndSettle();
 
-      // Applied (the alarms are re-armed at the hour the user asked for) and
-      // said out loud (it will not survive a restart).
-      expect(find.text('06:45'), findsOneWidget);
-      expect(find.textContaining('сохранить его не удалось'), findsOneWidget);
+      expect(today.patches.single, <String, dynamic>{
+        'reviewWeekday': 7,
+        'reviewTime': '09:00',
+      });
+      expect(find.text('вс 9:00'), findsOneWidget);
+    });
+
+    testWidgets('offline the rows keep the last value and say «нужна сеть»', (
+      tester,
+    ) async {
+      // A previous run saved the settings; now the server is not there.
+      final cache = MemoryReadCacheStore()
+        ..seed(ReadCacheKeys.ownerSettings, const OwnerSettings().toJson());
+      backend.failingPaths.addAll(<String>['/board', '/settings']);
+      await pumpSettings(tester, readCache: cache);
+
+      expect(find.textContaining('нужна сеть'), findsNWidgets(2));
+      expect(find.text('10 дн.'), findsOneWidget);
+      await tester.tap(find.text('Горизонт «Позже»'));
+      await tester.pumpAndSettle();
+      expect(find.text('Своё'), findsNothing);
+      // The read cache's grace timer.
+      await tester.pump(const Duration(seconds: 1));
     });
   });
 

@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/outbox_providers.dart';
 import '../providers/shell_providers.dart';
+import 'app_routes.dart';
 
 /// The two tabs of «История» (`design/today-history-spec.md` §9.1). Always
 /// opens on «Сделано»; the review's «Пересмотр записан · Недели» switches to
@@ -48,7 +51,9 @@ reviewProgressProvider = NotifierProvider<ReviewProgressState, ReviewProgress>(
 /// The review push was tapped: «История» on «Сделано», where the card is
 /// (§10.8 -- not the flow itself: the push may be opened on the go).
 void openReviewCard(ProviderContainer container) {
+  // Back to the shell first: the push may come over a project or the editor.
+  appNavigatorKey.currentState?.popUntil((route) => route.isFirst);
   container.read(historyTabProvider.notifier).select(HistoryTab.done);
   container.read(historyShowsOutboxProvider.notifier).show(false);
-  container.read(shellModeProvider.notifier).select(AppMode.history);
+  unawaited(container.read(shellModeProvider.notifier).select(AppMode.history));
 }
