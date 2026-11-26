@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>История — «Недели»</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+/* Общая основа эталонов «Сегодня / История / пересмотр». 1 px = 1 dp. Телефон 412 dp. */
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;color:#1B2050;-webkit-font-smoothing:antialiased}
+html,body{background:#E7E7ED}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.U{font-family:'Unbounded',sans-serif}
+.stage{display:flex;gap:40px;padding:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.cap{font-size:13px;color:#61637E;max-width:412px;line-height:1.45;margin:10px 0 0}
+.cap b{color:#1B2050}
+.phone{width:412px;height:915px;box-sizing:border-box;background:#F3F3F7;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.phone>*{flex-shrink:0}
+.phone.dark{background:#14183C;color:#EDEEF7}
+.grow{flex:1 1 0;min-height:0}
+.label{font-size:13px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#61637E}
+.tl{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+.ib{width:44px;height:44px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;color:#61637E}
+/* нижняя панель */
+.nav{position:absolute;left:0;right:0;bottom:0;height:82px;box-sizing:border-box;border-top:1px solid #DEDEE8;background:#FFFFFF;display:flex;align-items:flex-start;padding:8px 10px 0;gap:6px;z-index:5}
+.ni{flex:1;height:54px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#61637E;font-size:11px;font-weight:600;position:relative}
+.ni.on{background:#E6E8F7;color:#2C3480;font-weight:700}
+.nv{width:84px;flex-shrink:0;height:54px;border-radius:16px;background:#4A56BE;color:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:700}
+.badge-dot{position:absolute;top:9px;left:calc(50% + 7px);width:8px;height:8px;border-radius:4px;background:#FF8C70;box-shadow:0 0 0 2px #FFFFFF}
+/* светлая шапка подэкрана */
+.subhead{padding:10px 8px 10px 4px;display:flex;align-items:center;gap:4px;background:#FFFFFF;border-bottom:1px solid #DEDEE8}
+.subhead .t{flex-grow:1;font-family:'Unbounded',sans-serif;font-weight:600;font-size:18px}
+/* сегмент-вкладки */
+.seg{display:flex;gap:2px;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:14px;padding:3px}
+.seg span,.seg a{flex:1;height:38px;border-radius:11px;color:#61637E;display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:600}
+.seg .on{background:#1B2050;color:#FFFFFF;font-weight:700}
+/* «С прошлых дней» */
+.tail{margin:12px 16px 0;background:#FDF7EE;border:1px solid #EBD5B0;border-radius:20px;padding:4px 0}
+.tailhead{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px}
+.trow{min-height:60px;display:flex;align-items:center;gap:6px;padding:8px 2px 8px 16px;box-sizing:border-box}
+.trow .tx{flex-grow:1;min-width:0;color:#1B2050}
+.trow .tx b{display:block;font-size:15px;font-weight:500;line-height:1.3}
+.trow .tx small{display:block;margin-top:3px;font-size:12px;font-weight:600;color:#61637E}
+.od{color:#8A5A0B}
+.tsep{height:1px;margin:0 16px;background:rgba(235,213,176,0.6)}
+.btn-today{height:36px;padding:0 12px;border:none;border-radius:12px;background:#1B2050;color:#FFFFFF;font-size:13.5px;font-weight:700;flex-shrink:0}
+.btn-allt{height:36px;padding:0 12px;border-radius:12px;border:1px solid #EBD5B0;background:#FFFFFF;font-size:13.5px;font-weight:700;color:#1B2050}
+/* «Сегодня» */
+.today{margin:12px 16px 0;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:20px;padding:4px 0 6px}
+.thead{height:52px;display:flex;align-items:center;gap:10px;padding:0 0 0 16px}
+.ttl{font-family:'Unbounded',sans-serif;font-weight:700;font-size:15px}
+.tcnt{font-family:'Unbounded',sans-serif;font-weight:600;font-size:13px;color:#2A6B4E}
+.tday{font-size:12.5px;font-weight:600;color:#61637E}
+.prog{display:flex;gap:3px;padding:0 16px 6px}
+.prog i{flex:1;height:4px;border-radius:2px;background:#EDEDF3}
+.prog i.d{background:#2A6B4E}
+.scope{height:28px;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:11.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#61637E}
+.scope::after{content:"";flex:1;height:1px;background:#EDEDF3}
+.tr{min-height:48px;display:flex;align-items:center;padding:0 12px 0 4px}
+.ring{width:44px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ring>span{width:22px;height:22px;border-radius:11px;border:2px solid #C3C6DE;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.tt{flex:1;min-width:0;font-size:15px;font-weight:500;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B2050}
+.time{height:22px;padding:0 6px;border-radius:7px;background:#E6E8F7;color:#2C3480;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;margin-right:8px;flex-shrink:0;box-sizing:border-box}
+.time.past{background:transparent;border:1px solid #C3C6DE}
+.proj{font-size:12px;font-weight:600;color:#61637E;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:8px;flex-shrink:0;display:inline-flex;align-items:center;gap:6px}
+.wdot{width:8px;height:8px;border-radius:4px;background:#4A56BE;flex-shrink:0}
+.cchip{width:20px;height:20px;border-radius:6px;background:#14183C;display:inline-flex;align-items:center;justify-content:center;margin-left:8px;flex-shrink:0;color:#FFC94D}
+.cchip.m{background:#E6E8F7;color:#8C91B8}
+.dr{min-height:40px;display:flex;align-items:center;padding:0 12px 0 4px}
+.dr .ring{height:40px}
+.dr .tt{text-decoration:line-through;color:#61637E}
+.dmark{width:22px;height:22px;border-radius:11px;background:#E5F0EA;color:#2A6B4E;display:flex;align-items:center;justify-content:center}
+.dsep{height:1px;background:#EDEDF3;margin:4px 16px}
+/* строка задачи проекта (Project.html) */
+.row{background:#FFFFFF;border:1px solid #DEDEE8;border-radius:16px;display:flex;align-items:center;gap:4px;padding:2px 4px;box-sizing:border-box}
+.side{width:48px;min-height:58px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;color:#61637E;flex-shrink:0;padding:0}
+.rring{width:26px;height:26px;border-radius:13px;border:2px solid #C3C6DE;box-sizing:border-box;display:block}
+.rbody{flex-grow:1;min-width:0;padding:8px 0;color:#1B2050}
+.rtitle{display:block;font-size:15.5px;font-weight:500;line-height:1.3}
+.meta{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:600}
+.age{font-size:12px;font-weight:600;border-radius:10px;padding:3px 7px;white-space:nowrap;flex-shrink:0;color:#61637E;background:#F3F3F7}
+/* тёмный лист и кнопки (семья диктовки) */
+.scrim{position:absolute;inset:0;background:rgba(20,24,60,0.5);z-index:6}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#14183C;border-radius:24px 24px 0 0;color:#EDEEF7;padding:8px 20px 20px;box-sizing:border-box;z-index:7}
+.sheet.light{background:#FFFFFF;color:#1B2050}
+.grab{width:36px;height:4px;border-radius:2px;background:#39407A;margin:0 auto 10px}
+.light .grab{background:#C3C6DE}
+.sh-h{display:flex;align-items:center;gap:8px;height:44px}
+.sh-t{flex-grow:1;font-family:'Unbounded',sans-serif;font-size:19px;font-weight:700}
+.wbtn{height:64px;border:none;border-radius:22px;background:#FFFFFF;color:#14183C;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
+.obtn{height:48px;border:1px solid #39407A;border-radius:18px;background:transparent;color:#D6DBFF;font-size:15px;font-weight:600;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.pd{height:40px;padding:0 14px;border-radius:20px;border:1px solid #39407A;color:#D6DBFF;font-size:14px;font-weight:700;display:inline-flex;align-items:center;background:transparent;white-space:nowrap;flex-shrink:0;box-sizing:border-box}
+.pd.on{background:#FFFFFF;color:#14183C;border-color:#FFFFFF}
+.well{background:#1F2552;border-radius:20px}
+.raised{background:#232B6E;border-radius:20px}
+/* снекбар */
+.snack{position:absolute;left:8px;right:8px;bottom:92px;height:56px;border-radius:16px;background:#1B2050;color:#FFFFFF;display:flex;align-items:center;padding:0 4px 0 16px;gap:2px;box-shadow:0 6px 18px rgba(27,32,80,0.25);z-index:6;box-sizing:border-box}
+.snack .m{flex:1;min-width:0;font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.snack button{height:44px;padding:0 10px;border:none;background:transparent;font-size:14.5px;display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+/* меню */
+.menu{position:absolute;background:#FFFFFF;border-radius:16px;box-shadow:0 8px 28px rgba(27,32,80,0.18);padding:6px 0;z-index:8}
+.mi{height:48px;padding:0 16px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:500;color:#1B2050}
+.mi small{display:block;font-size:12px;font-weight:500;color:#61637E;margin-top:1px}
+.msep{height:1px;background:#EDEDF3;margin:4px 0}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="crown" viewBox="0 0 24 24"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="currentColor"/><path d="M5 21h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+<symbol id="unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.7"/></symbol>
+<symbol id="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+<symbol id="next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v5a4 4 0 0 0 4 4h10"/><path d="M15 10l4 4-4 4"/></symbol>
+<symbol id="undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+<symbol id="pile" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h5l1.5 2.5h3L15 13h5"/><path d="M5.5 6h13L20 13v5.5H4V13z"/></symbol>
+<symbol id="later" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10M7 21h10"/><path d="M8 3v2a4 4 0 0 0 1.6 3.2L12 10l2.4-1.8A4 4 0 0 0 16 5V3"/><path d="M8 21v-2a4 4 0 0 1 1.6-3.2L12 14l2.4 1.8A4 4 0 0 1 16 19v2"/></symbol>
+<symbol id="rhythm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></symbol>
+<symbol id="review" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/><path d="M12 8v4l3 2"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.6"/></symbol>
+<symbol id="dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+<symbol id="vdots" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></symbol>
+<symbol id="down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></symbol>
+<symbol id="right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+<symbol id="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+<symbol id="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></symbol>
+<symbol id="plan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></symbol>
+<symbol id="work" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+<symbol id="hist" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></symbol>
+<symbol id="cloudoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M8.5 6.7A5.5 5.5 0 0 1 17.5 10a4 4 0 0 1 2.4 6.9M16 18H7a4.5 4.5 0 0 1-1.7-8.7"/></symbol>
+<symbol id="cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M12 11v5M9.8 13.2L12 11l2.2 2.2"/></symbol>
+<symbol id="pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9.2"/><path d="M10 9v6M14 9v6"/></symbol>
+<symbol id="list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h11M4 17h7"/></symbol>
+<symbol id="bench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10h16M4 14h16M6 14v5M18 14v5M6 10V7M18 10V7"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 21s-6-5.5-6-10.5a6 6 0 0 1 12 0C18 15.5 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+</svg>
+
+<style>
+.bars{flex:1;display:flex;align-items:flex-end;gap:5px;height:108px}
+.b{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%}
+.b i{display:block;width:100%;border-radius:5px;background:#2A6B4E}
+.b em{font-style:normal;font-size:10.5px;font-weight:600;color:#61637E;height:13px;white-space:nowrap}
+.b u{text-decoration:none;font-family:'Unbounded',sans-serif;font-size:11px;font-weight:600;color:#61637E;height:13px}
+.wk{margin:0 16px 8px;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:20px;padding:14px 16px}
+.pr{display:flex;align-items:center;gap:10px;height:24px;font-size:13px;font-weight:600;color:#3A3C5C}
+.pr span:first-child{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pr i{display:block;height:6px;border-radius:3px;background:#2A6B4E}
+.pr b{width:22px;text-align:right;font-weight:700;color:#1B2050}
+.wrow{margin:0 16px 8px;height:52px;box-sizing:border-box;border:1px solid #DEDEE8;border-radius:16px;padding:0 14px;display:flex;align-items:center;gap:10px}
+</style>
+<div class="stage">
+
+<div>
+<div class="phone">
+  <header style="padding: 18px 16px 10px; display: flex; align-items: center; gap: 12px;">
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px;">История</span>
+    <button style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #C3C6DE; background: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #3A3C5C;"><svg width="16" height="16"><use href="#cloud"/></svg>Офлайн · 0</button>
+  </header>
+  <div class="seg" style="margin: 0 16px;"><a href="History-Done.html">Сделано</a><span class="on">Недели</span></div>
+
+  <!-- СВОДКА: 12 столбиков, текущая #6C79E8, прошлые #2A6B4E, ноль #DEDEE8 4 px; число — у текущей и у максимума -->
+  <section style="margin: 12px 16px 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 22px; padding: 16px 16px 12px; display: flex; gap: 14px; align-items: flex-end;">
+    <div style="flex-shrink: 0; width: 92px;">
+      <div class="U num" style="font-weight: 700; font-size: 44px; line-height: 1; color: #2A6B4E;">17</div>
+      <div style="margin-top: 6px; font-size: 13px; font-weight: 600; color: #3A3C5C;">на этой неделе</div>
+      <div style="font-size: 12px; font-weight: 500; color: #61637E;">в среднем 15</div>
+    </div>
+    <div class="bars num">
+      <div class="b"><u></u><i style="height: 31px;"></i><em>7.09</em></div>
+      <div class="b"><u></u><i style="height: 49px;"></i><em></em></div>
+      <div class="b"><u></u><i style="height: 38px;"></i><em></em></div>
+      <div class="b"><u></u><i style="height: 4px; background: #DEDEE8;"></i><em>28.09</em></div>
+      <div class="b"><u></u><i style="height: 56px;"></i><em></em></div>
+      <div class="b"><u></u><i style="height: 66px;"></i><em></em></div>
+      <div class="b"><u></u><i style="height: 42px;"></i><em>19.10</em></div>
+      <div class="b"><u></u><i style="height: 73px;"></i><em></em></div>
+      <div class="b"><u></u><i style="height: 63px;"></i><em></em></div>
+      <div class="b"><u></u><i style="height: 52px;"></i><em>9.11</em></div>
+      <div class="b"><u style="color: #1B2050;">23</u><i style="height: 80px;"></i><em></em></div>
+      <div class="b"><u style="color: #2C3480;">17</u><i style="height: 59px; background: #6C79E8;"></i><em style="color: #2C3480; font-weight: 700;">эта</em></div>
+    </div>
+  </section>
+
+  <!-- ДОСТИГНУТЫЕ ЦЕЛИ — как History-Goals.html, здесь свёрнуто до строки -->
+  <div style="margin: 18px 20px 8px; display: flex; align-items: center; gap: 8px;">
+    <svg width="13" height="13" style="color: #C99A1E;"><use href="#crown"/></svg>
+    <span class="label">Достигнутые цели · 1</span><span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span>
+  </div>
+  <a href="History-Goals.html" style="margin: 0 16px; display: block; border-radius: 24px; background: linear-gradient(135deg, #14183C 0%, #2B3592 100%); box-shadow: 0 6px 18px rgba(20,24,60,0.18); padding: 14px 18px; color: #FFFFFF;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <svg width="20" height="20" style="color: #FFC94D;"><use href="#crown"/></svg>
+      <span style="flex-grow: 1; font-size: 16px; font-weight: 700;">Голос, который работает без сети</span>
+      <span style="font-size: 12px; font-weight: 700; color: #7FD1A8;">21.11</span>
+    </div>
+    <div style="margin-top: 4px; font-size: 12.5px; font-weight: 600; color: #D6DBFF;"><span class="U" style="color: #7FD1A8; font-size: 14px;">5</span> задач закрыто · <span class="U" style="font-size: 14px;">12</span> дней от начала</div>
+  </a>
+
+  <div style="margin: 18px 20px 8px; display: flex; align-items: center; gap: 8px;"><span class="label">По неделям</span><span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span></div>
+
+  <!-- неделя без пересмотра: строка 52 -->
+  <div class="wrow num">
+    <span style="font-size: 14px; font-weight: 600; color: #3A3C5C;">23.11 – 29.11</span>
+    <span style="flex-grow: 1;"></span>
+    <span style="font-size: 13px; font-weight: 600; color: #61637E;">17 закрыто</span>
+    <span style="font-size: 12.5px; font-weight: 500; color: #61637E;">· идёт</span>
+  </div>
+
+  <!-- неделя с пересмотром: карточка; итог цитатой (полоса 3 #14183C), проекты полосками, достигнутые цели -->
+  <div class="wk">
+    <div style="display: flex; align-items: baseline; gap: 8px;" class="num">
+      <span style="font-size: 15px; font-weight: 700;">16.11 – 22.11</span>
+      <span style="flex-grow: 1;"></span>
+      <span class="U" style="font-size: 17px; font-weight: 700; color: #2A6B4E;">23</span><span style="font-size: 12px; font-weight: 600; color: #61637E;">закрыто</span>
+    </div>
+    <div style="margin-top: 4px; font-size: 12px; font-weight: 600; color: #61637E; display: flex; align-items: center; gap: 5px;"><svg width="13" height="13"><use href="#review"/></svg>пересмотр пн 16.11 · за 9–16.11: 15</div>
+    <div style="margin-top: 10px; border-left: 3px solid #14183C; padding-left: 10px; font-size: 15px; font-weight: 500; line-height: 1.35; color: #3A3C5C;">Стенды почти собраны, дом стоял. Голос без сети — готов.</div>
+    <div style="margin-top: 10px;" class="num">
+      <div class="pr"><span>Стенды</span><i style="width: 120px;"></i><b>8</b></div>
+      <div class="pr"><span>Админка</span><i style="width: 60px;"></i><b>4</b></div>
+      <div class="pr"><span>Дом</span><i style="width: 30px;"></i><b>2</b></div>
+    </div>
+    <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600;"><svg width="13" height="13" style="color: #C99A1E;"><use href="#crown"/></svg>Голос, который работает без сети</div>
+  </div>
+  <nav class="nav">
+    <a class="ni" href="Main.html"><svg width="21" height="21"><use href="#plan"/></svg>План</a>
+    <a class="ni" href="Focus-Today.html"><svg width="21" height="21"><use href="#work"/></svg>Работа</a>
+    <a class="ni on" href="History-Done.html"><svg width="21" height="21"><use href="#hist"/></svg>История<span class="badge-dot"></span></a>
+    <a class="nv" href="Dictate.html"><svg width="22" height="22"><use href="#mic"/></svg>Голос</a>
+  </nav>
+</div>
+<p class="cap"><b>«Недели»</b>: 12 недельных столбиков (тап — к записи недели), достигнутые цели (как <a href="History-Goals.html">History-Goals.html</a>), записи по неделям. Неделя без пересмотра — строка; с пересмотром — карточка: итог, проекты, цели. «Висит дольше всего» и дневной график убраны.</p>
+</div>
+
+<div>
+<div class="phone" style="padding-top: 8px;">
+  <div style="margin: 10px 20px 8px; display: flex; align-items: center; gap: 8px;"><span class="label">По неделям · ниже</span><span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span></div>
+  <div class="wrow num">
+    <span style="font-size: 14px; font-weight: 600; color: #3A3C5C;">9.11 – 15.11</span>
+    <span style="flex-grow: 1;"></span>
+    <span style="font-size: 13px; font-weight: 600; color: #61637E;">15 закрыто</span>
+    <span style="font-size: 12.5px; font-weight: 500; color: #61637E;">· без пересмотра</span>
+  </div>
+  <!-- месячная запись: бейдж «месяц» 22 r 11 #E6E8F7 / #2C3480 -->
+  <div class="wk">
+    <div style="display: flex; align-items: center; gap: 8px;" class="num">
+      <span style="font-size: 15px; font-weight: 700;">2.11 – 8.11</span>
+      <span style="height: 22px; padding: 0 8px; border-radius: 11px; background: #E6E8F7; color: #2C3480; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center;">месяц</span>
+      <span style="flex-grow: 1;"></span>
+      <span class="U" style="font-size: 17px; font-weight: 700; color: #2A6B4E;">18</span><span style="font-size: 12px; font-weight: 600; color: #61637E;">закрыто</span>
+    </div>
+    <div style="margin-top: 4px; font-size: 12px; font-weight: 600; color: #61637E; display: flex; align-items: center; gap: 5px;"><svg width="13" height="13"><use href="#review"/></svg>пересмотр пн 2.11 · за октябрь: 64</div>
+    <div style="margin-top: 10px; border-left: 3px solid #14183C; padding-left: 10px; font-size: 15px; font-weight: 500; line-height: 1.35; color: #3A3C5C;">Октябрь: запустили стенды, голос заработал на телефоне.</div>
+    <div style="margin-top: 10px;" class="num">
+      <div class="pr"><span>Стенды</span><i style="width: 120px;"></i><b>26</b></div>
+      <div class="pr"><span>TaskRadar</span><i style="width: 88px;"></i><b>19</b></div>
+      <div class="pr"><span>Админка</span><i style="width: 46px;"></i><b>10</b></div>
+      <div class="pr"><span>Дом</span><i style="width: 32px;"></i><b>7</b></div>
+    </div>
+    <button style="margin-top: 4px; height: 36px; border: none; background: transparent; padding: 0; font-size: 13px; font-weight: 700; color: #3F4AA8;">Ещё 2 проекта</button>
+  </div>
+  <div class="wrow num">
+    <span style="font-size: 14px; font-weight: 600; color: #3A3C5C;">26.10 – 1.11</span>
+    <span style="flex-grow: 1;"></span>
+    <span style="font-size: 13px; font-weight: 600; color: #61637E;">21 закрыто</span>
+    <span style="font-size: 12.5px; font-weight: 500; color: #61637E;">· без пересмотра</span>
+  </div>
+  <div class="wrow num">
+    <span style="font-size: 14px; font-weight: 600; color: #3A3C5C;">28.09 – 4.10</span>
+    <span style="flex-grow: 1;"></span>
+    <span style="font-size: 13px; font-weight: 600; color: #61637E;">0 закрыто</span>
+    <span style="font-size: 12.5px; font-weight: 500; color: #61637E;">· без пересмотра</span>
+  </div>
+  <nav class="nav">
+    <a class="ni"><svg width="21" height="21"><use href="#plan"/></svg>План</a>
+    <a class="ni"><svg width="21" height="21"><use href="#work"/></svg>Работа</a>
+    <a class="ni on"><svg width="21" height="21"><use href="#hist"/></svg>История<span class="badge-dot"></span></a>
+    <a class="nv"><svg width="22" height="22"><use href="#mic"/></svg>Голос</a>
+  </nav>
+</div>
+<p class="cap">Ниже по ленте: месячная запись (бейдж «месяц», числа за прошлый месяц, «Ещё 2 проекта» раскрывает на месте), недели без пересмотра — строками. «Путемер» — этот ряд.</p>
+</div>
+
+</div>
+
+</body>
+</html>
