@@ -375,6 +375,32 @@ void main() {
       );
       expect(result.map((g) => g.id), <String>['g1', 'g2']);
     });
+
+    // The goal block's steps, left out of the work screen's list
+    // (owner, 26.11: a block task is in work in the block only).
+    test('goalBlockStepIds: running slots of the active contour only', () {
+      expect(
+        goalBlockStepIds(
+          activeContourId: 'work',
+          goals: <GoalView>[
+            goal('g1'),
+            goal('g2', stepId: 's2'),
+            goal('g3', stepId: null),
+            goal('g4', stepId: 's4', state: GoalState.bench),
+            goal('g5', stepId: 's5', contourId: 'home'),
+            goal('g6', stepId: 's6', expired: true),
+          ],
+        ),
+        <String>{'s1', 's2'},
+      );
+    });
+
+    test('goalBlockStepIds: nothing while contours are unknown', () {
+      expect(
+        goalBlockStepIds(activeContourId: null, goals: <GoalView>[goal('g1')]),
+        isEmpty,
+      );
+    });
   });
 
   group('window labels', () {

@@ -260,6 +260,32 @@ List<GoalView> duelGoals({
   ];
 }
 
+// -- Goal block steps ---------------------------------------------------------
+
+/// The tasks the goal block of the work mode shows as its steps: the next
+/// step of each goal of [activeContourId] that is in a slot with a running
+/// window (an expired window hides its step until the owner decides).
+///
+/// A task here that is also in the active set is shown in the block with the
+/// «в работе» chip, and **only** there: the work screen leaves it out of its
+/// own list (owner, 26.11: «задачи из блока не должны быть одновременно в
+/// работе и открытыми … и не показываться на общем экране в работе»). No
+/// active contour known -- no block, so nothing is left out.
+Set<String> goalBlockStepIds({
+  required String? activeContourId,
+  required List<GoalView> goals,
+}) {
+  if (activeContourId == null) return const <String>{};
+  return <String>{
+    for (final goal in goals)
+      if (goal.contourId == activeContourId &&
+          goal.inSlot &&
+          !goal.windowExpired &&
+          goal.nextStep != null)
+        goal.nextStep!.id,
+  };
+}
+
 // -- Window -------------------------------------------------------------------
 
 /// The end of a running window: «ещё 3 д», «ещё 1 д», and in the last day

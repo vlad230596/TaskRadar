@@ -63,17 +63,26 @@ class WorkScreen extends ConsumerWidget {
     // The active contour's set (`design/goals-ideas-contract.md`: each
     // contour keeps its own); every set at once while contours are unknown.
     final set = ref.watch(activeFocusSetProvider);
+    final blockSteps = watchGoalBlockStepIds(ref);
+    final goalsHeader = isWideLayout(context)
+        ? const Padding(
+            padding: EdgeInsets.fromLTRB(40, 0, 40, 0),
+            child: WorkGoalsStrip(),
+          )
+        : const WorkGoals();
 
     final Widget body = switch (set) {
       AsyncData(:final value) when value.isEmpty => _NoSet(
-        header: isWideLayout(context)
-            ? const Padding(
-                padding: EdgeInsets.fromLTRB(40, 0, 40, 0),
-                child: WorkGoalsStrip(),
-              )
-            : const WorkGoals(),
+        header: goalsHeader,
       ),
-      AsyncData(:final value) => _Set(tasks: value),
+      // Everything in the set is a goal step: it is in work in the block,
+      // and the list under it has nothing of its own.
+      AsyncData(:final value)
+          when shownOnWorkList(value, blockSteps).isEmpty =>
+        _OnlyGoalSteps(header: goalsHeader),
+      AsyncData(:final value) => _Set(
+        tasks: shownOnWorkList(value, blockSteps),
+      ),
       AsyncError(:final error) => _Failed(error: error),
       _ => const _Filler(
         title: 'Загружаем набор…',
@@ -115,6 +124,10 @@ class WorkHeader extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final tasks =
         ref.watch(activeFocusSetProvider).value ?? const <FocusTask>[];
+    // The dots count the whole set (the rule of five is about the set), and
+    // the current one is the big card -- which is never a goal step.
+    final shown = shownOnWorkList(tasks, watchGoalBlockStepIds(ref));
+    final current = shown.isEmpty ? null : _headOf(shown).id;
     final wide = isWideLayout(context);
     final switcher = showContourSwitcher(ref);
 
@@ -154,9 +167,11 @@ class WorkHeader extends ConsumerWidget {
                         constraints: BoxConstraints(maxWidth: room),
                         child: FocusSlots(
                           taken: tasks.length,
-                          current: tasks.indexWhere(
-                            (task) => task.id == _headOf(tasks).id,
-                          ),
+                          current: current == null
+                              ? null
+                              : tasks.indexWhere(
+                                  (task) => task.id == current,
+                                ),
                           size: wide ? 12 : 11,
                           gap: wide ? 7 : 6,
                         ),
@@ -913,6 +928,35 @@ class _NoSet extends StatelessWidget {
   }
 }
 
+/// The set holds only steps of the goal block: they are in work up in the
+/// block, and the list has nothing else -- not «Набор пуст», which would be
+/// untrue.
+class _OnlyGoalSteps extends StatelessWidget {
+  const _OnlyGoalSteps({required this.header});
+
+  final Widget header;
+
+  @override
+  Widget build(BuildContext context) {
+    return _Filler(
+      header: header,
+      icon: Icons.adjust,
+      title: 'В работе — шаги целей',
+      body:
+          'Они в блоке целей выше. Кроме них в наборе ничего нет — '
+          'добавьте задачи на экране проектов или сразу здесь.',
+      action: SizedBox(
+        height: Targets.row,
+        child: OutlinedButton.icon(
+          onPressed: () => openPickScreen(context),
+          icon: const Icon(Icons.playlist_add_check, size: 20),
+          label: const Text('Набор'),
+        ),
+      ),
+    );
+  }
+}
+
 class _Failed extends ConsumerWidget {
   const _Failed({required this.error});
 
@@ -962,6 +1006,31 @@ void _drop(BuildContext context, WidgetRef ref, FocusTask task) {
       failure: 'Не удалось убрать задачу из набора.',
     ),
   );
+}
+
+/// The ids of the goal steps the block shows (see [goalBlockStepIds]).
+Set<String> watchGoalBlockStepIds(WidgetRef ref) => goalBlockStepIds(
+  activeContourId: ref.watch(activeContourIdProvider),
+  goals: ref.watch(goalListProvider),
+);
+
+/// The set as the work screen lists it: without the goal steps of the block.
+///
+/// A step taken from the goal block is in work *in the block* -- its «в
+/// работе» chip is its state there -- and is not listed a second time as the
+/// big card or under «Дальше» (owner, 26.11: «задачи из блока … должны
+/// уходить в свой статус в блоке и не показываться на общем экране в
+/// работе»). Once the step is done or blocked it stops being the goal's next
+/// step and, if still in the set, comes back to the list.
+List<FocusTask> shownOnWorkList(
+  List<FocusTask> set,
+  Set<String> blockStepIds,
+) {
+  if (blockStepIds.isEmpty) return set;
+  return <FocusTask>[
+    for (final task in set)
+      if (!blockStepIds.contains(task.id)) task,
+  ];
 }
 
 /// Первая задача набора, которой можно заняться. См. заметку у [WorkScreen].

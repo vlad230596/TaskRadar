@@ -176,10 +176,80 @@ void main() {
       await settle(tester);
 
       expect(fake.writes, contains('PUT /contours/active c_home'));
-      // In «Личное»'s set, and its goal's step (already «в работе»).
-      expect(find.text('Купить лампочки'), findsNWidgets(2));
+      // In «Личное»'s set, as its goal's step: «в работе» in the block only,
+      // not listed again under it.
+      expect(find.text('Купить лампочки'), findsOneWidget);
       expect(find.text('в работе'), findsOneWidget);
+      expect(find.text('В работе — шаги целей'), findsOneWidget);
       expect(find.text('Шаги целей в виджете'), findsNothing);
+    });
+  });
+
+  // Owner, 26.11: a task from the block is not «in work» and «open» at once;
+  // it is in work in the block and is not listed on the work screen.
+  group('a step taken from the block', () {
+    testWidgets('is in work in the block only, the rest of the set stays', (
+      tester,
+    ) async {
+      fake = FakeGoalsBackend(twoContours: false)
+        ..addGoal('g1', 'Цель', taskIds: <String>['t1', 't2'])
+        ..focused['t4'] = 'c_work';
+      await pump(tester, work);
+
+      expect(find.text('Спроектировать экран целей'), findsOneWidget);
+      expect(find.text('Купить лампочки'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Взять шаг в работу'));
+      await settle(tester);
+
+      expect(fake.writes, contains('POST /tasks/t1/focus c_work'));
+      // Once: the block's step with «в работе», not the big card too.
+      expect(find.text('Спроектировать экран целей'), findsOneWidget);
+      expect(find.text('в работе'), findsOneWidget);
+      // The task outside the goal is the big card.
+      expect(find.text('Купить лампочки'), findsOneWidget);
+      expect(find.text('Сделано'), findsOneWidget);
+    });
+
+    testWidgets('a set of goal steps only: no «Набор пуст», no card', (
+      tester,
+    ) async {
+      fake = FakeGoalsBackend(twoContours: false)
+        ..addGoal('g1', 'Цель', taskIds: <String>['t1'])
+        ..focused['t1'] = 'c_work';
+      await pump(tester, work);
+
+      expect(find.text('Спроектировать экран целей'), findsOneWidget);
+      expect(find.text('в работе'), findsOneWidget);
+      expect(find.text('В работе — шаги целей'), findsOneWidget);
+      expect(find.text('Набор пуст'), findsNothing);
+      expect(find.text('Сделано'), findsNothing);
+    });
+
+    testWidgets('an expired window hides the step: the set lists it', (
+      tester,
+    ) async {
+      fake = FakeGoalsBackend(twoContours: false)
+        ..addGoal('g1', 'Цель', taskIds: <String>['t1'], expired: true)
+        ..focused['t1'] = 'c_work';
+      await pump(tester, work);
+
+      expect(find.text('ШАГ'), findsNothing);
+      expect(find.text('Спроектировать экран целей'), findsOneWidget);
+      expect(find.text('Сделано'), findsOneWidget);
+    });
+
+    testWidgets('a goal task that is not the step is listed as usual', (
+      tester,
+    ) async {
+      fake = FakeGoalsBackend(twoContours: false)
+        ..addGoal('g1', 'Цель', taskIds: <String>['t1', 't2'])
+        ..focused['t2'] = 'c_work';
+      await pump(tester, work);
+
+      // t1 is the step (open, «в работу»); t2 is in the set, listed.
+      expect(find.byTooltip('Взять шаг в работу'), findsOneWidget);
+      expect(find.text('Сделано'), findsOneWidget);
     });
   });
 
