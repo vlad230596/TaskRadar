@@ -220,3 +220,132 @@ describe("the goals migration", () => {
     expect(tasks.rows).toHaveLength(1);
   });
 });
+
+/*
+ * «Сегодня», История, пересмотр и ритм (20261127090000): the database as it
+ * stood before, with a journal that already holds closings taken back by a
+ * plain status change, then taken through the migration.
+ */
+describe("the today/history migration", () => {
+  const TODAY = "20261127090000_today_history_review";
+  let pg: PGlite;
+
+  beforeAll(async () => {
+    pg = new PGlite();
+    const names = readdirSync(migrationsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(names).toContain(TODAY);
+    const apply = async (name: string) =>
+      pg.exec(readFileSync(join(migrationsDir, name, "migration.sql"), "utf8"));
+    for (const name of names.filter((n) => n < TODAY)) await apply(name);
+
+    await pg.query(
+      `INSERT INTO scopes (id, name, position, "userId", "updatedAt") VALUES ('s', 's', 1, 'owner', now())`,
+    );
+    await pg.query(
+      `INSERT INTO projects (id, name, "scopeId", "updatedAt") VALUES ('p', 'p', 's', now())`,
+    );
+    // closed-twice: closed, taken to blocked, closed again -- done now.
+    // reopened: closed, then taken back to pending -- not done.
+    // born-done: created as done, no closing in the journal.
+    // open: never closed.
+    await pg.query(
+      `INSERT INTO tasks (id, "projectId", title, position, status, "updatedAt") VALUES
+       ('closed-twice', 'p', 't', 1, 'done', '2026-11-20T12:00:00Z'),
+       ('reopened', 'p', 't', 2, 'pending', '2026-11-21T12:00:00Z'),
+       ('born-done', 'p', 't', 3, 'done', '2026-11-22T12:00:00Z'),
+       ('open', 'p', 't', 4, 'pending', '2026-11-22T12:00:00Z')`,
+    );
+    await pg.query(
+      `INSERT INTO task_events (id, "taskId", kind, "fromStatus", "toStatus", at) VALUES
+       ('e1', 'closed-twice', 'status', 'pending', 'done', '2026-11-18T10:00:00Z'),
+       ('e2', 'closed-twice', 'status', 'done', 'blocked', '2026-11-18T11:00:00Z'),
+       ('e3', 'closed-twice', 'status', 'blocked', 'done', '2026-11-19T10:00:00Z'),
+       ('e4', 'reopened', 'status', 'pending', 'done', '2026-11-18T10:00:00Z'),
+       ('e5', 'reopened', 'status', 'done', 'pending', '2026-11-18T12:00:00Z')`,
+    );
+
+    for (const name of names.filter((n) => n >= TODAY)) await apply(name);
+  }, 60_000);
+
+  afterAll(async () => {
+    await pg?.close();
+  });
+
+  it("revokes every closing a later status change took back, and only those", async () => {
+    // As text: a `timestamp` column comes back read in the test machine's zone.
+    const rows = await pg.query<{ id: string; revoked: string | null }>(
+      `SELECT id, to_char("revokedAt", 'YYYY-MM-DD HH24:MI') AS revoked
+       FROM task_events WHERE "toStatus" = 'done' ORDER BY id`,
+    );
+    expect(rows.rows.map((r) => [r.id, r.revoked])).toEqual([
+      ["e1", "2026-11-18 11:00"],
+      ["e3", null],
+      ["e4", "2026-11-18 12:00"],
+    ]);
+  });
+
+  it("stamps doneAt from the closing that counts, else updatedAt; open tasks stay null", async () => {
+    const rows = await pg.query<{ id: string; done: string | null }>(
+      `SELECT id, to_char("doneAt", 'YYYY-MM-DD HH24:MI') AS done FROM tasks ORDER BY id`,
+    );
+    expect(rows.rows.map((r) => [r.id, r.done])).toEqual([
+      ["born-done", "2026-11-22 12:00"],
+      ["closed-twice", "2026-11-19 10:00"],
+      ["open", null],
+      ["reopened", null],
+    ]);
+  });
+
+  it("gives users the default settings and holds them to the API's bounds", async () => {
+    const user = await pg.query<Record<string, unknown>>(
+      `SELECT "laterHorizonDays", "reviewWeekday", "reviewTime" FROM users WHERE id = 'owner'`,
+    );
+    expect(user.rows[0]).toEqual({ laterHorizonDays: 10, reviewWeekday: 1, reviewTime: "09:00" });
+    await expect(pg.query(`UPDATE users SET "laterHorizonDays" = 0`)).rejects.toThrow(
+      /users_later_horizon_range/,
+    );
+    await expect(pg.query(`UPDATE users SET "reviewWeekday" = 8`)).rejects.toThrow(
+      /users_review_weekday_range/,
+    );
+    await expect(pg.query(`UPDATE users SET "reviewTime" = '9:00'`)).rejects.toThrow(
+      /users_review_time_format/,
+    );
+    await expect(pg.query(`UPDATE projects SET "rhythmMaxOpen" = 501`)).rejects.toThrow(
+      /projects_rhythm_open_range/,
+    );
+    await expect(pg.query(`UPDATE projects SET "rhythmClosedPerWeek" = 0`)).rejects.toThrow(
+      /projects_rhythm_closed_range/,
+    );
+    await pg.query(`UPDATE projects SET "rhythmClosedPerWeek" = NULL, "rhythmMaxOpen" = 20`);
+  });
+
+  it("keeps reviews per user, with a summary of at most 300 characters", async () => {
+    const insert = (id: string, summary: string | null) =>
+      pg.query(
+        `INSERT INTO reviews (id, "userId", "periodStart", "periodEnd", "closedCount", "byProject", "achievedGoals", summary)
+         VALUES ($1, 'owner', now() - interval '7 days', now(), 0, '[]', '[]', $2)`,
+        [id, summary],
+      );
+    await insert("r1", "Неделя ушла на переезд");
+    await expect(insert("r2", "x".repeat(301))).rejects.toThrow(/reviews_summary_length/);
+    const rows = await pg.query<{ monthly: boolean }>(`SELECT monthly FROM reviews`);
+    expect(rows.rows).toEqual([{ monthly: false }]);
+  });
+
+  it("accepts a reopened event and a working set's contour on the journal", async () => {
+    await pg.query(
+      `INSERT INTO task_events (id, "taskId", kind, "fromStatus", "toStatus", "contourId")
+       VALUES ('e6', 'closed-twice', 'reopened', 'done', 'blocked', 'contour_owner')`,
+    );
+    // A deleted contour leaves the row, without the contour.
+    await pg.query(`UPDATE users SET "activeContourId" = NULL`);
+    await pg.query(`DELETE FROM contours WHERE id = 'contour_owner'`);
+    const row = await pg.query<{ contourId: string | null }>(
+      `SELECT "contourId" FROM task_events WHERE id = 'e6'`,
+    );
+    expect(row.rows).toEqual([{ contourId: null }]);
+  });
+});

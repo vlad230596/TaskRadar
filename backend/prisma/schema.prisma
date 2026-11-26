@@ -42,11 +42,18 @@ enum TaskStatus {
 /// changes because a wording was corrected — and recording them would turn a
 /// journal that is read on every history screen into an edit log nobody asks a
 /// question of.
+///
+/// `reopened` (design/today-history-contract.md): «Вернуть» on a closed task --
+/// `fromStatus` done, `toStatus` the status it had before the closing. Its own
+/// kind rather than a plain `status` row, because the journal in the editor
+/// says «возвращена», and because the closing it undoes is marked
+/// (`TaskEvent.revokedAt`) rather than left to be counted.
 enum TaskEventKind {
   created
   status
   focused
   unfocused
+  reopened
 }
 
 /// A person who can log in (multi-user).
@@ -91,6 +98,19 @@ model User {
   activeContour      Contour?  @relation("UserActiveContour", fields: [activeContourId], references: [id], onDelete: SetNull)
   activeContourUntil DateTime?
 
+  /// The owner's settings that every device shares
+  /// (design/today-history-contract.md), bounded by CHECK constraints in the
+  /// migration (20261127090000_today_history_review):
+  ///
+  /// - `laterHorizonDays` (1..90): a task dated further out than today plus
+  ///   this many days is «Позже» -- folded at the bottom of its project, and
+  ///   skipped when the current task and a goal's next step are chosen;
+  /// - `reviewWeekday` (1 = Monday .. 7) and `reviewTime` ("HH:MM", the
+  ///   owner's wall clock): when the weekly review falls due.
+  laterHorizonDays Int    @default(10)
+  reviewWeekday    Int    @default(1)
+  reviewTime       String @default("09:00")
+
   scopes          Scope[]
   inboxItems      InboxItem[]
   dictationParses DictationParse[]
@@ -98,6 +118,7 @@ model User {
   agentTokens     AgentToken[]
   contours        Contour[]        @relation("UserContours")
   goals           Goal[]
+  reviews         Review[]
 
   @@map("users")
 }
@@ -147,7 +168,8 @@ model Contour {
 
   goals        Goal[]
   focusedTasks Task[]
-  activeFor    User[] @relation("UserActiveContour")
+  activeFor    User[]      @relation("UserActiveContour")
+  taskEvents   TaskEvent[]
 
   @@index([userId, position])
   @@map("contours")
@@ -256,6 +278,40 @@ model GoalIdea {
 ///
 /// Revoked rather than deleted: a revoked token never authenticates again and
 /// leaves the list, but the row stays as a record that it existed.
+/// One weekly review, as it was finished (design/today-history-contract.md):
+/// the period it covered and the numbers of that period, frozen. The row of
+/// these is the «путемер» on the «Недели» tab.
+///
+/// Numbers are stored rather than recomputed on read: a task deleted or moved
+/// to another project later must not rewrite what the owner saw and wrote a
+/// summary about. The review itself acts through the ordinary routes (tasks,
+/// focus, goals, projects); this row only records the result.
+///
+/// `periodStart` is the previous review's `periodEnd` (or a week before this
+/// one's for the first), so consecutive reviews tile time with no gaps:
+/// a skipped week is simply covered by the next review. `summary` is at most
+/// 300 characters (a CHECK in 20261127090000_today_history_review).
+model Review {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  periodStart   DateTime
+  periodEnd     DateTime
+  /// The first review in a new calendar month (by the local date of
+  /// `periodEnd`): it also showed the past month.
+  monthly       Boolean  @default(false)
+  closedCount   Int
+  /// `[{ projectId, name, closed }]`, most closed first.
+  byProject     Json
+  /// `[{ goalId, title }]`: goals achieved within the period.
+  achievedGoals Json
+  summary       String?
+  createdAt     DateTime @default(now())
+
+  @@index([userId, periodEnd])
+  @@map("reviews")
+}
+
 model AgentToken {
   id         String    @id @default(cuid())
   userId     String
@@ -325,8 +381,16 @@ model Project {
   scope   Scope  @relation(fields: [scopeId], references: [id], onDelete: Restrict)
 
   archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+
+  /// The project's rhythm (design/today-history-contract.md), opt-in: a norm
+  /// of closings per week (1..50), compared with the average of the last two
+  /// weeks, and a ceiling of open tasks (1..500). Both null: no rhythm. The
+  /// signal itself is computed, never stored -- src/domain/rhythm.ts.
+  rhythmClosedPerWeek Int?
+  rhythmMaxOpen       Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   tasks      Task[]
   notes      Note[]
@@ -396,6 +460,14 @@ model Task {
   focusContourId String?
   focusContour   Contour? @relation(fields: [focusContourId], references: [id], onDelete: SetNull)
 
+  /// When the task was closed (design/today-history-contract.md): set on the
+  /// way into `done`, cleared on the way out. Because leaving `done` also
+  /// revokes the closing in the journal (`TaskEvent.revokedAt`), a task's
+  /// `doneAt` is exactly its one closing that still counts -- so «Сделано»,
+  /// the week bars, the rhythm and the review all count closings from here,
+  /// and the list and the numbers cannot disagree.
+  doneAt DateTime?
+
   /// What AI processing started from (see src/domain/aiMark.ts): the words
   /// before the FIRST "Обработать", the kind of that first parse, and a
   /// snapshot of the fields as the last AI answer saved them -- the app
@@ -450,6 +522,7 @@ model Task {
   @@index([projectId, position])
   @@index([categoryId])
   @@index([focusContourId])
+  @@index([doneAt])
   // Per project, which is per user: a task has no userId of its own, a project
   // belongs to exactly one user, and a task changes project only within one
   // user's projects (`POST /tasks/:id/move`, which clears the key). So this
@@ -536,6 +609,21 @@ model TaskEvent {
   toStatus   TaskStatus?
 
   at DateTime @default(now())
+
+  /// `focused` / `unfocused`: whose working set the task entered or left
+  /// (design/today-history-contract.md) -- what «Вернуть» reads to put a
+  /// closed task back into the set it was taken out of. Null on rows from
+  /// before the column, and on a task that was in no contour's set (the
+  /// default contour's, then). `SetNull`: a deleted contour sends «Вернуть»
+  /// to the default one.
+  contourId String?
+  contour   Contour? @relation(fields: [contourId], references: [id], onDelete: SetNull)
+
+  /// On a `status` -> done row: when that closing was undone. Any way out of
+  /// `done` -- «Вернуть» or a plain status change -- revokes the task's last
+  /// closing that still counts: closed and changed one's mind is not a
+  /// closing. A revoked closing is counted nowhere.
+  revokedAt DateTime?
 
   /// The one access pattern that matters: a single task's journal, in order --
   /// both for the "life of this task" section and for replaying how long it
