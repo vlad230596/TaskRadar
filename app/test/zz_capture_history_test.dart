@@ -134,16 +134,40 @@ void main() {
     await settle(tester);
   }
 
-  testWidgets('History — неделя, долгожители, проекты', (tester) async {
-    await pump(tester, const ShellScreen());
+  testWidgets('History-Done — пересмотр пропущен, группы по дням', (
+    tester,
+  ) async {
+    history
+      ..done = history.sampleDone()
+      ..weeks = history.sampleWeeks()
+      ..status = <String, dynamic>{
+        'due': true,
+        'nextAt': history.iso(4),
+        'lastAt': history.iso(11),
+      };
+    await pump(tester, const ShellScreen(), w: 412, h: 915);
     await openHistory(tester);
-    await shot(tester, 'History');
+    expect(find.text('Пересмотр недели'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('review-due-dot')), findsWidgets);
+    await shot(tester, 'History-Done');
+  });
+
+  testWidgets('History-Weeks — 12 недель и записи', (tester) async {
+    history
+      ..done = history.sampleDone()
+      ..weeks = history.sampleWeeks();
+    await pump(tester, const ShellScreen(), w: 412, h: 915);
+    await openHistory(tester);
+    await tester.tap(find.text('Недели'));
+    await settle(tester);
+    expect(find.text('на этой неделе'), findsOneWidget);
+    await shot(tester, 'History-Weeks');
   });
 
   testWidgets('History — пусто, и это сказано словами', (tester) async {
-    history.history = history.emptyWeek();
-    await pump(tester, const ShellScreen());
+    await pump(tester, const ShellScreen(), w: 412, h: 915);
     await openHistory(tester);
+    expect(find.text('Пока ничего не закрыто'), findsOneWidget);
     await shot(tester, 'History-empty');
   });
 
@@ -152,10 +176,21 @@ void main() {
     await shot(tester, 'Edit-life');
   });
 
-  testWidgets('Desk-History — широкое окно', (tester) async {
+  testWidgets('Desk-History-Done — «Сделано» и «Недели» рядом', (
+    tester,
+  ) async {
+    history
+      ..done = history.sampleDone()
+      ..weeks = history.sampleWeeks()
+      ..status = <String, dynamic>{
+        'due': true,
+        'nextAt': history.iso(0.1),
+        'lastAt': history.iso(7),
+      };
     await pump(tester, const ShellScreen(), w: 1440, h: 900);
     await openHistory(tester);
-    await shot(tester, 'Desk-History');
+    expect(find.text('на этой неделе'), findsOneWidget);
+    await shot(tester, 'Desk-History-Done');
   });
 }
 

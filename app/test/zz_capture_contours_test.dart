@@ -42,10 +42,10 @@ void main() {
   setUp(() {
     backend = FakeBackend();
     history = FakeHistoryBackend(backend);
-    history.history = history.historyJson(
-      range: '30d',
-      closedByDay: <int>[1, 2, 0, 3, 1, 0, 2],
-    );
+    history
+      ..done = history.sampleDone()
+      ..weeks = history.sampleWeeks();
+    backend.on('GET', '/board', (match) => jsonResponse(const <dynamic>[]));
     final achieved = <Map<String, dynamic>>[
       <String, dynamic>{
         'id': 'g_voice',
@@ -190,6 +190,9 @@ void main() {
 
   testWidgets('History-Goals — достигнутые цели', (tester) async {
     await pump(tester, historyHome);
+    // On a phone the goals are on «Недели»; on a desktop both columns show.
+    await tester.tap(find.text('Недели'));
+    await settle(tester);
     expect(find.text('ДОСТИГНУТЫЕ ЦЕЛИ · 2'), findsOneWidget);
     await shot(tester, 'History-Goals');
   });

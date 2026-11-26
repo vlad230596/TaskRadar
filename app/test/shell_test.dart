@@ -27,13 +27,14 @@ void main() {
   setUp(() {
     backend = FakeBackend()..alwaysRespond(<dynamic>[]);
 
-    // Режим истории (F13) читает `GET /history`, и это объект, а не массив:
+    // Режим истории читает `/history/done` и `/reviews/status` — объекты:
     // общий «отвечай всем пустым списком» разобрался бы там в ошибку разбора.
     // Пустая сводка — как раз то, что оболочка показывает в этих тестах:
-    // «Итогов пока нет».
+    // «Пока ничего не закрыто».
     final canned = backend.responder!;
-    backend.responder = (options) => options.path.startsWith('/history')
-        ? jsonResponse(_emptyHistory())
+    backend.responder = (options) => options.path.startsWith('/history') ||
+            options.path.startsWith('/reviews')
+        ? jsonResponse(_emptyHistory(options.path))
         : canned(options);
 
     settings = FakeSettingsStore();
@@ -99,7 +100,7 @@ void main() {
       await tester.tap(find.text('История'));
       await settle(tester);
 
-      expect(find.text('Итогов пока нет'), findsOneWidget);
+      expect(find.text('Пока ничего не закрыто'), findsOneWidget);
       // The planning header is gone, not merely scrolled off: the modes replace
       // one another rather than stacking.
       expect(find.text('Планирование'), findsNothing);
@@ -141,7 +142,7 @@ void main() {
 
       await pumpShell(tester);
 
-      expect(find.text('Итогов пока нет'), findsOneWidget);
+      expect(find.text('Пока ничего не закрыто'), findsOneWidget);
     });
 
     testWidgets('a mode this build has never heard of lands on planning', (
@@ -195,7 +196,7 @@ void main() {
       // Режим работы с пустым набором (F13): он и есть то, что видно, когда
       // набор ещё не собран.
       expect(find.text('Набор пуст'), findsOneWidget);
-      expect(find.text('Итогов пока нет'), findsNothing);
+      expect(find.text('Пока ничего не закрыто'), findsNothing);
     });
 
     testWidgets('a store that cannot be written does not block the switch', (
@@ -210,7 +211,7 @@ void main() {
       await tester.tap(find.text('История'));
       await settle(tester);
 
-      expect(find.text('Итогов пока нет'), findsOneWidget);
+      expect(find.text('Пока ничего не закрыто'), findsOneWidget);
     });
   });
 
@@ -287,15 +288,13 @@ void main() {
 }
 
 /// Ответ `GET /history`, в котором ничего не происходило.
-Map<String, dynamic> _emptyHistory() => <String, dynamic>{
-  'range': '7d',
-  'from': null,
-  'to': DateTime.now().toUtc().toIso8601String(),
-  'closedByDay': <dynamic>[],
-  'closedTotal': 0,
-  'projects': <dynamic>[],
-  'stale': <dynamic>[],
-};
+/// An empty «Сделано» (`GET /history/done`), and the reviews' status --
+/// objects, not the arrays everything else is answered with.
+Object _emptyHistory(String path) => path.startsWith('/history/done')
+    ? <String, dynamic>{'items': <dynamic>[], 'nextBefore': null}
+    : path.startsWith('/reviews/status')
+    ? <String, dynamic>{'due': false, 'nextAt': null, 'lastAt': null}
+    : <String, dynamic>{'weeks': <dynamic>[]};
 
 class _ReadyModel extends VoiceModelInstallation {
   @override

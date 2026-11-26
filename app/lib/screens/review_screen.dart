@@ -633,6 +633,7 @@ class _ReviewFlowState extends ConsumerState<ReviewFlow> {
                   }
                 },
                 style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.transparent,
                   foregroundColor: AppColors.voiceBright,
                   side: const BorderSide(color: AppColors.voiceLine),
                   padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -802,7 +803,7 @@ class _ReviewFlowState extends ConsumerState<ReviewFlow> {
             _Segment<IntendedChoice>(
               values: IntendedChoice.values,
               labels: const <String>['Оставить', 'В стопку', 'Снять'],
-              selected: choice,
+              selected: _intended[task.id],
               onSelect: (next) => _applyIntended(item, next),
             ),
           ],
@@ -1712,6 +1713,9 @@ class _ReviewFlowState extends ConsumerState<ReviewFlow> {
               ),
               decoration: const InputDecoration(
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(vertical: 10),
                 filled: false,
                 counterText: '',
                 hintText: 'Например: дожал стенды, дом стоял',
@@ -1966,7 +1970,7 @@ class _Segment<T> extends StatelessWidget {
 
   final List<T> values;
   final List<String> labels;
-  final T selected;
+  final T? selected;
   final ValueChanged<T> onSelect;
 
   @override
@@ -2053,6 +2057,7 @@ class _DarkButton extends StatelessWidget {
           : OutlinedButton(
               onPressed: onPressed,
               style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.transparent,
                 foregroundColor: ink,
                 side: BorderSide(
                   color: ink == AppColors.voiceBright

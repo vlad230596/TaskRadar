@@ -594,13 +594,17 @@ class _DayGroupState extends State<_DayGroup> {
       children: <Widget>[
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
-          child: SizedBox(
-            height: 12 + 12,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 24),
             child: Row(
               children: <Widget>[
-                Text(
-                  '${widget.label.toUpperCase()} · ${items.length}',
-                  style: AppText.sectionLabel,
+                Flexible(
+                  child: Text(
+                    '${widget.label.toUpperCase()} · ${items.length}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppText.sectionLabel,
+                  ),
                 ),
                 const SizedBox(width: 8),
                 const Expanded(
@@ -939,13 +943,21 @@ class ReviewCard extends ConsumerWidget {
                   ),
                 ),
               ),
-              Text(
-                label,
-                style: TextStyle(
-                  fontFamily: AppFonts.text,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 12,
-                  color: missed ? AppColors.goalExpired : AppColors.voiceMuted,
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    fontFamily: AppFonts.text,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                    color: missed
+                        ? AppColors.goalExpired
+                        : AppColors.voiceMuted,
+                  ),
                 ),
               ),
             ],
@@ -1140,6 +1152,13 @@ String _mondayOf(String today) {
   return addDays(today, 1 - weekday);
 }
 
+/// The height a week's bar spends on its number, label and dot, at the
+/// current text size.
+double weekBarChrome(BuildContext context) {
+  final scaler = MediaQuery.textScalerOf(context);
+  return scaler.scale(10.5) * 1.3 + 4 + scaler.scale(11) * 1.45 + 8;
+}
+
 /// The summary card: this week's number, the average, 12 bars.
 class WeeksSummary extends StatelessWidget {
   const WeeksSummary({
@@ -1214,7 +1233,7 @@ class WeeksSummary extends StatelessWidget {
           const SizedBox(width: 16),
           Expanded(
             child: SizedBox(
-              height: wide ? 140 : 108,
+              height: math.max(wide ? 140.0 : 108.0, weekBarChrome(context) + 40),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: <Widget>[
@@ -1274,8 +1293,8 @@ class _WeekBar extends StatelessWidget {
         onTap: onTap,
         child: LayoutBuilder(
           builder: (context, box) {
-            const labelBox = 16.0;
-            const numberBox = 16.0;
+            final labelBox = MediaQuery.textScalerOf(context).scale(10.5) * 1.3 + 4;
+            final numberBox = MediaQuery.textScalerOf(context).scale(11) * 1.45;
             const dotBox = 8.0;
             final area = math.max(
               4.0,
@@ -1290,8 +1309,8 @@ class _WeekBar extends StatelessWidget {
                 SizedBox(
                   height: numberBox,
                   child: showNumber
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
+                      ? OverflowBox(
+                          maxWidth: 40,
                           child: Text('${week.closed}', style: AppText.weekNumber),
                         )
                       : null,
@@ -1309,9 +1328,12 @@ class _WeekBar extends StatelessWidget {
                 ),
                 SizedBox(
                   height: labelBox,
+                  // Wider than its bar: the label of every third week is
+                  // drawn across its neighbours' empty space, as in the
+                  // reference, never scaled down to fit one bar.
                   child: showLabel
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
+                      ? OverflowBox(
+                          maxWidth: 48,
                           child: Padding(
                             padding: const EdgeInsets.only(top: 3),
                             child: Text(
@@ -1382,8 +1404,8 @@ class _WeekPlain extends StatelessWidget {
               color: AppColors.inkSoft,
             ),
           ),
-          const Spacer(),
-          Flexible(
+          const SizedBox(width: 12),
+          Expanded(
             child: Text.rich(
               TextSpan(
                 children: <InlineSpan>[
@@ -1523,8 +1545,8 @@ class _WeekRecordState extends State<_WeekRecord> {
               ],
               if (shown.isNotEmpty) const SizedBox(height: 10),
               for (final project in shown)
-                SizedBox(
-                  height: 24,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 24),
                   child: Row(
                     children: <Widget>[
                       Expanded(

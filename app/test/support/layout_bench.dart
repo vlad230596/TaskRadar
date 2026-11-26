@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:taskradar/models/task_status.dart';
 import 'package:taskradar/navigation/app_routes.dart';
 import 'package:taskradar/providers/dependencies.dart';
 import 'package:taskradar/providers/reminder_providers.dart';
@@ -196,33 +195,46 @@ class LayoutBench {
       server.addInboxItem(text: _title(i * 5 + 1));
     }
 
-    history.history = history.historyJson(
-      closedByDay: const <int>[13, 0, 41, 2, 0, 128, 1],
-      stale: <Map<String, dynamic>>[
+    // «Сделано» and «Недели» at their worst: long titles and project names,
+    // three-digit weeks, a review due.
+    history
+      ..done = <Map<String, dynamic>>[
         for (var i = 0; i < 6; i++)
-          history.staleJson(
-            id: 'st$i',
+          history.doneJson(
+            id: 'dn$i',
             title: _title(i),
+            daysAgo: i ~/ 2,
             projectName: i.isEven
                 ? 'Ремонт квартиры на Профсоюзной улице после затопления'
                 : 'Дом',
-            status: i == 0 ? TaskStatus.blocked : TaskStatus.pending,
-            ageDays: 400 + i,
-            pendingDays: 300,
-            blockedDays: 100 + i,
-            focusedDaysAgo: i == 1 ? 2 : null,
           ),
-      ],
-      projects: <Map<String, dynamic>>[
-        history.projectMovementJson(
-          name: 'Ремонт квартиры на Профсоюзной улице после затопления',
-          opened: 123,
-          closed: 456,
-        ),
-        history.projectMovementJson(name: 'Дом', opened: 6, closed: 2),
-        history.projectMovementJson(name: 'Семья', opened: 1000, closed: 999),
-      ],
-    );
+      ]
+      ..weeks = <Map<String, dynamic>>[
+        for (var i = 0; i < 12; i++)
+          history.weekJson(
+            weeksAgo: i,
+            closed: i == 1 ? 456 : (i * 37) % 130,
+            byProject: <Map<String, dynamic>>[
+              history.projectClosedJson(
+                'Ремонт квартиры на Профсоюзной улице после затопления',
+                123,
+              ),
+              history.projectClosedJson('Семья', 999),
+            ],
+            review: i == 1
+                ? history.reviewJson(
+                    closed: 456,
+                    summary: _title(3) * 3,
+                    monthly: true,
+                  )
+                : null,
+          ),
+      ]
+      ..status = <String, dynamic>{
+        'due': true,
+        'nextAt': history.iso(9),
+        'lastAt': history.iso(40),
+      };
   }
 
   /// Pumps [home] at [size] (logical px) with [textScale], settles it, and
