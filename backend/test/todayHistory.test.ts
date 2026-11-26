@@ -548,6 +548,31 @@ describe("reviews", () => {
     expect(review.achievedGoals).toEqual([{ goalId: "g-1", title: "Запустить TaskRadar" }]);
   });
 
+  it("answers a retry with the review it already recorded, taking a new summary", async () => {
+    vi.setSystemTime(at("2026-11-30T06:30:00Z"));
+    const first = await call("POST", "/reviews", { tzOffsetMinutes: MSK });
+    expect(first.statusCode).toBe(201);
+    vi.setSystemTime(at("2026-11-30T06:31:00Z"));
+    const retry = await call("POST", "/reviews", { summary: "Итог", tzOffsetMinutes: MSK });
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json()).toMatchObject({
+      id: (first.json() as Row).id,
+      periodStart: "2026-11-23T06:30:00.000Z",
+      periodEnd: "2026-11-30T06:30:00.000Z",
+      summary: "Итог",
+    });
+    // A retry without a summary keeps the one given.
+    const again = await call("POST", "/reviews", { tzOffsetMinutes: MSK });
+    expect(again.json()).toMatchObject({ id: (first.json() as Row).id, summary: "Итог" });
+    expect(fake.tables.review).toHaveLength(1);
+    // Ten minutes on, it is a new review again.
+    vi.setSystemTime(at("2026-11-30T06:41:00Z"));
+    expect((await call("POST", "/reviews", {})).statusCode).toBe(201);
+    expect(fake.tables.review).toHaveLength(2);
+    // B's retry window is B's own.
+    expect((await call("POST", "/reviews", {}, tokenB)).statusCode).toBe(201);
+  });
+
   it("refuses a summary longer than 300 characters", async () => {
     expect((await call("POST", "/reviews", { summary: "x".repeat(301) })).statusCode).toBe(400);
     expect(fake.tables.review).toEqual([]);

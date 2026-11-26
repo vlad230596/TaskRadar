@@ -146,7 +146,7 @@ jobs:
         # prefix looked like in production: both answered 404 from the edge for
         # a whole release.
         run: |
-          for path in /board /projects /scopes /inbox /auth/me /agent-tokens /attachments/x /link-preview; do
+          for path in /board /projects /scopes /inbox /auth/me /agent-tokens /attachments/x /link-preview /settings /today /reviews /reviews/status /history/done; do
             status="$(curl --silent --output /dev/null --write-out '%{http_code}' "$BASE_URL$path")"
             echo "$path -> $status"
             test "$status" = '401'

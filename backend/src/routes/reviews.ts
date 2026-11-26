@@ -45,6 +45,9 @@ export function reviewView(row: Review) {
 
 export type ReviewView = ReturnType<typeof reviewView>;
 
+/** A `POST /reviews` this soon after the last one is a retry of it, not a new review. */
+export const REVIEW_RETRY_MS = 10 * 60_000;
+
 function lastReviewOf(userId: string) {
   return prisma.review.findFirst({ where: { userId }, orderBy: { periodEnd: "desc" } });
 }
@@ -196,6 +199,21 @@ export async function reviewRoutes(app: FastifyInstance): Promise<void> {
     const body = createReviewSchema.parse(request.body);
     const now = new Date();
     const last = await lastReviewOf(userId);
+    /*
+     * A retry after a lost answer (or a double tap) must not record a second,
+     * minutes-long review: the newest review, finished within
+     * `REVIEW_RETRY_MS`, IS this review. It is answered 200 as it stands --
+     * with the summary replaced when the retry carries one -- and its period
+     * and numbers stay those of the first request.
+     */
+    if (last !== null && now.getTime() - last.createdAt.getTime() < REVIEW_RETRY_MS) {
+      const same =
+        body.summary !== null && body.summary !== last.summary
+          ? await prisma.review.update({ where: { id: last.id }, data: { summary: body.summary } })
+          : last;
+      reply.status(200).send(reviewView(same));
+      return;
+    }
     const period = reviewPeriod(last, now, body.tzOffsetMinutes);
     const [closed, achieved] = await Promise.all([
       prisma.task.findMany({
