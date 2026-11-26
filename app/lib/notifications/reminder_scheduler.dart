@@ -48,16 +48,40 @@ class ReminderScheduler {
 
   tz.Location get location => _location;
 
+  /// The sync that runs now or ran last; the next one starts after it.
+  Future<void> _tail = Future<void>.value();
+
   /// Makes the OS queue match [reminders].
   ///
   /// Never throws: a failed resync must not take down whatever triggered it (a
   /// board refresh, a lifecycle callback). The failure is reported in
   /// [ReminderSyncReport.error] and shown on the bench.
+  ///
+  /// ## One at a time
+  ///
+  /// Syncs run strictly one after another, in call order. Two at once used to
+  /// lose alarms: a blocker with a date is two writes back to back (the
+  /// status, then the day picked right after it), so a sync for the list
+  /// *without* the date was still waiting on the platform channel when the
+  /// sync *with* it armed the alarm -- and then the older one's sweep read the
+  /// queue, saw an alarm its list did not want and cancelled it. The reminder
+  /// stayed on the task and never fired. In order, the last call is the last
+  /// to touch the queue, so the queue ends as the latest list says.
   Future<ReminderSyncReport> sync({
     required Iterable<TaskReminder> reminders,
     ReminderTime at = ReminderTime.defaultMorning,
-  }) async {
+  }) {
     final requested = reminders.toList(growable: false);
+    final run = _tail.then((_) => _sync(requested, at));
+    // `_sync` never throws, so the chain never breaks.
+    _tail = run;
+    return run;
+  }
+
+  Future<ReminderSyncReport> _sync(
+    List<TaskReminder> requested,
+    ReminderTime at,
+  ) async {
 
     if (!_gateway.support.schedulesReminders) {
       return ReminderSyncReport(

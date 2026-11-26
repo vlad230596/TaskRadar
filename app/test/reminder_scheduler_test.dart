@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:taskradar/domain/reminder_schedule.dart';
 import 'package:taskradar/notifications/notification_gateway.dart';
@@ -52,6 +54,37 @@ void main() {
       );
       expect(report.scheduledCount, 2);
       expect(report.pending, hasLength(2));
+    });
+
+    test('an older sync still in flight cannot cancel a newer alarm', () async {
+      // A blocker with a date: the status write publishes the list without
+      // the date, the day picked a moment later publishes it with the date.
+      // The first sync is slow on the platform channel; when it finally
+      // sweeps, it must not take down the alarm the second one armed.
+      final scheduler = ReminderScheduler(
+        gateway: gateway,
+        location: moscow,
+        now: now,
+      );
+      final slow = Completer<void>();
+      gateway.permissionsGate = slow.future;
+
+      final first = scheduler.sync(reminders: const <TaskReminder>[]);
+      // Only the first one is slow.
+      gateway.permissionsGate = null;
+      final second = scheduler.sync(
+        reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
+      );
+      // Everything that can run without the first sync, runs.
+      await pumpEventQueue();
+
+      slow.complete();
+      await first;
+      final report = await second;
+
+      expect(gateway.queue.keys, <int>[notificationIdForTask('a')]);
+      expect(report.scheduledCount, 1);
+      expect(report.pending, hasLength(1));
     });
 
     test('a task that lost its reminder loses its alarm', () async {

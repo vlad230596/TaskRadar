@@ -127,8 +127,17 @@ class FakeNotificationGateway implements NotificationGateway {
     initializeCount++;
   }
 
+  /// When set, [permissions] waits for it -- a platform channel that is slow
+  /// to answer, so a test can start a second sync while the first is still
+  /// in flight.
+  Future<void>? permissionsGate;
+
   @override
-  Future<NotificationPermissionState> permissions() async => permissionState;
+  Future<NotificationPermissionState> permissions() async {
+    final gate = permissionsGate;
+    if (gate != null) await gate;
+    return permissionState;
+  }
 
   @override
   Future<NotificationPermissionState> requestPermissions() async =>
