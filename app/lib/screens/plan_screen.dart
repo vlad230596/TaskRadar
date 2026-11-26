@@ -5,6 +5,7 @@ import '../api/api_error_message.dart';
 import '../domain/project_badge.dart';
 import '../domain/project_summary.dart';
 import '../domain/task_age.dart';
+import '../models/project.dart';
 import '../models/board_project.dart';
 import '../domain/goals.dart';
 import '../models/scope.dart';
@@ -16,6 +17,8 @@ import '../providers/focus_providers.dart';
 import '../providers/goal_providers.dart';
 import '../navigation/goal_routes.dart';
 import 'goals_screen.dart' show goalGradient;
+import '../widgets/today/rhythm_sheet.dart';
+import '../widgets/today/today_icons.dart';
 import '../widgets/goals/contour_switcher.dart';
 import '../widgets/goals/crown.dart';
 import '../widgets/goals/goal_icons.dart';
@@ -1046,6 +1049,9 @@ class _ProjectRow extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(child: TaskDots(tasks: entry.tasks)),
+                  // «тишина 3 нед» / «перебор 24/20» before «0 / 6»
+                  // (today-history-spec §6.1): quiet, no fill.
+                  RhythmMark(rhythm: entry.project.rhythm),
                   OpenTaskCount(count: summary.openCount),
                   _NoteCount(count: entry.noteCount, gap: 12),
                 ],
@@ -1168,9 +1174,60 @@ class _ProjectTile extends StatelessWidget {
                     ),
                 ],
               ),
+              // The rhythm, as the tile's last line.
+              if (rhythmSignalText(entry.project.rhythm) != null) ...<Widget>[
+                const SizedBox(height: 6),
+                RhythmMark(
+                  rhythm: entry.project.rhythm,
+                  fontSize: 11.5,
+                  gap: 0,
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A project's rhythm signal on the plan (`design/today-history-spec.md`
+/// §6.1): the rhythm icon 13 and «тишина 3 нед» / «перебор 24/20», muted,
+/// with no fill and no border -- and not a button: a tap on it is a tap on
+/// the project. Nothing without a signal. Decisions about the rhythm are
+/// made on the review, where it is loud.
+class RhythmMark extends StatelessWidget {
+  const RhythmMark({
+    required this.rhythm,
+    this.fontSize = 12,
+    this.gap = 10,
+    super.key,
+  });
+
+  final ProjectRhythm? rhythm;
+  final double fontSize;
+
+  /// Space after the mark, before the counter it stands beside.
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = rhythmSignalText(rhythm);
+    if (text == null) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsets.only(left: gap == 0 ? 0 : 6, right: gap),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const TodayIcon(TodayGlyph.rhythm, size: 13, color: AppColors.muted),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            style: AppText.chip.copyWith(fontSize: fontSize),
+          ),
+        ],
       ),
     );
   }
