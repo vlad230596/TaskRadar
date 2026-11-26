@@ -29,11 +29,13 @@ import { fitTitle, titleLimitRules } from "./titleLimit";
  * only has to find the row. The reply is then checked here anyway -- a date in
  * the past or years away is dropped rather than trusted.
  *
- * WHY THE TIME IS RETURNED WHEN NOTHING STORES IT
+ * A DATE IS A DAY; A TIME ONLY WHEN A MOMENT IS NAMED
  *
- * Reminders have day granularity today (`app/lib/domain/reminders.dart`). The
- * time is extracted anyway because it costs nothing in the prompt, and a
- * client that learns to use it later should not need the server to change.
+ * The task's date means "when the owner will get to it"
+ * (design/today-history-contract.md): «сегодня», «завтра», «в четверг» are a
+ * day and nothing more. A time is set only when the words name a moment --
+ * «в 15:00», «к трём часам» -- because a timed task pushes a reminder at that
+ * minute, and a time the owner never said is a push nobody asked for.
  */
 
 export interface ParsedDictation {
@@ -175,6 +177,7 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
     .join("\n");
 
   const friday = nextWeekday(rows, "пятница");
+  const thursday = nextWeekday(rows, "четверг");
   const tomorrow = rows[1]!.date;
 
   const examples: { input: string; output: ParsedDictation }[] = [
@@ -199,12 +202,30 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
       },
     },
     {
-      input: "Отчёт по налогам, то есть декларацию. Завтра в десять напомни.",
+      input: "Отчёт по налогам, то есть декларацию, это на завтра.",
       output: {
         title: "Подготовить налоговую декларацию",
         description: null,
         remindDate: tomorrow,
-        remindTime: "10:00",
+        remindTime: null,
+      },
+    },
+    {
+      input: "Курьер приедет, встретить его в четверг в три часа дня.",
+      output: {
+        title: "Встретить курьера",
+        description: null,
+        remindDate: thursday,
+        remindTime: "15:00",
+      },
+    },
+    {
+      input: "Ответить Пете про отпуск, сегодня.",
+      output: {
+        title: "Ответить Пете про отпуск",
+        description: null,
+        remindDate: today,
+        remindTime: null,
       },
     },
     {
@@ -235,8 +256,8 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
     "Верни ОДИН JSON-объект с ключами:",
     '- "title": название задачи;',
     '- "description": описание или null;',
-    '- "remindDate": дата напоминания "YYYY-MM-DD" или null;',
-    '- "remindTime": время напоминания "HH:MM" или null.',
+    '- "remindDate": дата задачи "YYYY-MM-DD" (когда этим заняться) или null;',
+    '- "remindTime": время "HH:MM" — только если назван момент, иначе null.',
     "",
     "Название:",
     "- начинается с глагола в неопределённой форме: «Позвонить», «Купить», «Проверить», «Написать»;",
@@ -251,12 +272,13 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
     "",
     ...cleanupRules(input.level, { dates: false }),
     "",
-    "Напоминание:",
-    "- только если человек явно просит напомнить или вернуться к задаче в определённый день («напомни», «спросить в пятницу», «вернуться во вторник»);",
+    "Дата — день, когда человек займётся задачей:",
+    "- ставь, только если назван день: «сегодня», «завтра», «в четверг», «к пятнице», «напомни в пятницу», «вернуться во вторник»; иначе null;",
     "- дату бери ТОЛЬКО из календаря ниже, ничего не вычисляй сам;",
-    "- день недели («в пятницу») — ближайший такой день ПОСЛЕ сегодняшнего;",
-    "- время — только если названо явно, иначе null; без даты время не ставь;",
-    "- просьбу о напоминании в название и описание не переноси.",
+    "- день недели («в четверг», «к пятнице») — ближайший такой день ПОСЛЕ сегодняшнего;",
+    "- день — это только дата: «сегодня», «завтра», «в четверг» без названного момента дают remindTime null;",
+    "- время ставь, только если в речи назван момент: «в 15:00», «в три часа дня», «к трём часам», «в десять утра»; «утром», «вечером», «после обеда» — не момент;",
+    "- без даты время не ставь; слова о дате и времени в название и описание не переноси.",
     "",
     `Календарь (часовой пояс ${input.timeZone}):`,
     table,

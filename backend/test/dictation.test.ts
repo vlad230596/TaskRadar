@@ -120,6 +120,29 @@ describe("buildDictationMessages", () => {
     // would contradict the table and teach the model to copy it.
     expect(system.content).toContain('"remindDate":"2026-09-25"');
   });
+
+  /*
+   * The date is "when to get to it" (design/today-history-contract.md): a
+   * named day gives a date and no time; a time only where a moment is named.
+   */
+  it("teaches that a day alone is a date with no time", () => {
+    // «это на завтра» -> tomorrow, no time; «сегодня» -> today, no time.
+    expect(system.content).toContain(
+      '"title":"Подготовить налоговую декларацию","description":null,"remindDate":"2026-09-25","remindTime":null',
+    );
+    expect(system.content).toContain(
+      '"title":"Ответить Пете про отпуск","description":null,"remindDate":"2026-09-24","remindTime":null',
+    );
+    expect(system.content).toMatch(/«сегодня», «завтра», «в четверг» без названного момента дают remindTime null/);
+    // No example puts a time on a task whose words named none.
+    expect(system.content).not.toContain('"remindTime":"10:00"');
+  });
+
+  it("teaches a time only for a named moment", () => {
+    // Said on Thursday 24.09, «в четверг» is the next one, 1.10.
+    expect(system.content).toContain('"title":"Встретить курьера","description":null,"remindDate":"2026-10-01","remindTime":"15:00"');
+    expect(system.content).toMatch(/время ставь, только если в речи назван момент/);
+  });
 });
 
 describe("interpretModelReply", () => {
