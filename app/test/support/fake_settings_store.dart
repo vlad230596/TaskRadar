@@ -1,4 +1,3 @@
-import 'package:taskradar/domain/reminder_schedule.dart';
 import 'package:taskradar/storage/settings_store.dart';
 
 /// In-memory [SettingsStore].
@@ -9,11 +8,7 @@ import 'package:taskradar/storage/settings_store.dart';
 /// channel -- it leaks between tests in one file and cannot express a *failing*
 /// write, which the settings screen has to survive.
 class FakeSettingsStore implements SettingsStore {
-  FakeSettingsStore({this.time});
-
-  /// What [readReminderTime] returns. Null is "nothing saved yet", which is what
-  /// a first launch and an unreadable store look like alike.
-  ReminderTime? time;
+  FakeSettingsStore();
 
   /// What [readSelectedScopeId] returns (F7). Null is "no scope chosen yet",
   /// which is what a first launch looks like.
@@ -41,24 +36,9 @@ class FakeSettingsStore implements SettingsStore {
 
   int readCount = 0;
   int scopeClearCount = 0;
-  final List<ReminderTime> writes = <ReminderTime>[];
   final List<String> scopeWrites = <String>[];
   final List<String> modeWrites = <String>[];
   final List<String> layoutWrites = <String>[];
-
-  @override
-  Future<ReminderTime?> readReminderTime() async {
-    readCount++;
-    return time;
-  }
-
-  @override
-  Future<void> writeReminderTime(ReminderTime value) async {
-    final failure = writeFailure;
-    if (failure != null) throw failure;
-    writes.add(value);
-    time = value;
-  }
 
   @override
   Future<String?> readSelectedScopeId() async {

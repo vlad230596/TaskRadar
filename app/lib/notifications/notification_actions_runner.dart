@@ -20,7 +20,6 @@ import '../providers/outbox_providers.dart';
 import '../storage/board_snapshot_store.dart';
 import '../storage/capture_queue_store.dart' show PendingCapture;
 import '../storage/outbox_store.dart';
-import '../storage/settings_store.dart';
 import '../storage/token_storage.dart';
 import 'local_notification_gateway.dart';
 import 'notification_action_log.dart';
@@ -159,7 +158,6 @@ class HeadlessReminderActions {
     required OutboxStore outbox,
     required NotificationGateway gateway,
     required GeofenceStore geofences,
-    required SettingsStore settings,
     required Future<tz.Location> Function() location,
     NotificationActionLog? log,
   }) : _tokens = tokens,
@@ -168,7 +166,6 @@ class HeadlessReminderActions {
        _outbox = outbox,
        _gateway = gateway,
        _geofences = geofences,
-       _settings = settings,
        _location = location,
        _log = log;
 
@@ -180,7 +177,6 @@ class HeadlessReminderActions {
     outbox: OutboxStore(),
     gateway: LocalNotificationGateway(),
     geofences: FileGeofenceStore(),
-    settings: PreferencesSettingsStore(),
     location: () async => (await NotificationTimeZone.resolve()).location,
     log: FileNotificationActionLog(),
   );
@@ -191,7 +187,6 @@ class HeadlessReminderActions {
   final OutboxStore _outbox;
   final NotificationGateway _gateway;
   final GeofenceStore _geofences;
-  final SettingsStore _settings;
   final Future<tz.Location> Function() _location;
   final NotificationActionLog? _log;
 
@@ -354,12 +349,10 @@ class HeadlessReminderActions {
   ) async {
     try {
       final location = await _location();
-      final at =
-          await _settings.readReminderTime() ?? ReminderTime.defaultMorning;
+      // A date-only task does not push, postponed or not.
       final fireAt = reminderFireTime(
         remindAt: target.date,
         remindTime: target.time,
-        at: at,
         location: location,
         now: tz.TZDateTime.from(now, location),
       );

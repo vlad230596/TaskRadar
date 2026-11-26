@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/board_providers.dart';
 import '../providers/geofence_providers.dart';
+import '../providers/review_push_providers.dart';
 
 /// Keeps `boardReminderBridge` -- and through it `reminderSync` -- subscribed
 /// for as long as the signed-in half of the app exists, whatever is on screen.
@@ -36,6 +37,9 @@ class ReminderBridgeScope extends StatefulWidget {
 class _ReminderBridgeScopeState extends State<ReminderBridgeScope> {
   ProviderSubscription<void>? _bridge;
 
+  /// The weekly review's push, armed beside the task reminders.
+  ProviderSubscription<void>? _review;
+
   /// The same for place reminders (`boardGeofenceBridgeProvider`): the board
   /// that arms alarms also plans the geofences.
   ProviderSubscription<void>? _geofences;
@@ -51,6 +55,7 @@ class _ReminderBridgeScopeState extends State<ReminderBridgeScope> {
     super.initState();
     final container = ProviderScope.containerOf(context, listen: false);
     _bridge = container.listen<void>(boardReminderBridgeProvider, (_, _) {});
+    _review = container.listen<void>(reviewPushBridgeProvider, (_, _) {});
     if (container.read(geofenceGatewayProvider).supported) {
       _geofences = container.listen<void>(
         boardGeofenceBridgeProvider,
@@ -65,6 +70,7 @@ class _ReminderBridgeScopeState extends State<ReminderBridgeScope> {
   @override
   void dispose() {
     _bridge?.close();
+    _review?.close();
     _geofences?.close();
     _lifecycle?.dispose();
     super.dispose();

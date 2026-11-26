@@ -189,6 +189,7 @@ void main() {
             taskId: 'b',
             taskTitle: 'Жду кабель',
             remindAt: '2026-09-20T00:00:00.000Z',
+            remindTime: '09:00',
           ),
         ],
       );
@@ -542,7 +543,6 @@ void main() {
       outbox: outbox,
       gateway: gateway,
       geofences: geofences,
-      settings: FakeSettingsStore(time: const ReminderTime(8, 15)),
       location: () async => moscow,
       log: log,
     );
@@ -681,8 +681,8 @@ void main() {
       expect(armed.actions, dateReminderActions);
     });
 
-    test('«Завтра» on a day-only reminder fires at the settings hour, across a '
-        'year', () async {
+    test('«Завтра» on a day-only task moves the date and arms nothing -- a '
+        'date alone does not push', () async {
       final taskId = seed(remindAt: '2026-12-31T00:00:00.000Z');
       backend.failingPaths.add('/');
 
@@ -698,10 +698,7 @@ void main() {
       expect(outbox.entries.single.expected, <String, Object?>{
         'remindAt': '2026-12-31',
       });
-      expect(
-        gateway.queue[notificationIdForTask(taskId)]!.fireAt,
-        tz.TZDateTime(moscow, 2027, 1, 1, 8, 15),
-      );
+      expect(gateway.queue[notificationIdForTask(taskId)], isNull);
     });
 
     test('«Завтра» on a task already done changes nothing', () async {

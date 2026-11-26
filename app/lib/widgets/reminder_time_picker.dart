@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../domain/reminder_schedule.dart';
 import '../domain/reminders.dart';
 import '../models/task.dart';
-import '../providers/reminder_providers.dart';
 
 /// The second half of picking a reminder: the time of day, after the day.
 ///
@@ -42,9 +41,7 @@ Future<String?> pickReminderTimeOf(
   String cancelText = 'Без времени',
 }) async {
   final initial =
-      reminderTimeFromString(current) ??
-      ref.read(reminderSettingsProvider).value ??
-      ReminderTime.defaultMorning;
+      reminderTimeFromString(current) ?? ReminderTime.defaultMorning;
 
   final time = await showTimePicker(
     context: context,

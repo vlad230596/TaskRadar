@@ -8,10 +8,12 @@ import 'reminder_schedule.dart';
 /// models: the scheduler is testable with three synthetic rows and does not need
 /// to know that a board exists.
 ///
-/// A reminder exists for every task that is **not done** and has a `remindAt`:
-/// a blocker ("ждём кабель, спросить завтра") and a plain open task ("вернуться
-/// к этому в пятницу") alike. A `done` task with a leftover date is not a
-/// reminder -- there is nothing left to be reminded about.
+/// A reminder exists for every task that is **not done** and has a `remindAt`
+/// **with a time** (`design/today-history-contract.md`): the date says when
+/// the owner gets to the task, and only a named moment («встретить курьера в
+/// 15:00») pushes. A blocker and a plain open task alike. A `done` task with
+/// a leftover date is not a reminder -- there is nothing left to be reminded
+/// about.
 List<TaskReminder> remindersFromBoard(Iterable<BoardProject> board) {
   final reminders = <TaskReminder>[];
 
@@ -19,6 +21,7 @@ List<TaskReminder> remindersFromBoard(Iterable<BoardProject> board) {
     for (final task in entry.tasks) {
       final remindAt = task.remindAt;
       if (task.status == TaskStatus.done || remindAt == null) continue;
+      if (reminderTimeFromString(task.remindTime) == null) continue;
 
       reminders.add(
         TaskReminder(

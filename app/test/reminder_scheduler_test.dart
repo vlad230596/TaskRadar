@@ -32,6 +32,7 @@ void main() {
     taskId: id,
     taskTitle: 'Задача $id',
     remindAt: remindAt,
+    remindTime: '09:00',
     projectName: 'Проект',
   );
 
@@ -48,10 +49,10 @@ void main() {
         ],
       );
 
-      expect(
-        gateway.queue.keys.toSet(),
-        <int>{notificationIdForTask('a'), notificationIdForTask('b')},
-      );
+      expect(gateway.queue.keys.toSet(), <int>{
+        notificationIdForTask('a'),
+        notificationIdForTask('b'),
+      });
       expect(report.scheduledCount, 2);
       expect(report.pending, hasLength(2));
     });
@@ -103,26 +104,35 @@ void main() {
       expect(report.cancelled, <int>[notificationIdForTask('b')]);
     });
 
-    test('a moved date replaces the alarm instead of adding a second one', () async {
-      await scheduler().sync(
-        reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
-      );
-      await scheduler().sync(
-        reminders: <TaskReminder>[reminder('a', '2026-09-25T00:00:00.000Z')],
-      );
+    test(
+      'a moved date replaces the alarm instead of adding a second one',
+      () async {
+        await scheduler().sync(
+          reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
+        );
+        await scheduler().sync(
+          reminders: <TaskReminder>[reminder('a', '2026-09-25T00:00:00.000Z')],
+        );
 
-      // One entry, under the same (stable) id, now pointing at the new date.
-      expect(gateway.queue, hasLength(1));
-      final entry = gateway.queue[notificationIdForTask('a')]!;
-      expect(entry.fireAt.day, 25);
-      expect(gateway.cancelledIds, isEmpty, reason: 'replaced, not re-created');
-    });
+        // One entry, under the same (stable) id, now pointing at the new date.
+        expect(gateway.queue, hasLength(1));
+        final entry = gateway.queue[notificationIdForTask('a')]!;
+        expect(entry.fireAt.day, 25);
+        expect(
+          gateway.cancelledIds,
+          isEmpty,
+          reason: 'replaced, not re-created',
+        );
+      },
+    );
 
     test('every target is re-armed on every sync, unchanged or not', () async {
       // The self-healing property: the app never assumes an alarm it armed
       // earlier is still there. A reboot, a force-stop or an OEM battery sweep
       // empties the queue without telling anyone.
-      final reminders = <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')];
+      final reminders = <TaskReminder>[
+        reminder('a', '2026-09-19T00:00:00.000Z'),
+      ];
 
       await scheduler().sync(reminders: reminders);
       gateway.queue.clear(); // the OS "forgot", as it does after a reboot
@@ -198,7 +208,11 @@ void main() {
 
     test('cancelAll takes everything, including the bench alarms', () async {
       gateway.seed(
-        FakeScheduledNotification.stub(id: 2, location: moscow, payload: 'bench:soon'),
+        FakeScheduledNotification.stub(
+          id: 2,
+          location: moscow,
+          payload: 'bench:soon',
+        ),
       );
 
       await scheduler().cancelAll();
@@ -217,35 +231,41 @@ void main() {
       expect(gateway.scheduleCalls.single.exact, isTrue);
     });
 
-    test('a refused exact-alarm permission downgrades instead of failing', () async {
-      gateway.permissionState = const NotificationPermissionState(
-        notificationsEnabled: true,
-        canScheduleExactAlarms: false,
-      );
+    test(
+      'a refused exact-alarm permission downgrades instead of failing',
+      () async {
+        gateway.permissionState = const NotificationPermissionState(
+          notificationsEnabled: true,
+          canScheduleExactAlarms: false,
+        );
 
-      final report = await scheduler().sync(
-        reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
-      );
+        final report = await scheduler().sync(
+          reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
+        );
 
-      expect(gateway.scheduleCalls.single.exact, isFalse);
-      expect(report.scheduledCount, 1);
-      expect(
-        report.permissions.scheduleMode,
-        NotificationScheduleMode.inexact,
-      );
-    });
+        expect(gateway.scheduleCalls.single.exact, isFalse);
+        expect(report.scheduledCount, 1);
+        expect(
+          report.permissions.scheduleMode,
+          NotificationScheduleMode.inexact,
+        );
+      },
+    );
 
-    test('an unsupported platform reports itself and schedules nothing', () async {
-      gateway.support = NotificationSupport.none;
+    test(
+      'an unsupported platform reports itself and schedules nothing',
+      () async {
+        gateway.support = NotificationSupport.none;
 
-      final report = await scheduler().sync(
-        reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
-      );
+        final report = await scheduler().sync(
+          reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
+        );
 
-      expect(gateway.scheduleCalls, isEmpty);
-      expect(report.scheduledCount, 0);
-      expect(report.summary, contains('не поддерживает'));
-    });
+        expect(gateway.scheduleCalls, isEmpty);
+        expect(report.scheduledCount, 0);
+        expect(report.summary, contains('не поддерживает'));
+      },
+    );
 
     test('a platform failure becomes a report, not an exception', () async {
       // A sync is triggered from a lifecycle callback and (from F4) from a

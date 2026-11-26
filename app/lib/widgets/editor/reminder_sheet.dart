@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../domain/reminder_schedule.dart';
 import '../../domain/reminders.dart';
-import '../../providers/reminder_providers.dart';
 import '../reminder_time_picker.dart';
 import 'editor_theme.dart';
 
@@ -17,7 +16,10 @@ class ReminderValue {
   /// The row's `2026-10-01T00:00:00.000Z` is read as its calendar day.
   static ReminderValue? fromRow(String? remindAt, String? remindTime) {
     if (remindAt == null) return null;
-    return ReminderValue(reminderCalendarDate(remindAt) ?? remindAt, remindTime);
+    return ReminderValue(
+      reminderCalendarDate(remindAt) ?? remindAt,
+      remindTime,
+    );
   }
 
   final String date;
@@ -45,7 +47,15 @@ class ReminderChoice {
   final ReminderValue? value;
 }
 
-const List<String> _weekdays = <String>['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+const List<String> _weekdays = <String>[
+  'Пн',
+  'Вт',
+  'Ср',
+  'Чт',
+  'Пт',
+  'Сб',
+  'Вс',
+];
 
 /// The chip's words for a reminder: «Сегодня, 10:00», «Завтра», «Пт, 18:00»
 /// within the coming week, «15.11, 09:30» further out.
@@ -90,7 +100,8 @@ List<({String label, ReminderValue value})> quickReminders(
   ReminderTime morning = ReminderTime.defaultMorning,
 }) {
   final today = DateTime(now.year, now.month, now.day);
-  DateTime plus(int days) => DateTime(today.year, today.month, today.day + days);
+  DateTime plus(int days) =>
+      DateTime(today.year, today.month, today.day + days);
   var toSaturday = DateTime.saturday - today.weekday;
   if (toSaturday < 0 || (toSaturday == 0 && now.hour >= 10)) toSaturday += 7;
   return <({String label, ReminderValue value})>[
@@ -161,9 +172,7 @@ Future<ReminderChoice?> showReminderSheet(
   DateTime? now,
 }) async {
   final clock = now ?? DateTime.now();
-  final morning =
-      ref.read(reminderSettingsProvider).value ?? ReminderTime.defaultMorning;
-  final quick = quickReminders(clock, morning: morning);
+  final quick = quickReminders(clock);
 
   final picked = await showModalBottomSheet<Object>(
     context: context,
@@ -226,7 +235,7 @@ Future<ReminderChoice?> showReminderSheet(
                   leading: const Icon(Icons.timer_off_outlined),
                   title: const Text('Убрать время'),
                   subtitle: const Text(
-                    'Напомню в час из настроек',
+                    'Без времени — без пуша',
                     style: EditorText.note,
                   ),
                   onTap: () => Navigator.of(context).pop(_Action.noTime),

@@ -67,22 +67,15 @@ class ReminderScheduler {
   /// queue, saw an alarm its list did not want and cancelled it. The reminder
   /// stayed on the task and never fired. In order, the last call is the last
   /// to touch the queue, so the queue ends as the latest list says.
-  Future<ReminderSyncReport> sync({
-    required Iterable<TaskReminder> reminders,
-    ReminderTime at = ReminderTime.defaultMorning,
-  }) {
+  Future<ReminderSyncReport> sync({required Iterable<TaskReminder> reminders}) {
     final requested = reminders.toList(growable: false);
-    final run = _tail.then((_) => _sync(requested, at));
+    final run = _tail.then((_) => _sync(requested));
     // `_sync` never throws, so the chain never breaks.
     _tail = run;
     return run;
   }
 
-  Future<ReminderSyncReport> _sync(
-    List<TaskReminder> requested,
-    ReminderTime at,
-  ) async {
-
+  Future<ReminderSyncReport> _sync(List<TaskReminder> requested) async {
     if (!_gateway.support.schedulesReminders) {
       return ReminderSyncReport(
         requested: requested.length,
@@ -102,7 +95,6 @@ class ReminderScheduler {
         reminders: requested,
         location: _location,
         now: _now(),
-        at: at,
       );
       final wanted = schedule.byId;
 

@@ -67,10 +67,10 @@ void main() {
   });
 
   group('reminderFireTime', () {
-    test('fires at the configured local hour of the picked date', () {
+    test('fires at the local time of the picked date', () {
       final fireAt = reminderFireTime(
         remindAt: '2026-09-18T00:00:00.000Z',
-        at: ReminderTime.defaultMorning,
+        remindTime: '09:00',
         location: moscow,
         now: tz.TZDateTime(moscow, 2026, 9, 16, 12),
       );
@@ -94,7 +94,7 @@ void main() {
         // west of Greenwich.
         final fireAt = reminderFireTime(
           remindAt: '2026-09-18T00:00:00.000Z',
-          at: ReminderTime.defaultMorning,
+          remindTime: '09:00',
           location: la,
           now: tz.TZDateTime(la, 2026, 9, 16, 12),
         );
@@ -111,7 +111,7 @@ void main() {
       // shortcut passes every other test in this file and fails this one.
       final fireAt = reminderFireTime(
         remindAt: '2026-11-05T00:00:00.000Z',
-        at: ReminderTime.defaultMorning,
+        remindTime: '09:00',
         location: la,
         now: tz.TZDateTime(la, 2026, 10, 25, 12),
       );
@@ -124,7 +124,7 @@ void main() {
       test('midnight is the earliest instant of the picked date', () {
         final fireAt = reminderFireTime(
           remindAt: '2026-09-18T00:00:00.000Z',
-          at: const ReminderTime(0, 0),
+          remindTime: '00:00',
           location: moscow,
           now: tz.TZDateTime(moscow, 2026, 9, 17, 23, 59),
         );
@@ -133,24 +133,26 @@ void main() {
         expect(fireAt.hour, 0);
       });
 
-      test('23:59 stays on the picked date and does not spill into the next', () {
-        final fireAt = reminderFireTime(
-        remindAt: '2026-09-18T00:00:00.000Z',
-        at: const ReminderTime(23, 59),
-          location: moscow,
-          now: tz.TZDateTime(moscow, 2026, 9, 18, 8),
-        );
+      test(
+        '23:59 stays on the picked date and does not spill into the next',
+        () {
+          final fireAt = reminderFireTime(
+            remindAt: '2026-09-18T00:00:00.000Z',
+            remindTime: '23:59',
+            location: moscow,
+            now: tz.TZDateTime(moscow, 2026, 9, 18, 8),
+          );
 
-        expect(fireAt!.day, 18);
-        expect(fireAt.hour, 23);
-        expect(fireAt.minute, 59);
-      });
+          expect(fireAt!.day, 18);
+          expect(fireAt.hour, 23);
+          expect(fireAt.minute, 59);
+        },
+      );
 
-      test("the task's own time wins over the settings hour", () {
+      test("fires at the task's own time", () {
         final fireAt = reminderFireTime(
           remindAt: '2026-09-18T00:00:00.000Z',
           remindTime: '14:30',
-          at: ReminderTime.defaultMorning,
           location: moscow,
           now: tz.TZDateTime(moscow, 2026, 9, 18, 10),
         );
@@ -158,22 +160,31 @@ void main() {
         expect(fireAt, tz.TZDateTime(moscow, 2026, 9, 18, 14, 30));
       });
 
-      test('an unreadable time falls back to the settings hour', () {
+      test('an unreadable time is no time: nothing fires', () {
         final fireAt = reminderFireTime(
           remindAt: '2026-09-18T00:00:00.000Z',
           remindTime: '25:00',
-          at: ReminderTime.defaultMorning,
           location: moscow,
           now: tz.TZDateTime(moscow, 2026, 9, 17),
         );
 
-        expect(fireAt, tz.TZDateTime(moscow, 2026, 9, 18, 9));
+        expect(fireAt, isNull);
+      });
+
+      test('a date with no time never fires -- no morning push', () {
+        final fireAt = reminderFireTime(
+          remindAt: '2026-09-18T00:00:00.000Z',
+          location: moscow,
+          now: tz.TZDateTime(moscow, 2026, 9, 17),
+        );
+
+        expect(fireAt, isNull);
       });
 
       test('a reminder for today is armed while the hour is still ahead', () {
         final fireAt = reminderFireTime(
           remindAt: '2026-09-18T00:00:00.000Z',
-          at: ReminderTime.defaultMorning,
+          remindTime: '09:00',
           location: moscow,
           now: tz.TZDateTime(moscow, 2026, 9, 18, 8, 59),
         );
@@ -187,7 +198,7 @@ void main() {
         expect(
           reminderFireTime(
             remindAt: '2026-09-10T00:00:00.000Z',
-            at: ReminderTime.defaultMorning,
+            remindTime: '09:00',
             location: moscow,
             now: tz.TZDateTime(moscow, 2026, 9, 18, 8),
           ),
@@ -195,11 +206,11 @@ void main() {
         );
       });
 
-      test('today, once the configured hour has gone by', () {
+      test('today, once its time has gone by', () {
         expect(
           reminderFireTime(
             remindAt: '2026-09-18T00:00:00.000Z',
-            at: ReminderTime.defaultMorning,
+            remindTime: '09:00',
             location: moscow,
             now: tz.TZDateTime(moscow, 2026, 9, 18, 9, 1),
           ),
@@ -213,7 +224,7 @@ void main() {
         expect(
           reminderFireTime(
             remindAt: '2026-09-18T00:00:00.000Z',
-            at: ReminderTime.defaultMorning,
+            remindTime: '09:00',
             location: moscow,
             now: tz.TZDateTime(moscow, 2026, 9, 18, 9),
           ),
@@ -228,7 +239,7 @@ void main() {
         expect(
           reminderFireTime(
             remindAt: '2026-09-18T00:00:00.000Z',
-            at: ReminderTime.defaultMorning,
+            remindTime: '09:00',
             location: moscow,
             now: tz.TZDateTime(moscow, 2026, 9, 18, 8),
           ),
@@ -241,7 +252,7 @@ void main() {
       expect(
         reminderFireTime(
           remindAt: 'не-дата',
-          at: ReminderTime.defaultMorning,
+          remindTime: '09:00',
           location: moscow,
           now: tz.TZDateTime(moscow, 2026, 9, 18),
         ),
@@ -303,6 +314,7 @@ void main() {
       taskId: id,
       taskTitle: 'Задача $id',
       remindAt: remindAt,
+      remindTime: '09:00',
       projectName: 'Проект',
     );
 
@@ -317,10 +329,7 @@ void main() {
         now: tz.TZDateTime(moscow, 2026, 9, 18, 12),
       );
 
-      expect(
-        schedule.reminders.map((r) => r.taskId),
-        <String>['a', 'b', 'c'],
-      );
+      expect(schedule.reminders.map((r) => r.taskId), <String>['a', 'b', 'c']);
       expect(schedule.skipped, isEmpty);
     });
 
@@ -331,6 +340,7 @@ void main() {
             taskId: 'a',
             taskTitle: 'Жду кабель',
             remindAt: '2026-09-19T00:00:00.000Z',
+            remindTime: '09:00',
             projectName: 'Кухня',
           ),
         ],
@@ -403,16 +413,21 @@ void main() {
       expect(schedule.skipped.single.reminder.taskId, collidingB);
     });
 
-    test('the configured hour moves every alarm', () {
+    test('a reminder with only a date is skipped as «no time»', () {
       final schedule = buildReminderSchedule(
-        reminders: <TaskReminder>[reminder('a', '2026-09-19T00:00:00.000Z')],
+        reminders: const <TaskReminder>[
+          TaskReminder(
+            taskId: 'a',
+            taskTitle: 'Позвонить',
+            remindAt: '2026-09-19T00:00:00.000Z',
+          ),
+        ],
         location: moscow,
         now: tz.TZDateTime(moscow, 2026, 9, 18, 12),
-        at: const ReminderTime(7, 30),
       );
 
-      expect(schedule.reminders.single.fireAt.hour, 7);
-      expect(schedule.reminders.single.fireAt.minute, 30);
+      expect(schedule.reminders, isEmpty);
+      expect(schedule.skipped.single.reason, SkipReason.noTime);
     });
 
     test('an empty input is an empty schedule, not an error', () {

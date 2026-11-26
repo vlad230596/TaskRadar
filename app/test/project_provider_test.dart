@@ -863,7 +863,8 @@ void main() {
 
       // 2. pick a date. Two days out, so it is armed at any hour of the day.
       final date = remindAt(2).substring(0, 10);
-      await notifier.setRemindAt(task, date);
+      // With a time: only a task with a time pushes (today-history contract).
+      await notifier.setRemindAt(task, date, time: '12:00');
       await pumpEventQueue();
 
       // 3. it is on the board, and in the OS queue, with nothing in this test
@@ -981,6 +982,7 @@ void main() {
         title: 'Жду кабель',
         status: 'pending',
         remindAt: remindAt(0),
+        remindTime: '12:00',
       );
 
       final container = makeContainer();
@@ -1020,6 +1022,7 @@ void main() {
           title: 'Жду кабель',
           status: 'pending',
           remindAt: remindAt(2),
+          remindTime: '12:00',
         );
 
         final container = makeContainer();
@@ -1053,6 +1056,7 @@ void main() {
         title: 'Спросить про плитку',
         status: 'pending',
         remindAt: remindAt(-3),
+        remindTime: '12:00',
       );
 
       final container = makeContainer();
@@ -1083,6 +1087,7 @@ void main() {
           title: 'Жду кабель',
           status: 'blocked',
           remindAt: remindAt(0),
+          remindTime: '12:00',
         );
 
         final container = makeContainer();
@@ -1109,6 +1114,7 @@ void main() {
         title: 'Жду кабель',
         status: 'blocked',
         remindAt: remindAt(1),
+        remindTime: '12:00',
       );
 
       final container = makeContainer();
@@ -1134,6 +1140,7 @@ void main() {
         title: 'Жду кабель',
         status: 'blocked',
         remindAt: remindAt(0),
+        remindTime: '12:00',
       );
 
       final container = makeContainer();

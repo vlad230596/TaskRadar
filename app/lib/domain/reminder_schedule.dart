@@ -176,18 +176,19 @@ final RegExp _timePattern = RegExp(r'^([01]\d|2[0-3]):([0-5]\d)$');
 /// surfaced by the board badge instead -- that is what `isReminderDue` in
 /// `reminders.ts` is for.
 ///
-/// [remindTime], when the task has one, wins over [at]: [at] is the settings
-/// hour for reminders that only have a day.
+/// Only a task with a time of day pushes (`design/today-history-contract.md`:
+/// a date alone means "when to get to it", not "ring me"); with no readable
+/// [remindTime] there is nothing to fire, and the answer is null.
 tz.TZDateTime? reminderFireTime({
   required String remindAt,
   String? remindTime,
-  required ReminderTime at,
   required tz.Location location,
   required tz.TZDateTime now,
 }) {
   final date = calendarDateFromRemindAt(remindAt);
   if (date == null) return null;
-  final time = reminderTimeFromString(remindTime) ?? at;
+  final time = reminderTimeFromString(remindTime);
+  if (time == null) return null;
 
   // Wall-clock construction in [location]: this is where the calendar date and
   // the local hour are finally joined, and the tz package resolves the offset
@@ -257,7 +258,8 @@ int notificationIdForTask(String taskId) {
     // masked back down to 32 bits by hand.
     hash = (hash * 0x01000193) & 0xffffffff;
   }
-  return reservedNotificationIds + hash % (_idCeiling - reservedNotificationIds);
+  return reservedNotificationIds +
+      hash % (_idCeiling - reservedNotificationIds);
 }
 
 /// Payload prefix marking a notification as "this app scheduled it for a task".
@@ -268,13 +270,22 @@ int notificationIdForTask(String taskId) {
 /// part of the app (or the bench) put there.
 const String reminderPayloadPrefix = 'task:';
 
+/// The weekly review's push (`design/today-history-spec.md` §10.8): its own
+/// id, below [reservedNotificationIds] so no task can hash onto it, and its
+/// own payload, which a task resync never sweeps.
+const int reviewNotificationId = 8;
+
+/// The review push's payload: a tap opens «История» with the review card.
+const String reviewPayload = 'review';
+
 /// Builds the payload for a task reminder.
 String reminderPayload(String taskId) => '$reminderPayloadPrefix$taskId';
 
 /// Extracts the task id from a reminder payload, or null if the payload is not
 /// one of ours.
 String? taskIdFromPayload(String? payload) {
-  if (payload == null || !payload.startsWith(reminderPayloadPrefix)) return null;
+  if (payload == null || !payload.startsWith(reminderPayloadPrefix))
+    return null;
   final taskId = payload.substring(reminderPayloadPrefix.length);
   return taskId.isEmpty ? null : taskId;
 }
@@ -321,6 +332,9 @@ enum SkipReason {
   /// The moment has gone by -- either an older date, or today after the
   /// configured hour.
   inThePast,
+
+  /// The task has a date and no time: it does not push.
+  noTime,
 
   /// Its notification id was already taken by another task in the same batch.
   /// See the collision note on [notificationIdForTask].
@@ -369,7 +383,6 @@ ReminderSchedule buildReminderSchedule({
   required Iterable<TaskReminder> reminders,
   required tz.Location location,
   required tz.TZDateTime now,
-  ReminderTime at = ReminderTime.defaultMorning,
 }) {
   final scheduled = <int, ScheduledReminder>{};
   final skipped = <SkippedReminder>[];
@@ -378,7 +391,6 @@ ReminderSchedule buildReminderSchedule({
     final fireAt = reminderFireTime(
       remindAt: reminder.remindAt,
       remindTime: reminder.remindTime,
-      at: at,
       location: location,
       now: now,
     );
@@ -389,6 +401,8 @@ ReminderSchedule buildReminderSchedule({
           reminder,
           calendarDateFromRemindAt(reminder.remindAt) == null
               ? SkipReason.malformedDate
+              : reminderTimeFromString(reminder.remindTime) == null
+              ? SkipReason.noTime
               : SkipReason.inThePast,
         ),
       );

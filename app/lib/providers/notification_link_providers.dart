@@ -83,6 +83,15 @@ class NotificationLinkReady extends NotificationLinkState {
   bool get isTerminal => true;
 }
 
+/// The weekly review's push was tapped: «История» with the review card
+/// (`design/today-history-spec.md` §10.8). Not a task, so nothing to resolve.
+class NotificationLinkReview extends NotificationLinkState {
+  const NotificationLinkReview();
+
+  @override
+  bool get isTerminal => true;
+}
+
 /// The board is current and the task is not in it -- deleted, or the reminder is
 /// simply older than the task it was about.
 ///
@@ -130,6 +139,11 @@ class NotificationLink extends _$NotificationLink {
   /// anything that is not one of ours is ignored (the bench's diagnostic
   /// notifications carry `bench:` payloads and must not navigate anywhere).
   void requestFromPayload(String? payload) {
+    if (payload == reviewPayload) {
+      _generation++;
+      state = const NotificationLinkReview();
+      return;
+    }
     final taskId = taskIdFromPayload(payload);
     if (taskId == null) {
       debugPrint('Notification payload is not a task reminder: $payload');
