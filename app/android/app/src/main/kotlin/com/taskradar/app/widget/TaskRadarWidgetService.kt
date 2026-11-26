@@ -30,6 +30,11 @@ class TaskRadarWidgetService : RemoteViewsService() {
         }
 
         /** The line between the goal steps and the projects. */
+        /** «Сегодня 3 из 7» (design/today-history-spec.md, п. 12). */
+        data class TodayRow(val today: HomeWidgetStore.Today) : Row() {
+            override val stableId: Long get() = "today".hashCode().toLong() shl 1
+        }
+
         object Divider : Row() {
             override val stableId: Long get() = "divider".hashCode().toLong() shl 1 or 1L
         }
@@ -47,7 +52,13 @@ class TaskRadarWidgetService : RemoteViewsService() {
             // The goal steps first, in the same list: a separate container
             // above it would eat the height of a small widget when scrolled.
             snapshot.goals.forEach { rows.add(Row.GoalStep(it)) }
-            if (snapshot.goals.isNotEmpty() && snapshot.projects.isNotEmpty()) rows.add(Row.Divider)
+            // Under the goal rows, over the set: «Сегодня N из M». Hidden when
+            // the day has nothing and no tail is waiting.
+            val today = snapshot.today?.takeIf { it.visible }
+            if (today != null) rows.add(Row.TodayRow(today))
+            if ((snapshot.goals.isNotEmpty() || today != null) && snapshot.projects.isNotEmpty()) {
+                rows.add(Row.Divider)
+            }
             for (project in snapshot.projects) {
                 val isCollapsed = project.id in collapsed
                 rows.add(Row.Header(project, isCollapsed))
@@ -80,6 +91,7 @@ class TaskRadarWidgetService : RemoteViewsService() {
                 is Row.Header -> header(row)
                 is Row.Item -> item(row)
                 is Row.GoalStep -> goal(row)
+                is Row.TodayRow -> today(row.today)
                 Row.Divider -> RemoteViews(context.packageName, R.layout.taskradar_widget_divider)
             }
         }
@@ -192,6 +204,58 @@ class TaskRadarWidgetService : RemoteViewsService() {
          * failure the palette exists to avoid, so it takes the rail's lighter
          * navy there.
          */
+        private fun today(today: HomeWidgetStore.Today): RemoteViews =
+            RemoteViews(context.packageName, R.layout.taskradar_widget_today).apply {
+                val allDone = today.total > 0 && today.done >= today.total
+                if (today.total == 0) {
+                    // An empty day with a tail: the tail is the plan
+                    // (coordinator's answer 7).
+                    setTextViewText(R.id.widget_today_title, context.getString(R.string.widget_today_tail, today.tail))
+                    setViewVisibility(R.id.widget_today_count, View.GONE)
+                    setViewVisibility(R.id.widget_today_progress, View.GONE)
+                } else {
+                    setTextViewText(R.id.widget_today_title, context.getString(R.string.widget_today_title))
+                    setViewVisibility(R.id.widget_today_count, View.VISIBLE)
+                    setTextViewText(
+                        R.id.widget_today_count,
+                        context.getString(
+                            if (allDone) R.string.widget_today_all_done else R.string.widget_today_count,
+                            today.done,
+                            today.total,
+                        ),
+                    )
+                    setViewVisibility(R.id.widget_today_progress, View.VISIBLE)
+                    setProgressBar(R.id.widget_today_progress, 100, today.done * 100 / today.total, false)
+                }
+                val time = today.time
+                val title = today.title
+                if (!allDone && today.total > 0 && time != null && title != null) {
+                    val line = android.text.SpannableStringBuilder()
+                    line.append(time)
+                    line.setSpan(
+                        android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                        0,
+                        time.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    line.setSpan(
+                        android.text.style.ForegroundColorSpan(color(R.color.widget_today_time)),
+                        0,
+                        time.length,
+                        android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE,
+                    )
+                    line.append(" ").append(title)
+                    setTextViewText(R.id.widget_today_next, line)
+                    setViewVisibility(R.id.widget_today_next, View.VISIBLE)
+                } else {
+                    setViewVisibility(R.id.widget_today_next, View.GONE)
+                }
+                setOnClickFillInIntent(
+                    R.id.widget_today_row,
+                    Intent().putExtra(TaskRadarWidgetProvider.EXTRA_ROW_KIND, TaskRadarWidgetProvider.ROW_WORK),
+                )
+            }
+
         private fun badgeColor(argb: Int): Int {
             val night =
                 (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
@@ -201,7 +265,7 @@ class TaskRadarWidgetService : RemoteViewsService() {
 
         override fun getLoadingView(): RemoteViews? = null
 
-        override fun getViewTypeCount(): Int = 4
+        override fun getViewTypeCount(): Int = 5
 
         override fun getItemId(position: Int): Long = rows.getOrNull(position)?.stableId ?: position.toLong()
 

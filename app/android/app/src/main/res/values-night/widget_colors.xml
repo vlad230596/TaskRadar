@@ -22,4 +22,13 @@
     <color name="widget_goal_ink">#FFFFFFFF</color>
     <color name="widget_goal_muted">#FFC9CEF0</color>
     <color name="widget_goal_expired">#FFFF9E86</color>
+    <!-- The «Сегодня» row (design/today-history-spec.md, п. 12) -->
+    <color name="widget_today_fill">#FF1F2552</color>
+    <color name="widget_today_line">#FF39407A</color>
+    <color name="widget_today_chip">#FF333A73</color>
+    <color name="widget_today_ink">#FFEDEEF7</color>
+    <color name="widget_today_count">#FF7FD1A8</color>
+    <color name="widget_today_track">#FF39407A</color>
+    <color name="widget_today_time">#FFAEB7F5</color>
+    <color name="widget_today_muted">#FFA7AECF</color>
 </resources>

@@ -284,8 +284,9 @@ String reminderPayload(String taskId) => '$reminderPayloadPrefix$taskId';
 /// Extracts the task id from a reminder payload, or null if the payload is not
 /// one of ours.
 String? taskIdFromPayload(String? payload) {
-  if (payload == null || !payload.startsWith(reminderPayloadPrefix))
+  if (payload == null || !payload.startsWith(reminderPayloadPrefix)) {
     return null;
+  }
   final taskId = payload.substring(reminderPayloadPrefix.length);
   return taskId.isEmpty ? null : taskId;
 }

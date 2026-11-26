@@ -45,6 +45,7 @@ class TaskRadarWidgetClickReceiver : BroadcastReceiver() {
                 context.startActivity(MainActivity.takeStepIntent(context, taskId))
             }
             TaskRadarWidgetProvider.ROW_APP -> context.startActivity(MainActivity.openAppIntent(context))
+            TaskRadarWidgetProvider.ROW_WORK -> context.startActivity(MainActivity.openWorkIntent(context))
         }
     }
 }

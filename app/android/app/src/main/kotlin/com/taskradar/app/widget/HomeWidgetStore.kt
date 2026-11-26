@@ -62,8 +62,24 @@ object HomeWidgetStore {
         val projects: List<Project>,
         /** Above the projects. A snapshot without the key (an older app) has none. */
         val goals: List<Goal> = emptyList(),
+        /** Between the goals and the set. Absent from an older app's snapshot. */
+        val today: Today? = null,
     ) {
         val total: Int get() = projects.sumOf { it.tasks.size }
+    }
+
+    /**
+     * The «Сегодня» row (design/today-history-spec.md, п. 12): «N из M», the
+     * tail for an empty day, and the nearest timed task. Computed by the app.
+     */
+    data class Today(
+        val done: Int,
+        val total: Int,
+        val tail: Int,
+        val time: String?,
+        val title: String?,
+    ) {
+        val visible: Boolean get() = total > 0 || tail > 0
     }
 
     private fun prefs(context: Context) =
@@ -149,12 +165,26 @@ object HomeWidgetStore {
                 )
             }
         }
+        val todayJson = root.optJSONObject("today")
+        val today =
+            if (todayJson == null) {
+                null
+            } else {
+                Today(
+                    done = todayJson.optInt("done", 0),
+                    total = todayJson.optInt("total", 0),
+                    tail = todayJson.optInt("tail", 0),
+                    time = todayJson.optStringOrNull("time"),
+                    title = todayJson.optStringOrNull("title"),
+                )
+            }
         return Snapshot(
             updatedAtMillis = root.optLong("updatedAt", 0L),
             fromCache = root.optBoolean("fromCache", false),
             signedIn = root.optBoolean("signedIn", true),
             projects = projects,
             goals = goals,
+            today = today,
         )
     }
 }
