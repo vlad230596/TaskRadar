@@ -56,6 +56,8 @@ const prismaMock = vi.hoisted(() => ({
   // themselves are tested in goals.test.ts, against a fake that knows goals.
   contour: { findFirst: vi.fn() },
   inboxItem: { findMany: vi.fn() },
+  // The owner's «Позже» horizon (design/today-history-contract.md): defaults.
+  user: { findUnique: vi.fn(async (): Promise<unknown> => null) },
   dictationParse: { findFirst: vi.fn(async () => null), updateMany: vi.fn() },
   $transaction: vi.fn(),
 }));
@@ -779,12 +781,15 @@ describe("POST /mcp auth", () => {
       "get_task",
       "link_goal_task",
       "list_contours",
+      "list_done",
       "list_goals",
       "list_ideas",
       "list_inbox",
       "list_notes",
       "list_projects",
+      "list_reviews",
       "list_tasks",
+      "list_today",
       "move_task",
       "search",
       "unlink_goal_task",

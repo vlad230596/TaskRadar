@@ -4,6 +4,9 @@ import { userIdOf } from "../lib/users";
 import { annotateIsCurrent } from "../domain/isCurrent";
 import { boardQuerySchema } from "../schemas";
 import { taskInclude, taskView } from "../domain/taskView";
+import { localToday } from "../domain/today";
+import { settingsOf } from "../lib/userSettings";
+import { withRhythm } from "./projects";
 
 /**
  * `GET /board` -- the whole board (projects with their tasks) in one response.
@@ -44,9 +47,10 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
      * in ascending `position` order and picks the first pending task it sees, so
      * unordered rows would silently mark the wrong task as current.
      */
+    const userId = userIdOf(request);
     const projects = await prisma.project.findMany({
       where: {
-        scope: { userId: userIdOf(request) },
+        scope: { userId },
         archivedAt: showArchived ? { not: null } : null,
         // F7: optional, and the Flutter client does not use it -- it fetches
         // every scope's projects and filters locally, because the local
@@ -83,11 +87,19 @@ export async function boardRoutes(app: FastifyInstance): Promise<void> {
      * board only, not on `GET /projects`: the board is what draws the counter,
      * and a client parsing a project treats the field as optional.
      */
+    /*
+     * The rhythm (design/today-history-contract.md) is computed from the tasks
+     * already loaded -- no query of its own -- and «Позже» is never current
+     * (the owner's horizon, the server's UTC today).
+     */
+    const now = new Date();
+    const { laterHorizonDays } = await settingsOf(prisma, userId);
+    const later = { today: localToday(now), horizonDays: laterHorizonDays };
     reply.send(
       projects.map(({ _count, tasks, ...project }) => ({
-        ...project,
+        ...withRhythm(project, tasks, now),
         noteCount: _count.notes,
-        tasks: annotateIsCurrent(tasks.map(taskView)),
+        tasks: annotateIsCurrent(tasks.map(taskView), later),
       })),
     );
   });

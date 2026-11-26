@@ -2,9 +2,12 @@ import { FastifyInstance } from "fastify";
 import type { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
-import { NotFoundError, ValidationError } from "../lib/errors";
+import { HttpError, NotFoundError, ValidationError } from "../lib/errors";
 import { annotateIsCurrent } from "../domain/isCurrent";
-import { planStatusChange } from "../domain/taskEvents";
+import { planReopen, planStatusChange } from "../domain/taskEvents";
+import { localToday } from "../domain/today";
+import { defaultContour } from "../domain/contours";
+import { settingsOf } from "../lib/userSettings";
 import {
   computeAppendPosition,
   computePositionBetween,
@@ -128,6 +131,39 @@ function conflictingFields(before: Task, body: TaskPatch): CheckedField[] {
   });
 }
 
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** The task's last closing that still counts (a `status` -> done row not revoked), or null. */
+function lastClosing(db: Pick<Tx, "taskEvent">, taskId: string) {
+  return db.taskEvent.findFirst({
+    where: { taskId, kind: "status", toStatus: "done", revokedAt: null },
+    orderBy: { at: "desc" },
+  });
+}
+
+/** Revokes [taskId]'s last closing that still counts, if it has one. */
+async function revokeLastClosing(tx: Tx, taskId: string, at: Date): Promise<void> {
+  const closing = await lastClosing(tx, taskId);
+  if (closing !== null) {
+    await tx.taskEvent.update({ where: { id: closing.id }, data: { revokedAt: at } });
+  }
+}
+
+/**
+ * How far apart a closing and its working-set exit may be stamped and still
+ * be one change. Rows written since doneAt existed share one `at` exactly;
+ * older ones were stamped by the database a few milliseconds apart.
+ */
+const SAME_CHANGE_MS = 2_000;
+
+/** 409 `{ error: "not_done" }`: «Вернуть» on a task that is not closed. */
+class NotDoneError extends HttpError {
+  constructor() {
+    super(409, "Only a done task can be reopened");
+    this.name = "not_done";
+  }
+}
+
 export async function taskRoutes(app: FastifyInstance): Promise<void> {
   /*
    * Creating a task -- and, since the offline outbox, optionally with the
@@ -206,6 +242,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
             description: body.description ?? null,
             categoryId: body.categoryId ?? null,
             ...(body.status !== undefined ? { status: body.status } : {}),
+            // Born closed: closed now, as far as «Сделано» is concerned.
+            ...(body.status === "done" ? { doneAt: new Date() } : {}),
             remindAt: body.remindAt ?? null,
             // A time with no day is not a reminder; see `remindTime` on the model.
             remindTime: body.remindAt ? (body.remindTime ?? null) : null,
@@ -266,14 +304,22 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
 
   app.get("/projects/:projectId/tasks", async (request, reply) => {
     const { projectId } = projectIdParamSchema.parse(request.params);
-    await getProjectOrThrow(userIdOf(request), projectId);
+    const userId = userIdOf(request);
+    await getProjectOrThrow(userId, projectId);
 
     const tasks = await prisma.task.findMany({
       where: { projectId },
       orderBy: { position: "asc" },
       include: taskInclude,
     });
-    reply.send(annotateIsCurrent(tasks.map(taskView)));
+    // «Позже» is never current: the owner's horizon, the server's (UTC) today.
+    const { laterHorizonDays } = await settingsOf(prisma, userId);
+    reply.send(
+      annotateIsCurrent(tasks.map(taskView), {
+        today: localToday(new Date()),
+        horizonDays: laterHorizonDays,
+      }),
+    );
   });
 
   app.patch("/tasks/:id", async (request, reply) => {
@@ -324,7 +370,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
      * nothing, finishing a task takes it out of the set -- live in
      * ../domain/taskEvents.ts, next to the reasons for them.
      */
-    const movement = planStatusChange(before, body.status);
+    const now = new Date();
+    const movement = planStatusChange(before, body.status, now);
 
     const data: {
       title?: string;
@@ -335,6 +382,7 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       remindTime?: string | null;
       focusedAt?: Date | null;
       focusContourId?: string | null;
+      doneAt?: Date | null;
     } = {};
     if (body.title !== undefined) data.title = body.title;
     if (body.description !== undefined) data.description = body.description;
@@ -361,6 +409,8 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
       data.focusedAt = null;
       data.focusContourId = null;
     }
+    // Into done: closed now. Out of done: not closed (and the closing is revoked below).
+    if (movement.doneAt !== undefined) data.doneAt = movement.doneAt;
 
     /*
      * One transaction, unconditionally -- even for a pure rename, which writes
@@ -402,8 +452,15 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
         include: taskInclude,
       });
 
+      /*
+       * «Закрыл и передумал — это не закрытие» (design/today-history-contract.md):
+       * leaving done revokes the closing that put the task there, so it is
+       * counted nowhere. The events of one change share one `at` -- that is
+       * how «Вернуть» finds the working-set exit that belongs to a closing.
+       */
+      if (movement.revokesClosing) await revokeLastClosing(tx, id, now);
       for (const event of movement.events) {
-        await tx.taskEvent.create({ data: { taskId: id, ...event } });
+        await tx.taskEvent.create({ data: { taskId: id, ...event, at: now } });
       }
 
       /*
@@ -429,6 +486,69 @@ export async function taskRoutes(app: FastifyInstance): Promise<void> {
     });
 
     reply.send(taskView(task));
+  });
+
+  /*
+   * «Вернуть» (design/today-history-contract.md): a task closed by mistake
+   * goes back to the status it was closed from, into the working set it was
+   * taken out of on closing (the `unfocused` row written with the closing),
+   * and stops counting as closed anywhere -- the closing is revoked, `doneAt`
+   * cleared, and the journal says `reopened`. Its place in the project needs
+   * nothing: closing never moved it. If its date is today, `/today` shows it
+   * again by itself.
+   *
+   * Only from done: anything else is 409 `not_done`, so a double tap (or an
+   * outbox replay) of «Вернуть» cannot reopen a task twice or reopen one the
+   * owner has since moved on.
+   */
+  app.post("/tasks/:id/reopen", async (request, reply) => {
+    const { id } = idParamSchema.parse(request.params);
+    const userId = userIdOf(request);
+    const task = await getTaskOrThrow(userId, id);
+    if (task.status !== "done") throw new NotDoneError();
+
+    const closing = await lastClosing(prisma, id);
+    const exit =
+      closing === null
+        ? null
+        : await prisma.taskEvent.findFirst({
+            where: {
+              taskId: id,
+              kind: "unfocused",
+              at: {
+                gte: new Date(closing.at.getTime() - SAME_CHANGE_MS),
+                lte: new Date(closing.at.getTime() + SAME_CHANGE_MS),
+              },
+            },
+            orderBy: { at: "desc" },
+          });
+    const fallbackContourId =
+      exit !== null && exit.contourId === null ? (await defaultContour(prisma, userId)).id : "";
+    const plan = planReopen(task, closing, exit, fallbackContourId);
+
+    const now = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      if (closing !== null) {
+        await tx.taskEvent.update({ where: { id: closing.id }, data: { revokedAt: now } });
+      }
+      const reopened = await tx.task.update({
+        where: { id },
+        data: {
+          status: plan.status,
+          doneAt: null,
+          ...(plan.refocusContourId !== null
+            ? { focusedAt: now, focusContourId: plan.refocusContourId }
+            : {}),
+        },
+        include: taskInclude,
+      });
+      for (const event of plan.events) {
+        await tx.taskEvent.create({ data: { taskId: id, ...event, at: now } });
+      }
+      return reopened;
+    });
+
+    reply.send(taskView(updated));
   });
 
   app.patch("/tasks/:id/position", async (request, reply) => {

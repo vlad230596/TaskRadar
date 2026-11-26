@@ -2,6 +2,8 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
 import { NotFoundError, ConflictError } from "../lib/errors";
+import { computeRhythm, rhythmStats } from "../domain/rhythm";
+import type { TaskStatusLike } from "../domain/isCurrent";
 import { canHardDeleteProject } from "../domain/projectDeleteGuard";
 import { getDefaultScopeOrThrow, getScopeOrThrow } from "./scopes";
 import {
@@ -54,6 +56,64 @@ export async function getProjectOrThrow(userId: string, projectId: string) {
   return project;
 }
 
+/**
+ * A project row with its computed `rhythm` (design/today-history-contract.md),
+ * from the project's tasks as they stand -- null when no rhythm is set.
+ */
+export function withRhythm<P extends { id: string; rhythmClosedPerWeek: number | null; rhythmMaxOpen: number | null; createdAt: Date }>(
+  project: P,
+  tasks: readonly { status: TaskStatusLike; doneAt: Date | null }[],
+  now: Date,
+) {
+  const off = project.rhythmClosedPerWeek == null && project.rhythmMaxOpen == null;
+  return { ...project, rhythm: off ? null : computeRhythm(project, rhythmStats(tasks, now), now) };
+}
+
+/**
+ * Adds `rhythm` to each of [projects], with one query for all their tasks'
+ * statuses (only projects with a rhythm set need any).
+ */
+export async function attachRhythm<
+  P extends { id: string; rhythmClosedPerWeek: number | null; rhythmMaxOpen: number | null; createdAt: Date },
+>(projects: P[], now: Date) {
+  const ids = projects
+    .filter((p) => p.rhythmClosedPerWeek != null || p.rhythmMaxOpen != null)
+    .map((p) => p.id);
+  const tasks =
+    ids.length === 0
+      ? []
+      : await prisma.task.findMany({
+          where: { projectId: { in: ids } },
+          select: { projectId: true, status: true, doneAt: true },
+        });
+  return projects.map((p) => withRhythm(p, tasks.filter((t) => t.projectId === p.id), now));
+}
+
+/** [userId]'s projects, archived or not, each with its `rhythm`. */
+export async function projectsWithRhythm(
+  userId: string,
+  filter: { archived: boolean; scopeId?: string | undefined },
+  now: Date,
+) {
+  const projects = await prisma.project.findMany({
+    where: {
+      scope: { userId },
+      archivedAt: filter.archived ? { not: null } : null,
+      ...(filter.scopeId ? { scopeId: filter.scopeId } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  return attachRhythm(projects, now);
+}
+
+/** One project row as every project route answers: with its `rhythm`. */
+async function projectView<P extends { id: string; rhythmClosedPerWeek: number | null; rhythmMaxOpen: number | null; createdAt: Date }>(
+  project: P,
+) {
+  const [one] = await attachRhythm([project], new Date());
+  return one!;
+}
+
 export async function projectRoutes(app: FastifyInstance): Promise<void> {
   app.post("/projects", async (request, reply) => {
     const userId = userIdOf(request);
@@ -75,7 +135,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const project = await prisma.project.create({
       data: { name: body.name, scopeId: scope.id },
     });
-    reply.status(201).send(project);
+    reply.status(201).send(await projectView(project));
   });
 
   app.get("/projects", async (request, reply) => {
@@ -83,24 +143,18 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
     const query = listProjectsQuerySchema.parse(request.query);
     const showArchived = query.archived === "true";
 
-    const projects = await prisma.project.findMany({
-      where: {
-        scope: { userId },
-        archivedAt: showArchived ? { not: null } : null,
-        // Absent means every scope. See the note on `listProjectsQuerySchema`
-        // for why the client filters the board itself instead of using this.
-        ...(query.scopeId ? { scopeId: query.scopeId } : {}),
-      },
-      orderBy: { createdAt: "asc" },
-    });
-    reply.send(projects);
+    // Absent `scopeId` means every scope. See the note on `listProjectsQuerySchema`
+    // for why the client filters the board itself instead of using this.
+    reply.send(
+      await projectsWithRhythm(userId, { archived: showArchived, scopeId: query.scopeId }, new Date()),
+    );
   });
 
   app.get("/projects/:id", async (request, reply) => {
     const userId = userIdOf(request);
     const { id } = idParamSchema.parse(request.params);
     const project = await getProjectOrThrow(userId, id);
-    reply.send(project);
+    reply.send(await projectView(project));
   });
 
   /*
@@ -170,9 +224,12 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       data: {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.scopeId !== undefined ? { scopeId: body.scopeId } : {}),
+        // The rhythm: a number, or null to switch it off.
+        ...(body.rhythmClosedPerWeek !== undefined ? { rhythmClosedPerWeek: body.rhythmClosedPerWeek } : {}),
+        ...(body.rhythmMaxOpen !== undefined ? { rhythmMaxOpen: body.rhythmMaxOpen } : {}),
       },
     });
-    reply.send(project);
+    reply.send(await projectView(project));
   });
 
   app.post("/projects/:id/archive", async (request, reply) => {
@@ -183,7 +240,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       where: { id },
       data: { archivedAt: new Date() },
     });
-    reply.send(project);
+    reply.send(await projectView(project));
   });
 
   app.post("/projects/:id/unarchive", async (request, reply) => {
@@ -194,7 +251,7 @@ export async function projectRoutes(app: FastifyInstance): Promise<void> {
       where: { id },
       data: { archivedAt: null },
     });
-    reply.send(project);
+    reply.send(await projectView(project));
   });
 
   app.delete("/projects/:id", async (request, reply) => {

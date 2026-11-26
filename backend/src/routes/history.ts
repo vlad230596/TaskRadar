@@ -2,7 +2,10 @@ import { FastifyInstance } from "fastify";
 import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
 import { countByDay, historyRangeStart, replayStatusTime } from "../domain/history";
-import { historyQuerySchema } from "../schemas";
+import { historyDoneQuerySchema, historyQuerySchema, historyWeeksQuerySchema } from "../schemas";
+import { countByProject, recentWeeks } from "../domain/review";
+import { placedTaskInclude, placedTaskView } from "./today";
+import { reviewView } from "./reviews";
 
 /*
  * `GET /history` -- the whole history mode in one response (F11).
@@ -58,7 +61,8 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
     const movements = await prisma.taskEvent.findMany({
       where: {
         task: { project: { scope: { userId } } },
-        OR: [{ kind: "created" }, { kind: "status", toStatus: "done" }],
+        // A revoked closing (taken back out of done) is not a closing.
+        OR: [{ kind: "created" }, { kind: "status", toStatus: "done", revokedAt: null }],
         ...(from ? { at: { gte: from } } : {}),
       },
       select: {
@@ -162,6 +166,73 @@ export async function historyRoutes(app: FastifyInstance): Promise<void> {
         (a, b) => b.opened + b.closed - (a.opened + a.closed) || a.name.localeCompare(b.name),
       ),
       stale,
+    });
+  });
+
+  /*
+   * «Сделано» (design/today-history-contract.md): what was closed, freshest
+   * first, a page at a time. One row per task, at its current `doneAt` -- a
+   * task closed, reopened and closed again is listed once, at the second
+   * closing; a reopened one is not listed at all. Archived projects' tasks
+   * stay: what was done was done. `before` is the `doneAt` of the last row
+   * already shown (`nextBefore` of the previous page). Grouping into days is
+   * the client's, in its own zone.
+   */
+  app.get("/history/done", async (request, reply) => {
+    const userId = userIdOf(request);
+    const query = historyDoneQuerySchema.parse(request.query);
+    const rows = await prisma.task.findMany({
+      where: {
+        status: "done",
+        doneAt: query.before !== undefined ? { lt: query.before } : { not: null },
+        project: { scope: { userId } },
+      },
+      orderBy: [{ doneAt: "desc" }, { id: "asc" }],
+      take: query.limit + 1,
+      include: placedTaskInclude,
+    });
+    const page = rows.slice(0, query.limit);
+    reply.send({
+      items: page.map((row) => ({ task: placedTaskView(row), doneAt: row.doneAt })),
+      nextBefore: rows.length > query.limit ? page[page.length - 1]!.doneAt : null,
+    });
+  });
+
+  /*
+   * «Недели»: closings per owner's week (Monday to Monday, local), newest
+   * first, with the review whose period ended in that week, if any -- the
+   * «путемер». Zero weeks are listed: the bars are an axis.
+   */
+  app.get("/history/weeks", async (request, reply) => {
+    const userId = userIdOf(request);
+    const query = historyWeeksQuerySchema.parse(request.query);
+    const weeks = recentWeeks(new Date(), query.tzOffsetMinutes, query.weeks);
+    const from = weeks[weeks.length - 1]!.from;
+    const [closed, reviews] = await Promise.all([
+      prisma.task.findMany({
+        where: { status: "done", doneAt: { gte: from }, project: { scope: { userId } } },
+        select: { doneAt: true, projectId: true, project: { select: { name: true } } },
+      }),
+      prisma.review.findMany({
+        where: { userId, periodEnd: { gte: from } },
+        orderBy: { periodEnd: "asc" },
+      }),
+    ]);
+    const within = (at: Date, week: { from: Date; to: Date }) =>
+      at.getTime() >= week.from.getTime() && at.getTime() < week.to.getTime();
+    reply.send({
+      weeks: weeks.map((week) => {
+        const inWeek = closed.filter((row) => row.doneAt !== null && within(row.doneAt, week));
+        const review = reviews.filter((r) => within(r.periodEnd, week)).pop() ?? null;
+        return {
+          start: week.start,
+          closed: inWeek.length,
+          byProject: countByProject(
+            inWeek.map((row) => ({ projectId: row.projectId, projectName: row.project.name })),
+          ),
+          review: review === null ? null : reviewView(review),
+        };
+      }),
     });
   });
 }

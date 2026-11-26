@@ -109,6 +109,9 @@ export const updateProjectSchema = z
   .object({
     name: z.string().trim().min(1, "name is required").optional(),
     scopeId: z.string().min(1).optional(),
+    // The rhythm (design/today-history-contract.md): null switches a number off.
+    rhythmClosedPerWeek: z.number().int().min(1).max(50).nullable().optional(),
+    rhythmMaxOpen: z.number().int().min(1).max(500).nullable().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, {
     message: "At least one field must be provided",
@@ -377,6 +380,53 @@ export const historyQuerySchema = z.object({
   range: z.enum(HISTORY_RANGES).default("30d"),
   tzOffsetMinutes: z.coerce.number().int().min(-840).max(840).default(0),
   staleLimit: z.coerce.number().int().min(1).max(50).default(5),
+});
+
+// ---- «Сегодня», История, пересмотр (design/today-history-contract.md) ----
+
+/** The client's UTC offset, minutes east -- the same rule as `historyQuerySchema`. */
+const tzOffsetSchema = z.coerce.number().int().min(-840).max(840).default(0);
+
+const clockTimeSchema = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "time must be HH:MM");
+
+/** `PATCH /settings`: any subset; an unknown key is a 400 rather than ignored. */
+export const updateSettingsSchema = z
+  .object({
+    laterHorizonDays: z.number().int().min(1).max(90).optional(),
+    reviewWeekday: z.number().int().min(1).max(7).optional(),
+    reviewTime: clockTimeSchema.optional(),
+  })
+  .strict();
+
+/** `GET /today`, `/reviews/status`, `/reviews/draft`. */
+export const tzQuerySchema = z.object({ tzOffsetMinutes: tzOffsetSchema });
+
+/** `GET /history/done`: newest first, `before` = the last `doneAt` already shown. */
+export const historyDoneQuerySchema = z.object({
+  before: z.coerce.date().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+  tzOffsetMinutes: tzOffsetSchema,
+});
+
+export const historyWeeksQuerySchema = z.object({
+  weeks: z.coerce.number().int().min(1).max(52).default(12),
+  tzOffsetMinutes: tzOffsetSchema,
+});
+
+/** `POST /reviews`: the server computes the period and the numbers itself. */
+export const createReviewSchema = z
+  .object({
+    summary: z.string().trim().max(300).nullish(),
+    tzOffsetMinutes: z.number().int().min(-840).max(840).default(0),
+  })
+  .nullish()
+  .transform((body) => ({
+    summary: body?.summary ? body.summary : null,
+    tzOffsetMinutes: body?.tzOffsetMinutes ?? 0,
+  }));
+
+export const listReviewsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
 });
 
 // ---- Inbox (F8) ----

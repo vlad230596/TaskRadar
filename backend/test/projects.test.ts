@@ -227,6 +227,7 @@ describe("PATCH /projects/:id -- renaming", () => {
       "name",
       // F7 added this one, and the pairing above is what keeps the two routes
       // from drifting apart when the next field arrives.
+      "rhythm",
       "scopeId",
       "updatedAt",
     ]);

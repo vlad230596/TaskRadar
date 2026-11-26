@@ -140,7 +140,8 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
         data: { focusedAt: new Date(), focusContourId: contourId },
         include: taskInclude,
       });
-      await tx.taskEvent.create({ data: { taskId: id, kind: "focused" } });
+      // Whose set it entered: «Вернуть» and the history read it from the journal.
+      await tx.taskEvent.create({ data: { taskId: id, kind: "focused", contourId } });
       return focused;
     });
 
@@ -171,7 +172,9 @@ export async function focusRoutes(app: FastifyInstance): Promise<void> {
         data: { focusedAt: null, focusContourId: null },
         include: taskInclude,
       });
-      await tx.taskEvent.create({ data: { taskId: id, kind: "unfocused" } });
+      await tx.taskEvent.create({
+        data: { taskId: id, kind: "unfocused", contourId: task.focusContourId },
+      });
       return unfocused;
     });
 

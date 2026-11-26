@@ -2,6 +2,7 @@ import { FastifyInstance } from "fastify";
 import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { userIdOf } from "../lib/users";
+import { settingsOf } from "../lib/userSettings";
 import { ConflictError, HttpError, NotFoundError, ValidationError } from "../lib/errors";
 import {
   computeAppendPosition,
@@ -108,7 +109,10 @@ async function appendGoalPosition(db: Db, contourId: string): Promise<number> {
 
 /** The goal as the API shows it, read fresh. */
 async function viewOf(db: Db, id: string) {
-  return goalView(await db.goal.findUniqueOrThrow({ where: { id }, include: goalInclude }));
+  const row = await db.goal.findUniqueOrThrow({ where: { id }, include: goalInclude });
+  // The next step passes over «Позже» by the owner's horizon.
+  const { laterHorizonDays } = await settingsOf(db, row.userId);
+  return goalView(row, new Date(), laterHorizonDays);
 }
 
 /** A task of [userId]'s, or a 404 naming it. */
@@ -141,7 +145,8 @@ export async function goalRoutes(app: FastifyInstance): Promise<void> {
       include: goalInclude,
     });
     const now = new Date();
-    reply.send(rows.map((row) => goalView(row, now)));
+    const { laterHorizonDays } = await settingsOf(prisma, userId);
+    reply.send(rows.map((row) => goalView(row, now, laterHorizonDays)));
   });
 
   app.get("/goals/:id", async (request, reply) => {

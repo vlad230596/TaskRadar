@@ -49,6 +49,8 @@ const prismaMock = vi.hoisted(() => ({
   // Contours: whose working set (design/goals-ideas-contract.md).
   contour: { findFirst: vi.fn(), create: vi.fn() },
   inboxItem: { create: vi.fn() },
+  // The owner's «Позже» horizon (design/today-history-contract.md): defaults.
+  user: { findUnique: vi.fn(async (): Promise<unknown> => null) },
   dictationParse: { updateMany: vi.fn(), findFirst: vi.fn(async (): Promise<unknown> => null) },
   $transaction: vi.fn(),
 }));

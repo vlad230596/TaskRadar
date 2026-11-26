@@ -20,6 +20,8 @@ import { inMemoryUsers, tokenFor, TEST_PASSWORD, USER_A, USER_B } from "./suppor
 const prismaMock = vi.hoisted(() => ({
   project: { findMany: vi.fn(), findFirst: vi.fn() },
   task: { findMany: vi.fn() },
+  // The owner's «Позже» horizon (design/today-history-contract.md): defaults.
+  user: { findUnique: vi.fn(async (): Promise<unknown> => null) },
 }));
 
 vi.mock("../src/lib/prisma", () => ({ prisma: prismaMock }));
@@ -319,6 +321,8 @@ describe("GET /board -- response shape", () => {
       "id",
       "name",
       "noteCount",
+      // The project's rhythm (design/today-history-contract.md): null when unset.
+      "rhythm",
       "scopeId",
       "tasks",
       "updatedAt",
