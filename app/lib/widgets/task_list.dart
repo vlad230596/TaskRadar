@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error_message.dart';
 import '../domain/reminders.dart';
+import '../domain/today_view.dart';
 import '../domain/smart_tokens.dart';
 import '../domain/task_age.dart';
 import '../domain/task_groups.dart';
@@ -13,12 +14,14 @@ import '../models/checklist_item.dart';
 import '../models/task.dart';
 import '../models/task_category.dart';
 import '../models/task_status.dart';
+import '../models/today_history.dart';
 import '../navigation/app_routes.dart';
 import '../providers/attachment_providers.dart';
 import '../domain/goals.dart';
 import '../providers/focus_providers.dart';
 import '../providers/outbox_providers.dart';
 import '../providers/project_providers.dart';
+import '../providers/today_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import 'attachment_badge.dart';
@@ -29,7 +32,10 @@ import 'goals/crown.dart';
 import 'goals/duel_sheet.dart';
 import 'mutation_feedback.dart';
 import 'overflow_fade_text.dart';
+import 'adaptive_layout.dart';
 import 'reminder_time_picker.dart';
+import 'today/next_sheet.dart';
+import 'today/row_date_actions.dart';
 
 /// The task half of the project screen: rows you can read, and one way to add
 /// one (F12).
@@ -163,7 +169,24 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
   @override
   Widget build(BuildContext context) {
     final tasks = widget.tasks;
-    final sections = TaskSections.of(tasks, ref.watch(focusedTaskIdsProvider));
+    final today = widget.now == null
+        ? ref.watch(todayKeyProvider)
+        : calendarDateForApi(widget.now!);
+    final sections = TaskSections.of(
+      tasks,
+      ref.watch(focusedTaskIdsProvider),
+      today: today,
+      horizonDays: ref.watch(laterHorizonDaysProvider),
+    );
+    final laterOpen =
+        ref.watch(uiNoteProvider(UiNotes.laterOpen(widget.projectId))).value ==
+        '1';
+    final hintSeen = ref.watch(uiNoteProvider(UiNotes.swipeHint));
+    final showHint =
+        !isWideLayout(context) &&
+        hintSeen.hasValue &&
+        hintSeen.value == null &&
+        sections.open.isNotEmpty;
     // Without categories (or before they load) the open tasks are one group
     // with no heading -- the list as it always was.
     final categories =
@@ -217,6 +240,18 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: <Widget>[
           const SliverToBoxAdapter(child: SizedBox(height: 4)),
+          if (showHint)
+            padded(
+              SliverToBoxAdapter(
+                child: SwipeHint(
+                  onClose: () => unawaited(
+                    ref
+                        .read(uiNoteProvider(UiNotes.swipeHint).notifier)
+                        .write('1'),
+                  ),
+                ),
+              ),
+            ),
           if (tasks.isNotEmpty)
             padded(
               SliverToBoxAdapter(
@@ -276,6 +311,41 @@ class _TaskListViewState extends ConsumerState<TaskListView> {
                     _reorder(group.indices, oldIndex, newIndex),
               ),
             ),
+          ],
+
+          // «Позже: N» -- the last row of the open section (spec §5.3).
+          if (sections.later.isNotEmpty) ...<Widget>[
+            padded(
+              SliverToBoxAdapter(
+                child: LaterToggle(
+                  count: sections.later.length,
+                  nearest: formatTaskDate(
+                    sections.later.first.remindAt,
+                    null,
+                    today,
+                  )?.text,
+                  expanded: laterOpen,
+                  onTap: () => unawaited(
+                    ref
+                        .read(
+                          uiNoteProvider(
+                            UiNotes.laterOpen(widget.projectId),
+                          ).notifier,
+                        )
+                        .write(laterOpen ? '0' : '1'),
+                  ),
+                ),
+              ),
+            ),
+            if (laterOpen)
+              padded(
+                SliverList.list(
+                  children: <Widget>[
+                    for (final task in sections.later)
+                      Opacity(opacity: 0.72, child: row(task)),
+                  ],
+                ),
+              ),
           ],
 
           // After the open tasks rather than at the very end: "and one more"
@@ -348,13 +418,23 @@ class TaskSections {
     required this.inWork,
     required this.open,
     required this.openIndices,
+    required this.later,
     required this.done,
   });
 
-  factory TaskSections.of(List<Task> tasks, Set<String> focused) {
+  /// [today] and [horizonDays] fold «Позже» (`design/today-history-
+  /// contract.md`): an open task dated beyond the horizon -- blocked ones
+  /// too -- goes to [later] instead of [open]. Without [today] nothing folds.
+  factory TaskSections.of(
+    List<Task> tasks,
+    Set<String> focused, {
+    String? today,
+    int horizonDays = kDefaultLaterHorizonDays,
+  }) {
     final inWork = <Task>[];
     final open = <Task>[];
     final openIndices = <int>[];
+    final later = <Task>[];
     final done = <Task>[];
     for (var i = 0; i < tasks.length; i++) {
       final task = tasks[i];
@@ -362,15 +442,22 @@ class TaskSections {
         done.add(task);
       } else if (focused.contains(task.id)) {
         inWork.add(task);
+      } else if (today != null && isLater(task, today, horizonDays)) {
+        later.add(task);
       } else {
         open.add(task);
         openIndices.add(i);
       }
     }
+    // Nearest first: the folded row names the nearest one.
+    later.sort(
+      (a, b) => (taskDay(a.remindAt) ?? '').compareTo(taskDay(b.remindAt) ?? ''),
+    );
     return TaskSections._(
       inWork: inWork,
       open: open,
       openIndices: openIndices,
+      later: later,
       done: done,
     );
   }
@@ -378,6 +465,9 @@ class TaskSections {
   final List<Task> inWork;
   final List<Task> open;
   final List<int> openIndices;
+
+  /// «Позже»: open, dated beyond the horizon, nearest first.
+  final List<Task> later;
   final List<Task> done;
 }
 
@@ -672,6 +762,10 @@ class TaskRow extends ConsumerWidget {
     final blocked = task.status == TaskStatus.blocked;
     final done = task.status == TaskStatus.done;
     final current = task.isCurrent;
+    final today = now == null
+        ? ref.watch(todayKeyProvider)
+        : calendarDateForApi(now!);
+    final dateLabel = formatTaskDate(task.remindAt, task.remindTime, today);
     // Made with no network and not sent yet, or sent a moment ago. The mark
     // is the other half of drawing an unsent change at all: without it,
     // "saved" and "saved in my pocket" would look the same.
@@ -825,23 +919,39 @@ class TaskRow extends ConsumerWidget {
             ),
             if (current) ...<Widget>[
               const SizedBox(height: 6),
-              _Meta(
-                icon: Icons.arrow_forward,
-                text: _reminderSuffix('следующая', task, now),
-                colour: AppColors.indigoLink,
-              ),
-            ] else if (!blocked && !done && task.remindAt != null) ...<Widget>[
+              if (dateLabel == null)
+                const _Meta(
+                  icon: Icons.arrow_forward,
+                  text: 'следующая',
+                  colour: AppColors.indigoLink,
+                )
+              else
+                Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.arrow_forward,
+                      size: 13,
+                      color: AppColors.indigoLink,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: TaskDateMeta(
+                        label: dateLabel,
+                        lead: 'следующая',
+                        leadColor: AppColors.indigoLink,
+                        icon: false,
+                      ),
+                    ),
+                  ],
+                ),
+            ] else if (!blocked && !done && dateLabel != null) ...<Widget>[
               const SizedBox(height: 6),
-              _Meta(
-                icon: Icons.notifications_none,
-                text: _reminderSuffix('', task, now),
-                colour: AppColors.indigoLink,
-              ),
+              TaskDateMeta(label: dateLabel),
             ] else if (blocked) ...<Widget>[
               const SizedBox(height: 6),
               _Meta(
-                icon: Icons.notifications_none,
-                text: _blockedLine(task, age, now),
+                icon: Icons.pause_circle_outline,
+                text: _blockedLine(task, age, today),
                 colour: AppColors.waitingInk,
               ),
             ],
@@ -864,7 +974,13 @@ class TaskRow extends ConsumerWidget {
       ),
     );
 
-    return Container(
+    final wide = isWideLayout(context);
+    final dateActions = !done && !_unconfirmed && !arranging;
+    final alreadyToday = taskDay(task.remindAt) == today;
+    void quick(RowDateAction action) =>
+        unawaited(runRowDateAction(context, task, action));
+
+    Widget card(bool hovered) => Container(
       decoration: BoxDecoration(
         // A done row is a line of history, not a card: no fill, no border, the
         // same as the reference's done list.
@@ -987,10 +1103,42 @@ class TaskRow extends ConsumerWidget {
                 ),
               ),
             )
-          else
+          else ...<Widget>[
+            if (hovered && dateActions)
+              HoverDateButtons(
+                alreadyToday: alreadyToday,
+                onToday: () => quick(RowDateAction.today),
+                onTomorrow: () => quick(RowDateAction.tomorrow),
+              ),
             _FocusTarget(task: task, projectName: projectName),
+          ],
         ],
       ),
+    );
+
+    // The quick date actions (spec §5.2): hover buttons and the right
+    // click's menu on a desktop, the swipe on a phone.
+    if (wide) {
+      if (!dateActions) return card(false);
+      return GestureDetector(
+        onSecondaryTap: () => unawaited(
+          showTaskRowMenu(
+            context,
+            ref,
+            projectId: projectId,
+            projectName: projectName,
+            task: task,
+          ),
+        ),
+        child: HoverBuilder(builder: (context, hovered) => card(hovered)),
+      );
+    }
+    return DateSwipe(
+      enabled: dateActions,
+      alreadyToday: alreadyToday,
+      onToday: () => quick(RowDateAction.today),
+      onTomorrow: () => quick(RowDateAction.tomorrow),
+      child: card(false),
     );
   }
 }
@@ -1179,32 +1327,13 @@ void _offerUndo(
 const Color _kSentFill = Color(0xFFE5F0EA);
 const Color _kSentLine = Color(0xFFBFDCCB);
 
-/// [lead] followed by the reminder date of an open, unblocked row
-/// ("следующая · 23.09", "пора · 23.09"); just [lead] when there is no date.
-String _reminderSuffix(String lead, Task task, DateTime? now) {
-  final remindAt = task.remindAt;
-  if (remindAt == null) return lead;
-  final date = formatReminderDate(remindAt, task.remindTime);
-  final due = isReminderDue(remindAt, remindTime: task.remindTime, now: now);
-  final label = due ? 'пора · $date' : date;
-  return lead.isEmpty ? label : '$lead · $label';
-}
-
-/// "23.09 · ждёт 3 д", or just one half of it.
-String _blockedLine(Task task, int? age, DateTime? now) {
-  final remindAt = task.remindAt;
+/// «ждёт 2 д · проверить сб 28.11»: a blocker's date is when to check
+/// (today-decisions, 6); «без даты» when it has none.
+String _blockedLine(Task task, int? age, String today) {
   final waited = age == null ? null : 'ждёт ${formatAgeShort(age)}';
-
-  if (remindAt == null) {
-    // A blocked task with no date is a task that will never ask again, and
-    // saying so is the only thing that gets a date onto it.
-    return waited == null ? 'без даты' : '$waited · без даты';
-  }
-
-  final date = formatReminderDate(remindAt, task.remindTime);
-  final due = isReminderDue(remindAt, remindTime: task.remindTime, now: now);
-  final label = due ? 'пора · $date' : date;
-  return waited == null ? label : '$label · $waited';
+  final label = formatTaskDate(task.remindAt, task.remindTime, today);
+  final check = label == null ? 'без даты' : 'проверить ${label.text}';
+  return waited == null ? check : '$waited · $check';
 }
 
 class _Meta extends StatelessWidget {
@@ -1373,10 +1502,12 @@ class _StatusTargetState extends ConsumerState<_StatusTarget>
     if (mounted && _completing) setState(() => _completing = false);
     if (!ok || next != TaskStatus.done || !messenger.mounted) return;
 
-    _offerUndo(
+    showDoneSnackBar(
       messenger,
-      'Сделано',
-      () => _restore(
+      title: previous.title,
+      projectId: widget.projectId,
+      projectName: widget.projectName,
+      undo: () => _restore(
         container,
         projectId: widget.projectId,
         projectName: widget.projectName,
@@ -1387,9 +1518,32 @@ class _StatusTargetState extends ConsumerState<_StatusTarget>
   }
 
   Future<void> _choose() async {
-    final chosen = await showModalBottomSheet<TaskStatus>(
-      context: context,
-      builder: (context) => SafeArea(
+    final chosen = await chooseRowAction(context, ref, task);
+    if (chosen == null || !mounted) return;
+    switch (chosen) {
+      case final TaskStatus status:
+        if (status == task.status) return;
+        await _commit(status);
+      case final RowDateAction action:
+        await runRowDateAction(context, task, action);
+    }
+  }
+}
+
+/// The long-press menu of a row: the three statuses, then the date block
+/// (spec §5.2) for a task that is not done. Answers a [TaskStatus] or a
+/// [RowDateAction], or null.
+Future<Object?> chooseRowAction(
+  BuildContext context,
+  WidgetRef ref,
+  Task task,
+) {
+  final today = ref.read(todayKeyProvider);
+  return showModalBottomSheet<Object>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => SafeArea(
+      child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -1406,12 +1560,37 @@ class _StatusTargetState extends ConsumerState<_StatusTarget>
                     : null,
                 onTap: () => Navigator.of(context).pop(status),
               ),
+            if (task.status != TaskStatus.done)
+              ...rowDateMenuItems(context, task: task, today: today),
           ],
         ),
       ),
-    );
-    if (chosen == null || chosen == task.status || !mounted) return;
-    await _commit(chosen);
+    ),
+  );
+}
+
+/// The same menu from a desktop's right click on a row.
+Future<void> showTaskRowMenu(
+  BuildContext context,
+  WidgetRef ref, {
+  required String projectId,
+  required String projectName,
+  required Task task,
+}) async {
+  final chosen = await chooseRowAction(context, ref, task);
+  if (chosen == null || !context.mounted) return;
+  switch (chosen) {
+    case final TaskStatus status:
+      if (status == task.status) return;
+      await setTaskStatus(
+        context,
+        ref,
+        projectId: projectId,
+        task: task,
+        status: status,
+      );
+    case final RowDateAction action:
+      await runRowDateAction(context, task, action);
   }
 }
 

@@ -414,12 +414,15 @@ void showDoneSnackBar(
                 ),
               ),
             ),
-            TextButton.icon(
+            // The snackbar's own context is under the Navigator (the
+            // Scaffold draws it), so the sheet opens from it -- before the
+            // snackbar goes, which the pushed route does not depend on.
+            Builder(
+              builder: (snackContext) => TextButton.icon(
               key: const ValueKey<String>('snack-next'),
               onPressed: () {
-                hide();
-                final context = appNavigatorKey.currentContext;
-                if (context == null) return;
+                final context =
+                    appNavigatorKey.currentContext ?? snackContext;
                 unawaited(
                   showNextSheet(
                     context,
@@ -428,6 +431,7 @@ void showDoneSnackBar(
                     afterTitle: title,
                   ),
                 );
+                hide();
               },
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.snackAction,
@@ -445,6 +449,7 @@ void showDoneSnackBar(
                 color: AppColors.snackAction,
               ),
               label: const Text('Следом…'),
+            ),
             ),
             TextButton(
               onPressed: () {

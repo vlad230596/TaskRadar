@@ -692,3 +692,113 @@ final class ReviewDueProvider extends $FunctionalProvider<bool, bool, bool>
 }
 
 String _$reviewDueHash() => r'd1fbf580699e9bcae6e4bfc03173fa29df5faffd';
+
+/// One of the device's interface notes (see `SettingsStore.readUiNote`).
+/// Written optimistically: a note that fails to save costs the next run a
+/// hint shown twice, not this one an error.
+
+@ProviderFor(UiNote)
+final uiNoteProvider = UiNoteFamily._();
+
+/// One of the device's interface notes (see `SettingsStore.readUiNote`).
+/// Written optimistically: a note that fails to save costs the next run a
+/// hint shown twice, not this one an error.
+final class UiNoteProvider extends $AsyncNotifierProvider<UiNote, String?> {
+  /// One of the device's interface notes (see `SettingsStore.readUiNote`).
+  /// Written optimistically: a note that fails to save costs the next run a
+  /// hint shown twice, not this one an error.
+  UiNoteProvider._({
+    required UiNoteFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'uiNoteProvider',
+         isAutoDispose: false,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
+
+  @override
+  String debugGetCreateSourceHash() => _$uiNoteHash();
+
+  @override
+  String toString() {
+    return r'uiNoteProvider'
+        ''
+        '($argument)';
+  }
+
+  @$internal
+  @override
+  UiNote create() => UiNote();
+
+  @override
+  bool operator ==(Object other) {
+    return other is UiNoteProvider && other.argument == argument;
+  }
+
+  @override
+  int get hashCode {
+    return argument.hashCode;
+  }
+}
+
+String _$uiNoteHash() => r'4bc3f251dcaf206d68dc6934bd70a9ddf25e434b';
+
+/// One of the device's interface notes (see `SettingsStore.readUiNote`).
+/// Written optimistically: a note that fails to save costs the next run a
+/// hint shown twice, not this one an error.
+
+final class UiNoteFamily extends $Family
+    with
+        $ClassFamilyOverride<
+          UiNote,
+          AsyncValue<String?>,
+          String?,
+          FutureOr<String?>,
+          String
+        > {
+  UiNoteFamily._()
+    : super(
+        retry: null,
+        name: r'uiNoteProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: false,
+      );
+
+  /// One of the device's interface notes (see `SettingsStore.readUiNote`).
+  /// Written optimistically: a note that fails to save costs the next run a
+  /// hint shown twice, not this one an error.
+
+  UiNoteProvider call(String key) =>
+      UiNoteProvider._(argument: key, from: this);
+
+  @override
+  String toString() => r'uiNoteProvider';
+}
+
+/// One of the device's interface notes (see `SettingsStore.readUiNote`).
+/// Written optimistically: a note that fails to save costs the next run a
+/// hint shown twice, not this one an error.
+
+abstract class _$UiNote extends $AsyncNotifier<String?> {
+  late final _$args = ref.$arg as String;
+  String get key => _$args;
+
+  FutureOr<String?> build(String key);
+  @$mustCallSuper
+  @override
+  void runBuild() {
+    final ref = this.ref as $Ref<AsyncValue<String?>, String?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<String?>, String?>,
+              AsyncValue<String?>,
+              Object?,
+              Object?
+            >;
+    element.handleCreate(ref, () => build(_$args));
+  }
+}

@@ -183,6 +183,11 @@ void main() {
   Finder chipText(String tooltip, String text) =>
       find.descendant(of: chip(tooltip), matching: find.text(text));
 
+  // «Дата» and «Время» (today-history-spec §7.1): two chips where the
+  // reminder was one.
+  Finder dateChip(String text) => chipText('Дата', text);
+  Finder timeChip(String text) => chipText('Время — пуш в это время', text);
+
   group('an existing task: what the old task screen did', () {
     testWidgets('the title field sizes to its text, two lines at the least', (
       tester,
@@ -840,7 +845,7 @@ void main() {
 
       // Scanned once on opening, everything found dismissed.
       expect(titleController(tester).activeTokens, isEmpty);
-      expect(chipText('Напоминание', '+ Напомнить'), findsOneWidget);
+      expect(dateChip('+ Дата'), findsOneWidget);
 
       await tester.enterText(titleField(), 'Позвонить в пятницу в 10 маме');
       await tester.pump();
@@ -862,7 +867,8 @@ void main() {
 
       await tester.enterText(titleField(), 'Позвонить завтра в 10');
       await tester.pump();
-      expect(chipText('Напоминание', 'Завтра, 10:00'), findsOneWidget);
+      expect(dateChip('Завтра'), findsOneWidget);
+      expect(timeChip('10:00'), findsOneWidget);
       // Not written yet: the text and what it says wait for "Сохранить".
       expect(server.patches, isEmpty);
 
@@ -876,27 +882,41 @@ void main() {
       });
     });
 
-    testWidgets('the reminder chip writes at once', (tester) async {
+    testWidgets('the date chip writes at once, the time is its own step', (
+      tester,
+    ) async {
       final id = server.addTask(projectId: projectId, title: 'Позвонить');
       await pumpTask(tester, id);
+      // No time without a date.
+      expect(find.text('+ Время'), findsNothing);
 
-      await tester.tap(find.text('+ Напомнить'));
+      await tester.tap(find.text('+ Дата'));
       await settle(tester);
-      expect(find.text('Когда напомнить'), findsOneWidget);
-      await tester.tap(find.text('Завтра утром'));
+      expect(find.text('Когда этим заняться'), findsOneWidget);
+      // One tap on a quick day applies and closes.
+      await tester.tap(find.text('Завтра'));
       await settle(tester);
 
-      expect(server.patches.single.body, <String, dynamic>{
+      expect(server.patches.single.body['remindAt'], '2026-11-12');
+      expect(dateChip('Завтра'), findsOneWidget);
+      expect(timeChip('+ Время'), findsOneWidget);
+
+      await tester.tap(find.text('+ Время'));
+      await settle(tester);
+      expect(find.text('Пуш в это время. Без времени — без пуша.'), findsOneWidget);
+      await tester.tap(find.text('15:00'));
+      await settle(tester);
+      expect(server.patches.last.body, <String, dynamic>{
         'remindAt': '2026-11-12',
-        'remindTime': '09:00',
+        'remindTime': '15:00',
       });
-      expect(chipText('Напоминание', 'Завтра, 09:00'), findsOneWidget);
+      expect(timeChip('15:00'), findsOneWidget);
 
-      // The cross takes it off, also at once.
-      await tester.tap(find.byTooltip('Убрать напоминание'));
+      // The cross takes it all off, also at once.
+      await tester.tap(find.byTooltip('Снять дату'));
       await settle(tester);
       expect(server.patches.last.body, <String, dynamic>{'remindAt': null});
-      expect(find.text('+ Напомнить'), findsOneWidget);
+      expect(find.text('+ Дата'), findsOneWidget);
     });
   });
 
@@ -919,7 +939,8 @@ void main() {
 
       final tokens = titleController(tester).activeTokens.toList();
       expect(tokens, hasLength(3));
-      expect(chipText('Напоминание', 'Завтра, 10:00'), findsOneWidget);
+      expect(dateChip('Завтра'), findsOneWidget);
+      expect(timeChip('10:00'), findsOneWidget);
       expect(chipText('Проект задачи', 'Дача'), findsOneWidget);
       expect(chipText('Категория', 'Покупки'), findsOneWidget);
 
@@ -974,7 +995,7 @@ void main() {
       await settle(tester);
 
       expect(titleController(tester).activeTokens, isEmpty);
-      expect(chipText('Напоминание', '+ Напомнить'), findsOneWidget);
+      expect(dateChip('+ Дата'), findsOneWidget);
 
       await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
@@ -995,7 +1016,7 @@ void main() {
       );
       await tester.pump();
       expect(controller.activeTokens, hasLength(1));
-      expect(chipText('Напоминание', 'Завтра'), findsOneWidget);
+      expect(dateChip('Завтра'), findsOneWidget);
 
       // The first Backspace: the text stays, the token goes.
       controller.value = TextEditingValue(
@@ -1005,7 +1026,7 @@ void main() {
       await tester.pump();
       expect(controller.text, text);
       expect(controller.activeTokens, isEmpty);
-      expect(chipText('Напоминание', '+ Напомнить'), findsOneWidget);
+      expect(dateChip('+ Дата'), findsOneWidget);
 
       // The second one erases.
       controller.value = TextEditingValue(
@@ -1021,22 +1042,22 @@ void main() {
     ) async {
       await pumpNew(tester);
 
-      // A reminder set by hand...
-      await tester.tap(find.text('+ Напомнить'));
+      // A date set by hand («Пн» -- the next Monday, 16.11)...
+      await tester.tap(find.text('+ Дата'));
       await settle(tester);
-      await tester.tap(find.text('Через неделю'));
+      await tester.tap(find.text('Пн'));
       await settle(tester);
-      expect(chipText('Напоминание', '18.11'), findsOneWidget);
+      expect(dateChip('Пн 16.11'), findsOneWidget);
 
       // ...overridden by a typed date while it is there...
       await tester.enterText(titleField(), 'Позвонить завтра');
       await tester.pump();
-      expect(chipText('Напоминание', 'Завтра'), findsOneWidget);
+      expect(dateChip('Завтра'), findsOneWidget);
 
       // ...and back when the date is erased.
       await tester.enterText(titleField(), 'Позвонить');
       await tester.pump();
-      expect(chipText('Напоминание', '18.11'), findsOneWidget);
+      expect(dateChip('Пн 16.11'), findsOneWidget);
     });
 
     testWidgets('a reminder and a category set by hand go with the create', (
@@ -1050,9 +1071,13 @@ void main() {
       await tester.enterText(titleField(), 'Смеситель');
       await tester.enterText(find.byType(TextField).last, 'Хром, не латунь');
 
-      await tester.tap(find.text('+ Напомнить'));
+      await tester.tap(find.text('+ Дата'));
       await settle(tester);
-      await tester.tap(find.text('Завтра утром'));
+      await tester.tap(find.text('Завтра'));
+      await settle(tester);
+      await tester.tap(find.text('+ Время'));
+      await settle(tester);
+      await tester.tap(find.text('9:00'));
       await settle(tester);
 
       // The row scrolls sideways; the category is its last chip.
@@ -1178,7 +1203,8 @@ void main() {
 
       expect(titleController(tester).text, 'Купить кабель');
       expect(find.widgetWithText(TextField, 'Два метра'), findsOneWidget);
-      expect(chipText('Напоминание', '20.11, 18:00'), findsOneWidget);
+      expect(dateChip('20 ноя'), findsOneWidget);
+      expect(timeChip('18:00'), findsOneWidget);
 
       await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));
       await settle(tester);
@@ -1216,7 +1242,7 @@ void main() {
 
       expect(find.byType(TaskEditor), findsOneWidget);
       expect(find.byType(BottomSheet), findsOneWidget);
-      expect(find.text('+ Напомнить'), findsOneWidget);
+      expect(find.text('+ Дата'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Добавить'), findsOneWidget);
       // Compact: no sections yet.
       expect(find.text('ОПИСАНИЕ'), findsNothing);

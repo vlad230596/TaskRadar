@@ -20,12 +20,16 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'goals.dart' show formatClock;
+
 import '../models/board_project.dart';
 import '../models/scope.dart';
 import '../models/task.dart';
 import '../models/task_status.dart';
 import 'reminder_schedule.dart';
 import 'reminders.dart';
+
+export 'goals.dart' show formatClock;
 
 /// A stored date's calendar day, or null for none or garbage.
 String? taskDay(String? remindAt) =>
@@ -328,13 +332,6 @@ String weekdayDate(String day) {
 String shortDate(String day) {
   final date = _utcDay(day);
   return '${date.day}.${date.month.toString().padLeft(2, '0')}';
-}
-
-/// «9:30» -- the hour without its leading zero.
-String formatClock(String hhmm) {
-  final time = reminderTimeFromString(hhmm);
-  if (time == null) return hhmm;
-  return '${time.hour}:${time.minute.toString().padLeft(2, '0')}';
 }
 
 /// A task's date as rows show it: «вчера», «3 дн. назад», «сегодня · 15:00»,

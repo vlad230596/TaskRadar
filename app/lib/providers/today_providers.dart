@@ -517,3 +517,36 @@ Future<Project> saveRhythm(
   }
   return project;
 }
+
+// --- small interface notes ------------------------------------------------------
+
+/// One of the device's interface notes (see `SettingsStore.readUiNote`).
+/// Written optimistically: a note that fails to save costs the next run a
+/// hint shown twice, not this one an error.
+@Riverpod(keepAlive: true)
+class UiNote extends _$UiNote {
+  @override
+  Future<String?> build(String key) =>
+      ref.watch(settingsStoreProvider).readUiNote(key);
+
+  Future<void> write(String value) async {
+    state = AsyncData(value);
+    try {
+      await ref.read(settingsStoreProvider).writeUiNote(key, value);
+    } catch (error) {
+      debugPrint('Could not save the note "$key": $error');
+    }
+  }
+}
+
+/// Keys of [UiNote].
+abstract final class UiNotes {
+  /// The day «Сегодня» was folded on; folded until that day ends.
+  static const String todayFolded = 'today.folded';
+
+  /// The swipe hint over a project's list was closed.
+  static const String swipeHint = 'hint.swipeDate';
+
+  /// «Позже» unfolded in a project.
+  static String laterOpen(String projectId) => 'later.$projectId';
+}

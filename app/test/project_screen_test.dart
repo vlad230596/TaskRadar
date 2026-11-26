@@ -410,13 +410,9 @@ void main() {
     testWidgets('a due reminder is shown on the blocked task', (tester) async {
       await pumpProject(tester);
 
-      // The one row in the whole app that asks for action *today*, so it says
-      // so before it says the date.
-      final today = DateTime.now();
-      final date =
-          '${today.day.toString().padLeft(2, '0')}.'
-          '${today.month.toString().padLeft(2, '0')}';
-      expect(find.textContaining('пора · $date'), findsOneWidget);
+      // A blocker's date is when to check (today-history-spec §3): dated
+      // today, the row says «проверить сегодня».
+      expect(find.textContaining('проверить сегодня'), findsOneWidget);
     });
 
     testWidgets('highlightTaskId outlines the row F4 will point at', (
@@ -705,7 +701,9 @@ void main() {
       expect(server.patches.last.body, <String, dynamic>{'status': 'done'});
       // The row has left for the folded section, so the screen says what
       // happened to it -- with a way back.
-      expect(find.text('Сделано'), findsOneWidget);
+      // «Сделано: … · Следом… · Отменить» (today-history-spec §8.1).
+      expect(find.textContaining('Сделано: '), findsOneWidget);
+      expect(find.text('Следом…'), findsOneWidget);
       expect(find.text('Отменить'), findsOneWidget);
       expect(find.text('Выполнено · 1'), findsOneWidget);
     });

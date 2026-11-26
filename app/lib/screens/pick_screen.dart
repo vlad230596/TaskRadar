@@ -3,6 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../domain/today_view.dart';
+import '../providers/today_providers.dart';
+import '../widgets/adaptive_layout.dart';
+import '../widgets/today/next_sheet.dart';
+import '../widgets/today/row_date_actions.dart';
 import '../api/api_error_message.dart';
 import '../domain/task_age.dart';
 import '../models/board_project.dart';
@@ -252,8 +257,13 @@ class _TaskChoice extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final age = daysSinceMovement(task.updatedAt, createdAt: task.createdAt);
     final crown = watchCrown(ref, task.id, task.goals);
+    final today = ref.watch(todayKeyProvider);
+    final dateLabel = formatTaskDate(task.remindAt, task.remindTime, today);
+    final alreadyToday = taskDay(task.remindAt) == today;
+    void quick(RowDateAction action) =>
+        unawaited(runRowDateAction(context, task, action));
 
-    return Material(
+    final row = Material(
       color: chosen ? AppColors.ink : AppColors.card,
       borderRadius: BorderRadius.circular(Radii.card),
       child: InkWell(
@@ -271,14 +281,24 @@ class _TaskChoice extends ConsumerWidget {
               _Check(chosen: chosen),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(
-                  task.title,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: _choiceTitle.copyWith(
-                    fontWeight: chosen ? FontWeight.w600 : FontWeight.w500,
-                    color: chosen ? AppColors.onInk : AppColors.ink,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      task.title,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: _choiceTitle.copyWith(
+                        fontWeight: chosen ? FontWeight.w600 : FontWeight.w500,
+                        color: chosen ? AppColors.onInk : AppColors.ink,
+                      ),
+                    ),
+                    if (dateLabel != null && !chosen) ...<Widget>[
+                      const SizedBox(height: 4),
+                      TaskDateMeta(label: dateLabel),
+                    ],
+                  ],
                 ),
               ),
               // Только у невзятых: у взятой возраст уже ничего не решает, а чип
@@ -306,6 +326,37 @@ class _TaskChoice extends ConsumerWidget {
           ),
         ),
       ),
+    );
+
+    // «Сегодня» / «Завтра» as in a project (today-history-spec §5.2).
+    if (isWideLayout(context)) {
+      return HoverBuilder(
+        builder: (context, hovered) => Stack(
+          children: <Widget>[
+            row,
+            if (hovered && !chosen)
+              Positioned(
+                right: 56,
+                top: 0,
+                bottom: 0,
+                child: Center(
+                  child: HoverDateButtons(
+                    alreadyToday: alreadyToday,
+                    onToday: () => quick(RowDateAction.today),
+                    onTomorrow: () => quick(RowDateAction.tomorrow),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    return DateSwipe(
+      enabled: !chosen,
+      alreadyToday: alreadyToday,
+      onToday: () => quick(RowDateAction.today),
+      onTomorrow: () => quick(RowDateAction.tomorrow),
+      child: row,
     );
   }
 

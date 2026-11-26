@@ -44,7 +44,7 @@ final class NotificationLinkProvider
   }
 }
 
-String _$notificationLinkHash() => r'5bbfa6f92cc3ccd118dd732a1dfd44d39960f27d';
+String _$notificationLinkHash() => r'8b031a8dc481d2da4dcc77d90677395ac446e625';
 
 /// Holds the pending request and resolves it against the board.
 

@@ -40,6 +40,12 @@ import '../widgets/editor/editor_theme.dart';
 import '../widgets/editor/goals_section.dart';
 import '../widgets/editor/link_cards.dart';
 import '../widgets/editor/reminder_sheet.dart';
+import '../domain/reminders.dart' show calendarDateForApi;
+import '../domain/today_view.dart';
+import '../providers/today_providers.dart';
+import '../widgets/today/date_sheet.dart';
+import '../widgets/today/next_sheet.dart';
+import '../widgets/today/today_icons.dart';
 import '../widgets/editor/sections.dart';
 import '../widgets/editor/smart_text_controller.dart';
 import '../widgets/editor/task_draft.dart';
@@ -743,12 +749,29 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     final wasBlocked = task.status == TaskStatus.blocked;
     final hadDate = task.remindAt != null;
 
+    final messenger = ScaffoldMessenger.of(context);
+    final container = ProviderScope.containerOf(context, listen: false);
+    final tasks = _tasks;
     final ok = await runMutation(
       context,
-      () => _tasks.setStatus(task, status),
+      () => tasks.setStatus(task, status),
       failure: 'Не удалось изменить статус.',
     );
     if (!ok || !mounted) return;
+    if (status == TaskStatus.done && task.status != TaskStatus.done) {
+      // «Сделано: … · Следом… · Отменить» (today-history-spec §8.1).
+      showDoneSnackBar(
+        messenger,
+        title: task.title,
+        projectId: task.projectId,
+        projectName: _projectName(task.projectId) ?? '',
+        undo: () => setDayTaskStatus(
+          container,
+          task.copyWith(status: TaskStatus.done),
+          task.status,
+        ),
+      );
+    }
     if (status != TaskStatus.blocked || wasBlocked || hadDate) return;
 
     // Read fresh: the row the caller holds is the one from before the
@@ -796,15 +819,30 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     );
   }
 
-  Future<void> _editReminder(Task? task) async {
-    final choice = await showReminderSheet(
+  /// The «Дата» chip's sheet (today-history-spec §7.2): a day applies at
+  /// once and keeps the time; «Снять дату» takes both off.
+  Future<void> _editDate(Task? task) async {
+    final current = _reminderOf(task);
+    final choice = await showTaskDateSheet(
       context,
-      ref,
-      current: _reminderOf(task),
-      now: _now(),
+      current: current?.date,
+      time: current?.time,
+      today: calendarDateForApi(_now()),
     );
     if (choice == null || !mounted) return;
-    await _setReminderByHand(choice.value);
+    final day = choice.value;
+    await _setReminderByHand(
+      day == null ? null : ReminderValue(day, current?.time),
+    );
+  }
+
+  /// The «Время» chip's sheet (§7.3): only with a date.
+  Future<void> _editTime(Task? task) async {
+    final current = _reminderOf(task);
+    if (current == null) return;
+    final choice = await showTaskTimeSheet(context, current: current.time);
+    if (choice == null || !mounted) return;
+    await _setReminderByHand(current.withTime(choice.value));
   }
 
   Future<void> _pickCategory(Task? task) async {
@@ -1816,30 +1854,62 @@ class _TaskEditorState extends ConsumerState<TaskEditor> {
     for (final category in categories) {
       if (category.id == categoryId) categoryName = category.name;
     }
-    final past = reminder != null && reminderIsPast(reminder, now: now);
+    final today = calendarDateForApi(now);
+    final dateLabel = reminder == null
+        ? null
+        : formatTaskDate(reminder.date, null, today);
+    final overdue = dateLabel?.tone == DateTone.overdue;
+    final time = reminder?.time;
 
     return AttributeBar(
       chips: <Widget>[
+        // «Дата» first, then «Время» only with a date (today-history-spec
+        // §7.1): the time is its own optional step -- the push.
         if (showReminder)
           AttributeChip(
-            icon: reminder == null ? Icons.alarm_add : Icons.alarm,
-            label: reminder == null
-                ? '+ Напомнить'
-                : reminderChipLabel(reminder, now: now),
+            key: const ValueKey<String>('chip-date'),
+            icon: Icons.event,
+            leading: TodayIcon(
+              TodayGlyph.calendar,
+              size: 15,
+              color: reminder == null
+                  ? EditorColors.bright
+                  : overdue
+                  ? _overdueOnDark
+                  : AppColors.voiceBright,
+            ),
+            label: dateLabel == null ? '+ Дата' : dateLabel.capitalized,
             filled: reminder != null,
-            alarm: past,
-            note: past ? 'уже прошло' : null,
+            inkColor: overdue ? _overdueOnDark : null,
             aiMark: _reminderFromAi && reminder != null,
             flash: _flash[TokenKind.date],
-            tooltip: 'Напоминание',
-            onTap: () => unawaited(_editReminder(task)),
+            tooltip: 'Дата',
+            onTap: () => unawaited(_editDate(task)),
             onClear: reminder == null
                 ? null
                 : () => unawaited(_setReminderByHand(null)),
-            clearTooltip: 'Убрать напоминание',
+            clearTooltip: 'Снять дату',
           ),
-        // Second, right after the reminder: a goal matters more than a list
-        // or a picture, and the row scrolls sideways (spec, п. 6).
+        if (showReminder && reminder != null)
+          AttributeChip(
+            key: const ValueKey<String>('chip-time'),
+            icon: Icons.schedule,
+            leading: TodayIcon(
+              TodayGlyph.clock,
+              size: 15,
+              color: time == null ? EditorColors.bright : AppColors.voiceBright,
+            ),
+            label: time == null ? '+ Время' : formatClock(time),
+            filled: time != null,
+            tooltip: 'Время — пуш в это время',
+            onTap: () => unawaited(_editTime(task)),
+            onClear: time == null
+                ? null
+                : () => unawaited(_setReminderByHand(reminder.withTime(null))),
+            clearTooltip: 'Убрать время',
+          ),
+        // Right after the date: a goal matters more than a list or a
+        // picture, and the row scrolls sideways (spec, п. 6).
         GoalsChip(task: task, pending: _goals),
         ...EditorSlots.chips(
           scope,
@@ -2352,3 +2422,7 @@ class _LifeRow extends StatelessWidget {
     );
   }
 }
+
+/// «3 дн. назад» on the editor's dark chip: warm, not the alarm
+/// (today-history-spec §7.1).
+const Color _overdueOnDark = Color(0xFFF0A33C);

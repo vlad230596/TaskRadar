@@ -117,4 +117,15 @@ class FakeSettingsStore implements SettingsStore {
     if (failure != null) throw failure;
     placeReminders = enabled;
   }
+
+  /// [readUiNote]'s notes, by key.
+  final Map<String, String> uiNotes = <String, String>{};
+
+  @override
+  Future<String?> readUiNote(String key) async => uiNotes[key];
+
+  @override
+  Future<void> writeUiNote(String key, String value) async {
+    uiNotes[key] = value;
+  }
 }

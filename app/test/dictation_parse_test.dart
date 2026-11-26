@@ -308,7 +308,9 @@ void main() {
         tester.widget<TextField>(find.byType(TextField).first).controller!.text,
         'Купить кабель',
       );
-      expect(find.text('15.01, 10:00'), findsOneWidget);
+      // The «Дата» and «Время» chips (today-history-spec §7.1).
+      expect(find.text('15 янв 2030'), findsOneWidget);
+      expect(find.text('10:00'), findsOneWidget);
       expect(server.tasks, isEmpty);
 
       await tester.tap(find.widgetWithText(FilledButton, 'Добавить'));

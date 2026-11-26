@@ -56,8 +56,13 @@ class AttributeChip extends StatefulWidget {
     this.aiMark = false,
     this.note,
     this.leading,
+    this.inkColor,
     super.key,
   });
+
+  /// The label's colour instead of the usual one: the date chip's warm
+  /// «3 дн. назад».
+  final Color? inkColor;
 
   final IconData icon;
 
@@ -113,11 +118,11 @@ class _AttributeChipState extends State<AttributeChip>
   @override
   Widget build(BuildContext context) {
     final filled = widget.filled;
-    final ink = widget.alarm
+    final ink = widget.inkColor ?? (widget.alarm
         ? EditorColors.past
         : filled
         ? EditorColors.ink
-        : EditorColors.bright;
+        : EditorColors.bright);
     final onClear = widget.onClear;
 
     final body = AnimatedBuilder(

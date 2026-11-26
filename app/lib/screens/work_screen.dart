@@ -12,6 +12,7 @@ import '../models/goal.dart';
 import '../providers/focus_providers.dart';
 import '../providers/goal_providers.dart';
 import '../providers/shell_providers.dart';
+import '../providers/today_providers.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
 import '../widgets/adaptive_layout.dart';
@@ -23,6 +24,8 @@ import '../widgets/goals/goal_icons.dart';
 import '../widgets/mode_navigation.dart';
 import '../widgets/mode_title.dart';
 import '../widgets/mutation_feedback.dart';
+import '../widgets/today/day_block.dart';
+import '../widgets/today/next_sheet.dart';
 import 'pick_screen.dart';
 import 'shell_screen.dart';
 import '../storage/read_cache_store.dart';
@@ -64,24 +67,40 @@ class WorkScreen extends ConsumerWidget {
     // contour keeps its own); every set at once while contours are unknown.
     final set = ref.watch(activeFocusSetProvider);
     final blockSteps = watchGoalBlockStepIds(ref);
+    final todayIds = watchTodayIds(ref);
     final goalsHeader = isWideLayout(context)
         ? const Padding(
             padding: EdgeInsets.fromLTRB(40, 0, 40, 0),
-            child: WorkGoalsStrip(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                WorkGoalsStrip(),
+                Align(
+                  alignment: Alignment.topLeft,
+                  child: SizedBox(width: 400, child: DayBlock(wide: true)),
+                ),
+              ],
+            ),
           )
-        : const WorkGoals();
+        : const Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[WorkGoals(), DayBlock()],
+          );
 
     final Widget body = switch (set) {
       AsyncData(:final value) when value.isEmpty => _NoSet(
         header: goalsHeader,
       ),
-      // Everything in the set is a goal step: it is in work in the block,
-      // and the list under it has nothing of its own.
+      // Everything in the set is a goal step or in «Сегодня»: it is in work
+      // up there, and the list under it has nothing of its own.
       AsyncData(:final value)
-          when shownOnWorkList(value, blockSteps).isEmpty =>
-        _OnlyGoalSteps(header: goalsHeader),
+          when shownOnWorkList(value, blockSteps, todayIds: todayIds).isEmpty =>
+        _OnlyGoalSteps(
+          header: goalsHeader,
+          inToday: value.any((task) => todayIds.contains(task.id)),
+        ),
       AsyncData(:final value) => _Set(
-        tasks: shownOnWorkList(value, blockSteps),
+        tasks: shownOnWorkList(value, blockSteps, todayIds: todayIds),
       ),
       AsyncError(:final error) => _Failed(error: error),
       _ => const _Filler(
@@ -126,7 +145,11 @@ class WorkHeader extends ConsumerWidget {
         ref.watch(activeFocusSetProvider).value ?? const <FocusTask>[];
     // The dots count the whole set (the rule of five is about the set), and
     // the current one is the big card -- which is never a goal step.
-    final shown = shownOnWorkList(tasks, watchGoalBlockStepIds(ref));
+    final shown = shownOnWorkList(
+      tasks,
+      watchGoalBlockStepIds(ref),
+      todayIds: watchTodayIds(ref),
+    );
     final current = shown.isEmpty ? null : _headOf(shown).id;
     final wide = isWideLayout(context);
     final switcher = showContourSwitcher(ref);
@@ -360,6 +383,7 @@ class _Set extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 24),
       children: <Widget>[
         const WorkGoals(),
+        const DayBlock(),
         _HeadCard(task: head),
         if (rest.isNotEmpty) ...<Widget>[
           const _NextLabel(),
@@ -423,10 +447,20 @@ class _WideRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Expanded(child: _HeadCard(task: head, wide: true)),
-        const SizedBox(width: 28),
+        // The day column (`Desk-Focus-Today.html`): the tail, then
+        // «Сегодня», scrolling on its own.
         SizedBox(
-          width: 360,
+          width: 400,
+          child: ListView(
+            padding: const EdgeInsets.only(bottom: 16),
+            children: const <Widget>[DayBlock(wide: true)],
+          ),
+        ),
+        const SizedBox(width: 24),
+        Expanded(child: _HeadCard(task: head, wide: true)),
+        const SizedBox(width: 24),
+        SizedBox(
+          width: 320,
           child: ListView(
             children: <Widget>[
               const Padding(
@@ -471,7 +505,7 @@ class _HeadCard extends ConsumerWidget {
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(Insets.gutter, 6, Insets.gutter, 0),
       padding: wide
-          ? const EdgeInsets.fromLTRB(48, 44, 48, 40)
+          ? const EdgeInsets.fromLTRB(36, 36, 36, 32)
           : const EdgeInsets.fromLTRB(18, 20, 18, 18),
       decoration: BoxDecoration(
         color: AppColors.card,
@@ -536,17 +570,19 @@ class _HeadCard extends ConsumerWidget {
           ),
           if (wide) const Spacer() else const SizedBox(height: 22),
           if (wide)
-            Row(
+            // A wrap: with the day column beside it (`Desk-Focus-Today.html`)
+            // the card is narrower than the three buttons on a 1440 window.
+            Wrap(
+              spacing: 14,
+              runSpacing: 12,
               children: <Widget>[
                 _DoneButton(task: task, wide: true),
-                const SizedBox(width: 14),
                 _SecondaryButton(
                   icon: Icons.remove_circle_outline,
-                  label: 'Убрать из набора',
+                  label: 'Убрать',
                   wide: true,
                   onPressed: () => _drop(context, ref, task),
                 ),
-                const SizedBox(width: 14),
                 _SecondaryButton(
                   icon: Icons.edit_outlined,
                   label: 'Правка',
@@ -595,13 +631,7 @@ class _DoneButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final button = FilledButton.icon(
-      onPressed: () => unawaited(
-        runMutation(
-          context,
-          () => ref.read(focusSetProvider.notifier).complete(task),
-          failure: 'Не удалось отметить задачу сделанной.',
-        ),
-      ),
+      onPressed: () => unawaited(completeFocusTask(context, ref, task)),
       style: FilledButton.styleFrom(
         backgroundColor: AppColors.done,
         foregroundColor: AppColors.onInk,
@@ -801,13 +831,7 @@ class _NextRow extends ConsumerWidget {
                 ? 'Блокер — отметить сделанной'
                 : 'Отметить сделанной',
             child: InkWell(
-              onTap: () => unawaited(
-                runMutation(
-                  context,
-                  () => ref.read(focusSetProvider.notifier).complete(task),
-                  failure: 'Не удалось отметить задачу сделанной.',
-                ),
-              ),
+              onTap: () => unawaited(completeFocusTask(context, ref, task)),
               child: SizedBox(
                 width: Targets.minimum,
                 height: Targets.minimum,
@@ -932,19 +956,25 @@ class _NoSet extends StatelessWidget {
 /// block, and the list has nothing else -- not «Набор пуст», which would be
 /// untrue.
 class _OnlyGoalSteps extends StatelessWidget {
-  const _OnlyGoalSteps({required this.header});
+  const _OnlyGoalSteps({required this.header, this.inToday = false});
 
   final Widget header;
+
+  /// Some of the set is dated today and shown in «Сегодня» (coordinator,
+  /// answer 2), not only goal steps.
+  final bool inToday;
 
   @override
   Widget build(BuildContext context) {
     return _Filler(
       header: header,
       icon: Icons.adjust,
-      title: 'В работе — шаги целей',
-      body:
-          'Они в блоке целей выше. Кроме них в наборе ничего нет — '
-          'добавьте задачи на экране проектов или сразу здесь.',
+      title: inToday ? 'Набор — выше' : 'В работе — шаги целей',
+      body: inToday
+          ? 'Задачи набора с датой на сегодня — в «Сегодня», шаги целей — '
+                'в блоке целей. Кроме них в наборе ничего нет.'
+          : 'Они в блоке целей выше. Кроме них в наборе ничего нет — '
+                'добавьте задачи на экране проектов или сразу здесь.',
       action: SizedBox(
         height: Targets.row,
         child: OutlinedButton.icon(
@@ -1022,15 +1052,64 @@ Set<String> watchGoalBlockStepIds(WidgetRef ref) => goalBlockStepIds(
 /// уходить в свой статус в блоке и не показываться на общем экране в
 /// работе»). Once the step is done or blocked it stops being the goal's next
 /// step and, if still in the set, comes back to the list.
+///
+/// The same for a task of the set dated today (coordinator, answer 2 -- the
+/// owner's): it is shown only in «Сегодня», with the «в работе» dot.
 List<FocusTask> shownOnWorkList(
   List<FocusTask> set,
-  Set<String> blockStepIds,
-) {
-  if (blockStepIds.isEmpty) return set;
+  Set<String> blockStepIds, {
+  Set<String> todayIds = const <String>{},
+}) {
+  if (blockStepIds.isEmpty && todayIds.isEmpty) return set;
   return <FocusTask>[
     for (final task in set)
-      if (!blockStepIds.contains(task.id)) task,
+      if (!blockStepIds.contains(task.id) && !todayIds.contains(task.id)) task,
   ];
+}
+
+/// The ids of the open tasks in «Сегодня».
+Set<String> watchTodayIds(WidgetRef ref) {
+  final view = ref.watch(dayViewProvider);
+  if (view == null) return const <String>{};
+  return <String>{for (final entry in view.today) entry.id};
+}
+
+/// «Сделано» on the big card or a row of «Дальше»: the write, then «Сделано:
+/// … · Следом… · Отменить» (spec §4.4). The undo reopens the task and takes
+/// it back into the set.
+Future<void> completeFocusTask(
+  BuildContext context,
+  WidgetRef ref,
+  FocusTask task,
+) async {
+  final container = ProviderScope.containerOf(context, listen: false);
+  final ok = await runMutation(
+    context,
+    () => ref.read(focusSetProvider.notifier).complete(task),
+    failure: 'Не удалось отметить задачу сделанной.',
+  );
+  if (!ok || !context.mounted) return;
+  showDoneSnackBar(
+    ScaffoldMessenger.of(context),
+    title: task.title,
+    projectId: task.projectId,
+    projectName: task.project.name,
+    undo: () async {
+      final row = container
+          .read(placedBoardTasksProvider)
+          ?.where((entry) => entry.id == task.id)
+          .firstOrNull;
+      if (row == null) return;
+      final reopened = row.task.copyWith(status: TaskStatus.done);
+      await setDayTaskStatus(container, reopened, task.status);
+      await container
+          .read(focusSetProvider.notifier)
+          .take(
+            freshTask(container, reopened).copyWith(status: task.status),
+            projectName: task.project.name,
+          );
+    },
+  );
 }
 
 /// Первая задача набора, которой можно заняться. См. заметку у [WorkScreen].
@@ -1111,16 +1190,15 @@ class _Filler extends StatelessWidget {
         physics: const AlwaysScrollableScrollPhysics(),
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          // With a header (the goals and the day block) the text follows it
+          // rather than being centred: the day block's rows are not sized by
+          // intrinsics, and a centred note under a long «Сегодня» would sit
+          // off screen anyway.
           child: header == null
               ? Center(child: content)
-              : IntrinsicHeight(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      header!,
-                      Expanded(child: Center(child: content)),
-                    ],
-                  ),
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[header!, Center(child: content)],
                 ),
         ),
       ),

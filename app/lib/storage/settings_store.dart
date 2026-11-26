@@ -91,6 +91,13 @@ abstract interface class SettingsStore {
   Future<bool?> readPlaceReminders();
 
   Future<void> writePlaceReminders(bool enabled);
+
+  /// Small per-device notes of the interface (`design/today-history-spec.md`):
+  /// the swipe hint seen, «Сегодня» folded until the end of a day, «Позже»
+  /// unfolded in a project. Null when never written.
+  Future<String?> readUiNote(String key);
+
+  Future<void> writeUiNote(String key, String value);
 }
 
 /// [SettingsStore] on top of `shared_preferences`.
@@ -120,6 +127,9 @@ class PreferencesSettingsStore implements SettingsStore {
   static const String aiLevelKey = 'ai.level';
   static const String aiMultiKey = 'ai.multi';
   static const String placeRemindersKey = 'places.enabled';
+
+  /// The prefix of [readUiNote]'s keys.
+  static const String uiNotePrefix = 'ui.';
 
   final Future<SharedPreferences> Function() _preferences;
 
@@ -231,4 +241,11 @@ class PreferencesSettingsStore implements SettingsStore {
     final preferences = await _preferences();
     await preferences.setBool(placeRemindersKey, enabled);
   }
+
+  @override
+  Future<String?> readUiNote(String key) => _readString('$uiNotePrefix$key');
+
+  @override
+  Future<void> writeUiNote(String key, String value) =>
+      _writeString('$uiNotePrefix$key', value);
 }

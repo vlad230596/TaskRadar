@@ -886,6 +886,13 @@ class FakeProjectBackend {
       // и именно поэтому телефон не досылает второй запрос после «Сделано».
       // Блокер из набора не выводит — намеренно, там же.
       if (body['status'] == 'done') task['focusedAt'] = null;
+      // `doneAt` (today-history contract): stamped on the move into done,
+      // cleared on any move out of it.
+      if (body.containsKey('status') && body['status'] != task['status']) {
+        task['doneAt'] = body['status'] == 'done'
+            ? DateTime.now().toUtc().toIso8601String()
+            : null;
+      }
 
       if (body.containsKey('categoryId') &&
           !_categoryFits(body['categoryId'], task['projectId'] as String)) {
