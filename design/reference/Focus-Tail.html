@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Работа — день миграции, хвост из 14 задач</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+/* Общая основа эталонов «Сегодня / История / пересмотр». 1 px = 1 dp. Телефон 412 dp. */
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;color:#1B2050;-webkit-font-smoothing:antialiased}
+html,body{background:#E7E7ED}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.U{font-family:'Unbounded',sans-serif}
+.stage{display:flex;gap:40px;padding:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.cap{font-size:13px;color:#61637E;max-width:412px;line-height:1.45;margin:10px 0 0}
+.cap b{color:#1B2050}
+.phone{width:412px;height:915px;box-sizing:border-box;background:#F3F3F7;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.phone>*{flex-shrink:0}
+.phone.dark{background:#14183C;color:#EDEEF7}
+.grow{flex:1 1 0;min-height:0}
+.label{font-size:13px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#61637E}
+.tl{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+.ib{width:44px;height:44px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;color:#61637E}
+/* нижняя панель */
+.nav{position:absolute;left:0;right:0;bottom:0;height:82px;box-sizing:border-box;border-top:1px solid #DEDEE8;background:#FFFFFF;display:flex;align-items:flex-start;padding:8px 10px 0;gap:6px;z-index:5}
+.ni{flex:1;height:54px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#61637E;font-size:11px;font-weight:600;position:relative}
+.ni.on{background:#E6E8F7;color:#2C3480;font-weight:700}
+.nv{width:84px;flex-shrink:0;height:54px;border-radius:16px;background:#4A56BE;color:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:700}
+.badge-dot{position:absolute;top:9px;left:calc(50% + 7px);width:8px;height:8px;border-radius:4px;background:#FF8C70;box-shadow:0 0 0 2px #FFFFFF}
+/* светлая шапка подэкрана */
+.subhead{padding:10px 8px 10px 4px;display:flex;align-items:center;gap:4px;background:#FFFFFF;border-bottom:1px solid #DEDEE8}
+.subhead .t{flex-grow:1;font-family:'Unbounded',sans-serif;font-weight:600;font-size:18px}
+/* сегмент-вкладки */
+.seg{display:flex;gap:2px;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:14px;padding:3px}
+.seg span,.seg a{flex:1;height:38px;border-radius:11px;color:#61637E;display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:600}
+.seg .on{background:#1B2050;color:#FFFFFF;font-weight:700}
+/* «С прошлых дней» */
+.tail{margin:12px 16px 0;background:#FDF7EE;border:1px solid #EBD5B0;border-radius:20px;padding:4px 0}
+.tailhead{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px}
+.trow{min-height:60px;display:flex;align-items:center;gap:6px;padding:8px 2px 8px 16px;box-sizing:border-box}
+.trow .tx{flex-grow:1;min-width:0;color:#1B2050}
+.trow .tx b{display:block;font-size:15px;font-weight:500;line-height:1.3}
+.trow .tx small{display:block;margin-top:3px;font-size:12px;font-weight:600;color:#61637E}
+.od{color:#8A5A0B}
+.tsep{height:1px;margin:0 16px;background:rgba(235,213,176,0.6)}
+.btn-today{height:36px;padding:0 12px;border:none;border-radius:12px;background:#1B2050;color:#FFFFFF;font-size:13.5px;font-weight:700;flex-shrink:0}
+.btn-allt{height:36px;padding:0 12px;border-radius:12px;border:1px solid #EBD5B0;background:#FFFFFF;font-size:13.5px;font-weight:700;color:#1B2050}
+/* «Сегодня» */
+.today{margin:12px 16px 0;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:20px;padding:4px 0 6px}
+.thead{height:52px;display:flex;align-items:center;gap:10px;padding:0 0 0 16px}
+.ttl{font-family:'Unbounded',sans-serif;font-weight:700;font-size:15px}
+.tcnt{font-family:'Unbounded',sans-serif;font-weight:600;font-size:13px;color:#2A6B4E}
+.tday{font-size:12.5px;font-weight:600;color:#61637E}
+.prog{display:flex;gap:3px;padding:0 16px 6px}
+.prog i{flex:1;height:4px;border-radius:2px;background:#EDEDF3}
+.prog i.d{background:#2A6B4E}
+.scope{height:28px;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:11.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#61637E}
+.scope::after{content:"";flex:1;height:1px;background:#EDEDF3}
+.tr{min-height:48px;display:flex;align-items:center;padding:0 12px 0 4px}
+.ring{width:44px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ring>span{width:22px;height:22px;border-radius:11px;border:2px solid #C3C6DE;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.tt{flex:1;min-width:0;font-size:15px;font-weight:500;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B2050}
+.time{height:22px;padding:0 6px;border-radius:7px;background:#E6E8F7;color:#2C3480;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;margin-right:8px;flex-shrink:0;box-sizing:border-box}
+.time.past{background:transparent;border:1px solid #C3C6DE}
+.proj{font-size:12px;font-weight:600;color:#61637E;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:8px;flex-shrink:0;display:inline-flex;align-items:center;gap:6px}
+.wdot{width:8px;height:8px;border-radius:4px;background:#4A56BE;flex-shrink:0}
+.cchip{width:20px;height:20px;border-radius:6px;background:#14183C;display:inline-flex;align-items:center;justify-content:center;margin-left:8px;flex-shrink:0;color:#FFC94D}
+.cchip.m{background:#E6E8F7;color:#8C91B8}
+.dr{min-height:40px;display:flex;align-items:center;padding:0 12px 0 4px}
+.dr .ring{height:40px}
+.dr .tt{text-decoration:line-through;color:#61637E}
+.dmark{width:22px;height:22px;border-radius:11px;background:#E5F0EA;color:#2A6B4E;display:flex;align-items:center;justify-content:center}
+.dsep{height:1px;background:#EDEDF3;margin:4px 16px}
+/* строка задачи проекта (Project.html) */
+.row{background:#FFFFFF;border:1px solid #DEDEE8;border-radius:16px;display:flex;align-items:center;gap:4px;padding:2px 4px;box-sizing:border-box}
+.side{width:48px;min-height:58px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;color:#61637E;flex-shrink:0;padding:0}
+.rring{width:26px;height:26px;border-radius:13px;border:2px solid #C3C6DE;box-sizing:border-box;display:block}
+.rbody{flex-grow:1;min-width:0;padding:8px 0;color:#1B2050}
+.rtitle{display:block;font-size:15.5px;font-weight:500;line-height:1.3}
+.meta{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:600}
+.age{font-size:12px;font-weight:600;border-radius:10px;padding:3px 7px;white-space:nowrap;flex-shrink:0;color:#61637E;background:#F3F3F7}
+/* тёмный лист и кнопки (семья диктовки) */
+.scrim{position:absolute;inset:0;background:rgba(20,24,60,0.5);z-index:6}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#14183C;border-radius:24px 24px 0 0;color:#EDEEF7;padding:8px 20px 20px;box-sizing:border-box;z-index:7}
+.sheet.light{background:#FFFFFF;color:#1B2050}
+.grab{width:36px;height:4px;border-radius:2px;background:#39407A;margin:0 auto 10px}
+.light .grab{background:#C3C6DE}
+.sh-h{display:flex;align-items:center;gap:8px;height:44px}
+.sh-t{flex-grow:1;font-family:'Unbounded',sans-serif;font-size:19px;font-weight:700}
+.wbtn{height:64px;border:none;border-radius:22px;background:#FFFFFF;color:#14183C;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
+.obtn{height:48px;border:1px solid #39407A;border-radius:18px;background:transparent;color:#D6DBFF;font-size:15px;font-weight:600;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.pd{height:40px;padding:0 14px;border-radius:20px;border:1px solid #39407A;color:#D6DBFF;font-size:14px;font-weight:700;display:inline-flex;align-items:center;background:transparent;white-space:nowrap;flex-shrink:0;box-sizing:border-box}
+.pd.on{background:#FFFFFF;color:#14183C;border-color:#FFFFFF}
+.well{background:#1F2552;border-radius:20px}
+.raised{background:#232B6E;border-radius:20px}
+/* снекбар */
+.snack{position:absolute;left:8px;right:8px;bottom:92px;height:56px;border-radius:16px;background:#1B2050;color:#FFFFFF;display:flex;align-items:center;padding:0 4px 0 16px;gap:2px;box-shadow:0 6px 18px rgba(27,32,80,0.25);z-index:6;box-sizing:border-box}
+.snack .m{flex:1;min-width:0;font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.snack button{height:44px;padding:0 10px;border:none;background:transparent;font-size:14.5px;display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+/* меню */
+.menu{position:absolute;background:#FFFFFF;border-radius:16px;box-shadow:0 8px 28px rgba(27,32,80,0.18);padding:6px 0;z-index:8}
+.mi{height:48px;padding:0 16px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:500;color:#1B2050}
+.mi small{display:block;font-size:12px;font-weight:500;color:#61637E;margin-top:1px}
+.msep{height:1px;background:#EDEDF3;margin:4px 0}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="crown" viewBox="0 0 24 24"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="currentColor"/><path d="M5 21h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+<symbol id="unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.7"/></symbol>
+<symbol id="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+<symbol id="next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v5a4 4 0 0 0 4 4h10"/><path d="M15 10l4 4-4 4"/></symbol>
+<symbol id="undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+<symbol id="pile" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h5l1.5 2.5h3L15 13h5"/><path d="M5.5 6h13L20 13v5.5H4V13z"/></symbol>
+<symbol id="later" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10M7 21h10"/><path d="M8 3v2a4 4 0 0 0 1.6 3.2L12 10l2.4-1.8A4 4 0 0 0 16 5V3"/><path d="M8 21v-2a4 4 0 0 1 1.6-3.2L12 14l2.4 1.8A4 4 0 0 1 16 19v2"/></symbol>
+<symbol id="rhythm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></symbol>
+<symbol id="review" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/><path d="M12 8v4l3 2"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.6"/></symbol>
+<symbol id="dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+<symbol id="vdots" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></symbol>
+<symbol id="down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></symbol>
+<symbol id="right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+<symbol id="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+<symbol id="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></symbol>
+<symbol id="plan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></symbol>
+<symbol id="work" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+<symbol id="hist" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></symbol>
+<symbol id="cloudoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M8.5 6.7A5.5 5.5 0 0 1 17.5 10a4 4 0 0 1 2.4 6.9M16 18H7a4.5 4.5 0 0 1-1.7-8.7"/></symbol>
+<symbol id="cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M12 11v5M9.8 13.2L12 11l2.2 2.2"/></symbol>
+<symbol id="pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9.2"/><path d="M10 9v6M14 9v6"/></symbol>
+<symbol id="list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h11M4 17h7"/></symbol>
+<symbol id="bench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10h16M4 14h16M6 14v5M18 14v5M6 10V7M18 10V7"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 21s-6-5.5-6-10.5a6 6 0 0 1 12 0C18 15.5 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+</svg>
+
+<div class="stage">
+
+<!-- А. День миграции: 14 задач с прошедшей датой. Видны три самые старые + «Ещё 11». Меню «⋯» второй строки открыто. -->
+<div>
+<div class="phone">
+  <header style="padding: 14px 16px 8px; display: flex; align-items: center; gap: 12px;">
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px;">Работа</span>
+    <a href="Pick.html" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #C3C6DE; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #3A3C5C;"><svg width="15" height="15"><use href="#list"/></svg>Собрать</a>
+  </header>
+
+  <section class="tail" style="margin-top: 4px;">
+    <div class="tailhead">
+      <svg width="16" height="16" style="color: #8A5A0B;"><use href="#cal"/></svg>
+      <span style="font-size: 15px; font-weight: 700;">С прошлых дней</span>
+      <span class="num" style="font-size: 15px; font-weight: 700; color: #8A5A0B;">14</span>
+      <span style="flex-grow: 1;"></span>
+      <button class="btn-allt">Все в сегодня</button>
+    </div>
+    <div class="trow">
+      <a href="Edit.html" class="tx"><b>Продлить страховку на машину</b><small>Дом · <span class="od">12 дн. назад</span></small></a>
+      <button class="btn-today">Сегодня</button>
+      <button class="ib"><svg width="20" height="20"><use href="#dots"/></svg></button>
+    </div>
+    <div class="tsep"></div>
+    <!-- блокер в хвосте: замок 12 перед проектом -->
+    <div class="trow" style="background: rgba(251,239,221,0.6);">
+      <a href="Edit.html" class="tx"><b>Поговорить с Васей — ждём ответа</b><small style="display: flex; align-items: center; gap: 4px;"><svg width="12" height="12" style="color: #8A5A0B;"><use href="#lock"/></svg>Стенды · <span class="od">9 дн. назад</span></small></a>
+      <button class="btn-today">Сегодня</button>
+      <button class="ib" style="background: #FBEFDD; border-radius: 12px;"><svg width="20" height="20"><use href="#dots"/></svg></button>
+    </div>
+    <div class="tsep"></div>
+    <div class="trow">
+      <a href="Edit.html" class="tx"><b>Заказать картриджи в офис</b><small>Админка · <span class="od">8 дн. назад</span></small></a>
+      <button class="btn-today">Сегодня</button>
+      <button class="ib"><svg width="20" height="20"><use href="#dots"/></svg></button>
+    </div>
+    <!-- «Ещё 11»: строка 44 без рамки -->
+    <button style="width: 100%; height: 44px; border: none; background: transparent; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 14px; font-weight: 700; color: #8A5A0B;">Ещё 11<svg width="16" height="16"><use href="#down"/></svg></button>
+  </section>
+
+  <!-- Меню «⋯»: белое r 16, пункты 48 -->
+  <div class="menu" style="top: 228px; right: 22px; width: 268px;">
+    <div class="mi"><svg width="20" height="20" style="color: #3A3C5C;"><use href="#cal"/></svg>Дата…</div>
+    <div class="mi" style="height: 56px;"><svg width="20" height="20" style="color: #3A3C5C;"><use href="#pile"/></svg><span>В стопку<small>снять дату, останется в проекте</small></span></div>
+  </div>
+
+  <section class="today">
+    <div class="thead">
+      <span class="ttl">Сегодня</span><span class="tcnt num">0 из 1</span><span style="flex-grow: 1;"></span><span class="tday">чт 26.11</span>
+      <button class="ib"><svg width="18" height="18"><use href="#up"/></svg></button>
+    </div>
+    <div class="prog"><i></i></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="time num">11:30</span><span class="tt">Созвон 5 мин с Олегом</span><span class="proj">Стенды</span></div>
+  </section>
+
+  <div style="margin: 14px 16px 0; height: 120px; border-radius: 22px; border: 1.5px dashed #C3C6DE; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #61637E;">
+    <span style="font-size: 16px; font-weight: 600; color: #3A3C5C;">Набор пуст</span>
+    <span style="font-size: 13.5px;">Пул открыт: соберите 2–5 задач</span>
+  </div>
+
+  <nav class="nav">
+    <a class="ni" href="Main.html"><svg width="21" height="21"><use href="#plan"/></svg>План</a>
+    <a class="ni on" href="Focus-Today.html"><svg width="21" height="21"><use href="#work"/></svg>Работа</a>
+    <a class="ni" href="History-Done.html"><svg width="21" height="21"><use href="#hist"/></svg>История</a>
+    <a class="nv" href="Dictate.html"><svg width="22" height="22"><use href="#mic"/></svg>Голос</a>
+  </nav>
+</div>
+<p class="cap"><b>День миграции.</b> 14 задач с прошедшей датой (на 26.11 их и было 14). Видны три самые старые, «Ещё 11» раскрывает остальные; свёрнутость не запоминается. Блокер в хвосте — с замком. Меню «⋯»: «Дата…» (лист даты) и «В стопку» (снять дату).</p>
+</div>
+
+<!-- Б. После «Все в сегодня»: хвост ушёл, «Сегодня» большое; снекбар с отменой для всех. -->
+<div>
+<div class="phone">
+  <header style="padding: 14px 16px 8px; display: flex; align-items: center; gap: 12px;">
+    <span style="flex-grow: 1; font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px;">Работа</span>
+    <a href="Pick.html" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #C3C6DE; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #3A3C5C;"><svg width="15" height="15"><use href="#list"/></svg>Собрать</a>
+  </header>
+  <section class="today" style="margin-top: 4px;">
+    <div class="thead">
+      <span class="ttl">Сегодня</span><span class="tcnt num">0 из 15</span><span style="flex-grow: 1;"></span><span class="tday">чт 26.11</span>
+      <button class="ib"><svg width="18" height="18"><use href="#up"/></svg></button>
+    </div>
+    <!-- больше 12 — одна сплошная доля -->
+    <div style="margin: 0 16px 6px; height: 4px; border-radius: 2px; background: #EDEDF3;"></div>
+    <div class="scope">Работа</div>
+    <div class="tr"><span class="ring"><span></span></span><span class="time num">11:30</span><span class="tt">Созвон 5 мин с Олегом</span><span class="proj">Стенды</span></div>
+    <div class="tr"><span class="ring"><span style="border: none; background: #FBEFDD; color: #8A5A0B;"><svg width="13" height="13"><use href="#lock"/></svg></span></span><span class="tt" style="color: #3A3C5C;">Поговорить с Васей — ждём ответа</span><span style="margin-left: 8px; height: 20px; padding: 0 7px; border-radius: 10px; background: #FBEFDD; color: #8A5A0B; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center;">проверить</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Заказать картриджи в офис</span><span class="proj">Админка</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Ответить Пете про стенды</span><span class="proj">Стенды</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Скинуть Лене презентацию стендов</span><span class="proj">Стенды</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Спроектировать экран «Сегодня»</span><span class="cchip"><svg width="12" height="12"><use href="#crown"/></svg></span><span class="proj">TaskRadar</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Продлить пропуск в офис</span><span class="proj">Админка</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Сверить счета за октябрь</span><span class="proj">Админка</span></div>
+    <div class="scope">Дом</div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Продлить страховку на машину</span><span class="proj">Дом</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Позвонить в ЖЭК про счётчики</span><span class="proj">Дом</span></div>
+    <div class="tr"><span class="ring"><span></span></span><span class="tt">Записать Мишу к стоматологу</span><span class="proj">Семья</span></div>
+  </section>
+
+  <div class="snack"><span class="m">14 задач на сегодня</span><button style="font-weight: 600; color: #D6DBFF;">Отменить</button></div>
+  <nav class="nav">
+    <a class="ni" href="Main.html"><svg width="21" height="21"><use href="#plan"/></svg>План</a>
+    <a class="ni on" href="Focus-Today.html"><svg width="21" height="21"><use href="#work"/></svg>Работа</a>
+    <a class="ni" href="History-Done.html"><svg width="21" height="21"><use href="#hist"/></svg>История</a>
+    <a class="nv" href="Dictate.html"><svg width="22" height="22"><use href="#mic"/></svg>Голос</a>
+  </nav>
+</div>
+<p class="cap"><b>«Все в сегодня».</b> Хвост исчез, «Сегодня» — 15 задач (все открытые видны: большой день — сам сигнал). M &gt; 12 — полоса прогресса одной долей. Снекбар «14 задач на сегодня · Отменить» возвращает каждой её прежнюю дату. Время у перенесённых снимается (вопрос 4) — у «Созвона» 11:30 своё, он и так был сегодня.</p>
+</div>
+
+</div>
+
+</body>
+</html>

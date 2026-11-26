@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Работа — «С прошлых дней» и «Сегодня»</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;color:#1B2050;-webkit-font-smoothing:antialiased}
+html,body{background:#E7E7ED}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.stage{display:flex;gap:40px;padding:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.cap{font-size:13px;color:#61637E;max-width:412px;line-height:1.45;margin:10px 0 0}
+.phone{width:412px;box-sizing:border-box;background:#F3F3F7;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.phone>*{flex-shrink:0}
+.label{font-size:13px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#61637E}
+/* нижняя панель — прибита: на первом экране 412×915 её верх на y = 833 */
+.nav{position:absolute;left:0;right:0;height:82px;box-sizing:border-box;border-top:1px solid #DEDEE8;background:#FFFFFF;display:flex;align-items:flex-start;padding:8px 10px 0;gap:6px;z-index:5}
+.ni{flex:1;height:54px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#61637E;font-size:11px;font-weight:600;position:relative}
+.ni.on{background:#E6E8F7;color:#2C3480;font-weight:700}
+.nv{width:84px;flex-shrink:0;height:54px;border-radius:16px;background:#4A56BE;color:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:700}
+/* «С прошлых дней»: tailFill #FDF7EE, tailLine #EBD5B0, r 20 */
+.tail{margin:12px 16px 0;background:#FDF7EE;border:1px solid #EBD5B0;border-radius:20px;padding:4px 0}
+.tailhead{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px}
+.trow{min-height:60px;display:flex;align-items:center;gap:6px;padding:8px 2px 8px 16px;box-sizing:border-box}
+.tsep{height:1px;margin:0 16px;background:rgba(235,213,176,0.6)}
+.btn-today{height:36px;padding:0 12px;border:none;border-radius:12px;background:#1B2050;color:#FFFFFF;font-size:13.5px;font-weight:700;flex-shrink:0}
+.ib{width:44px;height:44px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;color:#61637E}
+/* «Сегодня»: белая карточка r 20 */
+.today{margin:12px 16px 0;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:20px;padding:4px 0 6px}
+.thead{height:52px;display:flex;align-items:center;gap:10px;padding:0 0 0 16px}
+.ttl{font-family:'Unbounded',sans-serif;font-weight:700;font-size:15px}
+.tcnt{font-family:'Unbounded',sans-serif;font-weight:600;font-size:13px;color:#2A6B4E}
+.prog{display:flex;gap:3px;padding:0 16px 6px}
+.prog i{flex:1;height:4px;border-radius:2px;background:#EDEDF3}
+.prog i.d{background:#2A6B4E}
+.scope{height:28px;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:11.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#61637E}
+.scope::after{content:"";flex:1;height:1px;background:#EDEDF3}
+.tr{min-height:48px;display:flex;align-items:center;padding:0 12px 0 4px}
+.ring{width:44px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ring span{width:22px;height:22px;border-radius:11px;border:2px solid #C3C6DE;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.tt{flex:1;min-width:0;font-size:15px;font-weight:500;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.time{height:22px;padding:0 6px;border-radius:7px;background:#E6E8F7;color:#2C3480;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;margin-right:8px;flex-shrink:0}
+.proj{font-size:12px;font-weight:600;color:#61637E;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:8px;flex-shrink:0;display:inline-flex;align-items:center;gap:6px}
+.cchip{width:20px;height:20px;border-radius:6px;background:#14183C;display:inline-flex;align-items:center;justify-content:center;margin-left:8px;flex-shrink:0;color:#FFC94D}
+.dr{min-height:40px;display:flex;align-items:center;padding:0 12px 0 4px}
+.dr .tt{text-decoration:line-through;color:#61637E}
+.dmark{width:22px;height:22px;border-radius:11px;background:#E5F0EA;color:#2A6B4E;display:flex;align-items:center;justify-content:center}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="crown" viewBox="0 0 24 24"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="currentColor"/><path d="M5 21h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+<symbol id="unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.7"/></symbol>
+<symbol id="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+<symbol id="dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+<symbol id="down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></symbol>
+<symbol id="target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.6"/></symbol>
+<symbol id="list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h11M4 17h7"/></symbol>
+<symbol id="plan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></symbol>
+<symbol id="work" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+<symbol id="hist" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></symbol>
+<symbol id="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></symbol>
+</svg>
+
+<div class="stage">
+<div>
+<!-- 412 × 1420: вся лента «Работы» в пт 27.11, 12:40. Нижняя панель стоит там, где кончается первый экран (y 833 = 915 − 82); ниже — то, что видно прокруткой. -->
+<div class="phone" style="height: 1420px;">
+
+  <header style="padding: 14px 16px 8px; display: flex; align-items: flex-start; gap: 12px;">
+    <div style="flex-grow: 1;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="font-family: 'Unbounded', sans-serif; font-weight: 700; font-size: 21px; letter-spacing: -0.01em;">Работа</span>
+        <span style="display: inline-flex; gap: 6px;">
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #1B2050;"></span>
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #1B2050;"></span>
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #C3C6DE;"></span>
+        </span>
+      </div>
+      <button style="margin-top: 6px; height: 30px; padding: 0 12px 0 10px; border: none; border-radius: 15px; background: #14183C; color: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700;">
+        <svg width="12" height="12" style="color: #FFC94D;"><use href="#crown"/></svg>Работа
+        <span style="display: inline-flex; gap: 3px; margin-left: 2px;"><span style="width: 6px; height: 6px; border-radius: 50%; background: #FFC94D;"></span><span style="width: 6px; height: 6px; border-radius: 50%; background: #4A5088;"></span></span>
+        <svg width="12" height="12" style="color: #A7AECF;"><use href="#down"/></svg>
+      </button>
+    </div>
+    <a href="Pick.html" style="height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid #C3C6DE; display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #3A3C5C;"><svg width="15" height="15"><use href="#list"/></svg>Набор</a>
+  </header>
+
+  <!-- Блок целей — без изменений (Focus-Goals.html); одна цель. Её шаг стоит и в «Сегодня» ниже — с той же короной (см. спецификацию, вопрос 2). -->
+  <section style="margin: 4px 16px 0; border-radius: 24px; background: linear-gradient(135deg, #14183C 0%, #2B3592 100%); box-shadow: 0 6px 18px rgba(20,24,60,0.18); padding: 14px 16px; color: #FFFFFF;">
+    <div style="display: flex; align-items: center; gap: 8px; height: 22px;">
+      <svg width="16" height="16" style="color: #FFC94D; flex-shrink: 0;"><use href="#crown"/></svg>
+      <span style="flex-grow: 1; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Новое поколение TaskRadar</span>
+      <span class="num" style="font-family: 'Unbounded', sans-serif; font-size: 13px; font-weight: 600; color: #7FD1A8;">2/5</span>
+    </div>
+    <div style="margin-top: 3px; display: flex; gap: 10px;">
+      <span style="flex-grow: 1; min-width: 0; font-size: 13px; font-weight: 500; color: #A7AECF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Чтобы мелкие дела не жили в голове</span>
+      <span style="font-size: 12px; font-weight: 600; color: #A7AECF;">ещё 3 д</span>
+    </div>
+    <div style="margin-top: 8px; display: flex; gap: 3px;">
+      <span style="flex: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span><span style="flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></span>
+    </div>
+    <div style="margin-top: 10px; height: 52px; box-sizing: border-box; border-radius: 16px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); padding: 0 6px 0 14px; display: flex; align-items: center; gap: 10px;">
+      <span style="flex-grow: 1; min-width: 0;">
+        <span style="display: block; font-size: 10.5px; font-weight: 700; letter-spacing: 0.06em; color: #FFC94D;">ШАГ</span>
+        <span style="display: flex; margin-top: 2px; font-size: 14.5px; font-weight: 600; white-space: nowrap;"><span style="overflow: hidden; text-overflow: ellipsis;">Спроектировать экран «Сегодня»</span><span style="flex-shrink: 0; font-size: 12px; color: #A7AECF; margin-left: 6px; line-height: 19px;">· TaskRadar</span></span>
+      </span>
+      <span style="width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;"><span style="width: 40px; height: 40px; border-radius: 20px; background: #FFFFFF; color: #14183C; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20"><use href="#target"/></svg></span></span>
+    </div>
+  </section>
+
+  <!-- С ПРОШЛЫХ ДНЕЙ: fill #FDF7EE, line #EBD5B0, r 20; шапка 48; строка ≥ 60; «Сегодня» 36 r 12 #1B2050 -->
+  <section class="tail">
+    <div class="tailhead">
+      <svg width="16" height="16" style="color: #8A5A0B;"><use href="#cal"/></svg>
+      <span style="font-size: 15px; font-weight: 700;">С прошлых дней</span>
+      <span class="num" style="font-size: 15px; font-weight: 700; color: #8A5A0B;">2</span>
+      <span style="flex-grow: 1;"></span>
+      <button style="height: 36px; padding: 0 12px; border-radius: 12px; border: 1px solid #EBD5B0; background: #FFFFFF; font-size: 13.5px; font-weight: 700; color: #1B2050;">Все в сегодня</button>
+    </div>
+    <div class="trow">
+      <a href="Edit.html" style="flex-grow: 1; min-width: 0; color: #1B2050;">
+        <span style="display: block; font-size: 15px; font-weight: 500; line-height: 1.3;">Позвонить в ЖЭК про счётчики</span>
+        <span style="display: block; margin-top: 3px; font-size: 12px; font-weight: 600; color: #61637E;">Дом · <span style="color: #8A5A0B;">3 дн. назад</span></span>
+      </a>
+      <button class="btn-today">Сегодня</button>
+      <button class="ib" aria-label="Ещё"><svg width="20" height="20"><use href="#dots"/></svg></button>
+    </div>
+    <div class="tsep"></div>
+    <div class="trow">
+      <a href="Edit.html" style="flex-grow: 1; min-width: 0; color: #1B2050;">
+        <span style="display: block; font-size: 15px; font-weight: 500; line-height: 1.3;">Скинуть Лене презентацию стендов</span>
+        <span style="display: block; margin-top: 3px; font-size: 12px; font-weight: 600; color: #61637E;">Стенды · <span style="color: #8A5A0B;">вчера</span></span>
+      </a>
+      <button class="btn-today">Сегодня</button>
+      <button class="ib" aria-label="Ещё"><svg width="20" height="20"><use href="#dots"/></svg></button>
+    </div>
+  </section>
+
+  <!-- СЕГОДНЯ: белая карточка r 20; шапка 52; прогресс 7 сегментов, 3 сделано -->
+  <section class="today">
+    <div class="thead">
+      <span class="ttl">Сегодня</span>
+      <span class="tcnt num">3 из 7</span>
+      <span style="flex-grow: 1;"></span>
+      <span style="font-size: 12.5px; font-weight: 600; color: #61637E;">пт 27.11</span>
+      <button class="ib" aria-label="Свернуть"><svg width="18" height="18"><use href="#up"/></svg></button>
+    </div>
+    <div class="prog"><i class="d"></i><i class="d"></i><i class="d"></i><i></i><i></i><i></i><i></i></div>
+
+    <div class="scope">Работа</div>
+    <!-- в наборе активного контура: точка 8 #4A56BE перед проектом -->
+    <div class="tr">
+      <span class="ring"><span></span></span>
+      <a href="Edit.html" class="tt" style="color: #1B2050;">Ответить Пете про стенды</a>
+      <span class="proj"><span style="width: 8px; height: 8px; border-radius: 4px; background: #4A56BE;"></span>Стенды</span>
+    </div>
+    <!-- в цели: чип короны 20 r 6 #14183C / #FFC94D -->
+    <div class="tr">
+      <span class="ring"><span></span></span>
+      <a href="Edit.html" class="tt" style="color: #1B2050;">Спроектировать экран «Сегодня»</a>
+      <span class="cchip"><svg width="12" height="12"><use href="#crown"/></svg></span>
+      <span class="proj">TaskRadar</span>
+    </div>
+    <!-- блокер: фон #FDF7EE r 14, круг #FBEFDD с замком #8A5A0B, плашка «проверить», под строкой два действия 36 -->
+    <div style="margin: 2px 6px; background: #FDF7EE; border-radius: 14px; padding-bottom: 10px;">
+      <div class="tr" style="padding-left: 0;">
+        <span class="ring"><span style="border: none; background: #FBEFDD; color: #8A5A0B;"><svg width="13" height="13"><use href="#lock"/></svg></span></span>
+        <a href="Edit.html" class="tt" style="color: #3A3C5C;">Поговорить с Васей — ждём ответа</a>
+        <span style="margin-left: 8px; height: 20px; padding: 0 7px; border-radius: 10px; background: #FBEFDD; color: #8A5A0B; font-size: 11.5px; font-weight: 700; display: inline-flex; align-items: center; flex-shrink: 0;">проверить</span>
+      </div>
+      <div style="display: flex; gap: 8px; padding-left: 44px;">
+        <button style="height: 36px; padding: 0 12px; border-radius: 12px; border: 1px solid #C3C6DE; background: #FFFFFF; display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; color: #1B2050;"><svg width="15" height="15"><use href="#unlock"/></svg>Разблокировать</button>
+        <button style="height: 36px; padding: 0 10px; border: none; background: transparent; display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 700; color: #8A5A0B;"><svg width="15" height="15"><use href="#cal"/></svg>Ещё ждём…</button>
+      </div>
+    </div>
+
+    <div class="scope">Дом</div>
+    <!-- со временем: чип 22 r 7 #E6E8F7 / #2C3480 12.5/700 -->
+    <div class="tr">
+      <span class="ring"><span></span></span>
+      <span class="time num">15:00</span>
+      <a href="Edit.html" class="tt" style="color: #1B2050;">Встретить курьера</a>
+      <span class="proj">Дом</span>
+    </div>
+
+    <!-- сделанные: под линией #EDEDF3, строки 40, галочка в круге #E5F0EA, справа время закрытия -->
+    <div style="height: 1px; background: #EDEDF3; margin: 4px 16px;"></div>
+    <div class="dr"><span class="ring" style="height: 40px;"><span class="dmark"><svg width="13" height="13"><use href="#check"/></svg></span></span><span class="tt">Записать Мишу к стоматологу</span><span class="proj num">9:05</span></div>
+    <div class="dr"><span class="ring" style="height: 40px;"><span class="dmark"><svg width="13" height="13"><use href="#check"/></svg></span></span><span class="tt">Отправить акт за ноябрь</span><span class="proj num">10:12</span></div>
+    <div class="dr"><span class="ring" style="height: 40px;"><span class="dmark"><svg width="13" height="13"><use href="#check"/></svg></span></span><span class="tt">Созвон 5 мин с Олегом</span><span class="proj num">11:41</span></div>
+  </section>
+
+  <!-- Набор — как Focus.html: крупная карточка и «Дальше». Задача набора, стоящая в «Сегодня», в «Дальше» не повторяется (вопрос 2). -->
+  <section style="margin: 16px 16px 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 26px; padding: 18px;">
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <span style="height: 28px; padding: 0 12px; border-radius: 14px; background: #E6E8F7; color: #2C3480; display: inline-flex; align-items: center; font-size: 13px; font-weight: 700;">Стенды</span>
+      <span style="font-size: 12.5px; font-weight: 600; color: #61637E;">в работе с 9:40</span>
+    </div>
+    <h1 style="margin: 12px 0 0; font-size: 27px; font-weight: 600; line-height: 1.28; letter-spacing: -0.01em;">Собрать стенд для демо в среду</h1>
+    <button style="margin-top: 18px; width: 100%; height: 68px; border: none; border-radius: 22px; background: #2A6B4E; color: #FFFFFF; font-size: 19px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 10px;"><svg width="26" height="26"><use href="#check"/></svg>Сделано</button>
+  </section>
+  <div style="margin: 16px 16px 0; display: flex; align-items: center; gap: 8px;"><span class="label">Дальше</span><span style="flex-grow: 1; height: 1px; background: #DEDEE8;"></span></div>
+  <div style="margin: 10px 16px 0; background: #FFFFFF; border: 1px solid #DEDEE8; border-radius: 18px; padding: 14px; display: flex; align-items: center; gap: 12px;">
+    <span style="width: 26px; height: 26px; border-radius: 13px; border: 2px solid #C3C6DE; box-sizing: border-box; flex-shrink: 0;"></span>
+    <span style="flex-grow: 1;"><span style="display: block; font-size: 16px; font-weight: 500;">Обновить прошивку на стенде №2</span><span style="display: block; margin-top: 5px; font-size: 12px; font-weight: 600; color: #61637E;">Стенды</span></span>
+  </div>
+
+  <nav class="nav" style="top: 833px;">
+    <a class="ni" href="Main.html"><svg width="21" height="21"><use href="#plan"/></svg>План</a>
+    <a class="ni on" href="Focus-Today.html"><svg width="21" height="21"><use href="#work"/></svg>Работа</a>
+    <a class="ni" href="History-Done.html"><svg width="21" height="21"><use href="#hist"/></svg>История</a>
+    <a class="nv" href="Dictate.html"><svg width="22" height="22"><use href="#mic"/></svg>Голос</a>
+  </nav>
+</div>
+<p class="cap">Пт 27.11, 12:40. Сверху вниз: цели → «С прошлых дней» (тёплое, 2) → «Сегодня» (3 из 7; подзаголовки скоупов, точка «в работе», корона, блокер с «Разблокировать» / «Ещё ждём…», время 15:00, сделанные внизу с временем закрытия) → набор. Нижняя панель — на месте низа первого экрана.</p>
+</div>
+</div>
+</body>
+</html>

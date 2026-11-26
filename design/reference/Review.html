@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Пересмотр — шесть шагов</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&amp;family=Unbounded:wght@600;700&amp;display=swap">
+<style>
+/* Общая основа эталонов «Сегодня / История / пересмотр». 1 px = 1 dp. Телефон 412 dp. */
+body{margin:0;font-family:'Golos Text',system-ui,sans-serif;color:#1B2050;-webkit-font-smoothing:antialiased}
+html,body{background:#E7E7ED}
+a{color:#3F4AA8;text-decoration:none}
+button{font:inherit;color:inherit;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+.U{font-family:'Unbounded',sans-serif}
+.stage{display:flex;gap:40px;padding:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.cap{font-size:13px;color:#61637E;max-width:412px;line-height:1.45;margin:10px 0 0}
+.cap b{color:#1B2050}
+.phone{width:412px;height:915px;box-sizing:border-box;background:#F3F3F7;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.phone>*{flex-shrink:0}
+.phone.dark{background:#14183C;color:#EDEEF7}
+.grow{flex:1 1 0;min-height:0}
+.label{font-size:13px;font-weight:700;letter-spacing:0.03em;text-transform:uppercase;color:#61637E}
+.tl{font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+.ib{width:44px;height:44px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0;color:#61637E}
+/* нижняя панель */
+.nav{position:absolute;left:0;right:0;bottom:0;height:82px;box-sizing:border-box;border-top:1px solid #DEDEE8;background:#FFFFFF;display:flex;align-items:flex-start;padding:8px 10px 0;gap:6px;z-index:5}
+.ni{flex:1;height:54px;border-radius:16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:#61637E;font-size:11px;font-weight:600;position:relative}
+.ni.on{background:#E6E8F7;color:#2C3480;font-weight:700}
+.nv{width:84px;flex-shrink:0;height:54px;border-radius:16px;background:#4A56BE;color:#FFFFFF;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;font-weight:700}
+.badge-dot{position:absolute;top:9px;left:calc(50% + 7px);width:8px;height:8px;border-radius:4px;background:#FF8C70;box-shadow:0 0 0 2px #FFFFFF}
+/* светлая шапка подэкрана */
+.subhead{padding:10px 8px 10px 4px;display:flex;align-items:center;gap:4px;background:#FFFFFF;border-bottom:1px solid #DEDEE8}
+.subhead .t{flex-grow:1;font-family:'Unbounded',sans-serif;font-weight:600;font-size:18px}
+/* сегмент-вкладки */
+.seg{display:flex;gap:2px;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:14px;padding:3px}
+.seg span,.seg a{flex:1;height:38px;border-radius:11px;color:#61637E;display:flex;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:600}
+.seg .on{background:#1B2050;color:#FFFFFF;font-weight:700}
+/* «С прошлых дней» */
+.tail{margin:12px 16px 0;background:#FDF7EE;border:1px solid #EBD5B0;border-radius:20px;padding:4px 0}
+.tailhead{height:48px;display:flex;align-items:center;gap:8px;padding:0 8px 0 16px}
+.trow{min-height:60px;display:flex;align-items:center;gap:6px;padding:8px 2px 8px 16px;box-sizing:border-box}
+.trow .tx{flex-grow:1;min-width:0;color:#1B2050}
+.trow .tx b{display:block;font-size:15px;font-weight:500;line-height:1.3}
+.trow .tx small{display:block;margin-top:3px;font-size:12px;font-weight:600;color:#61637E}
+.od{color:#8A5A0B}
+.tsep{height:1px;margin:0 16px;background:rgba(235,213,176,0.6)}
+.btn-today{height:36px;padding:0 12px;border:none;border-radius:12px;background:#1B2050;color:#FFFFFF;font-size:13.5px;font-weight:700;flex-shrink:0}
+.btn-allt{height:36px;padding:0 12px;border-radius:12px;border:1px solid #EBD5B0;background:#FFFFFF;font-size:13.5px;font-weight:700;color:#1B2050}
+/* «Сегодня» */
+.today{margin:12px 16px 0;background:#FFFFFF;border:1px solid #DEDEE8;border-radius:20px;padding:4px 0 6px}
+.thead{height:52px;display:flex;align-items:center;gap:10px;padding:0 0 0 16px}
+.ttl{font-family:'Unbounded',sans-serif;font-weight:700;font-size:15px}
+.tcnt{font-family:'Unbounded',sans-serif;font-weight:600;font-size:13px;color:#2A6B4E}
+.tday{font-size:12.5px;font-weight:600;color:#61637E}
+.prog{display:flex;gap:3px;padding:0 16px 6px}
+.prog i{flex:1;height:4px;border-radius:2px;background:#EDEDF3}
+.prog i.d{background:#2A6B4E}
+.scope{height:28px;display:flex;align-items:center;gap:8px;padding:0 16px;font-size:11.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#61637E}
+.scope::after{content:"";flex:1;height:1px;background:#EDEDF3}
+.tr{min-height:48px;display:flex;align-items:center;padding:0 12px 0 4px}
+.ring{width:44px;height:48px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ring>span{width:22px;height:22px;border-radius:11px;border:2px solid #C3C6DE;box-sizing:border-box;display:flex;align-items:center;justify-content:center}
+.tt{flex:1;min-width:0;font-size:15px;font-weight:500;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B2050}
+.time{height:22px;padding:0 6px;border-radius:7px;background:#E6E8F7;color:#2C3480;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;margin-right:8px;flex-shrink:0;box-sizing:border-box}
+.time.past{background:transparent;border:1px solid #C3C6DE}
+.proj{font-size:12px;font-weight:600;color:#61637E;max-width:92px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:8px;flex-shrink:0;display:inline-flex;align-items:center;gap:6px}
+.wdot{width:8px;height:8px;border-radius:4px;background:#4A56BE;flex-shrink:0}
+.cchip{width:20px;height:20px;border-radius:6px;background:#14183C;display:inline-flex;align-items:center;justify-content:center;margin-left:8px;flex-shrink:0;color:#FFC94D}
+.cchip.m{background:#E6E8F7;color:#8C91B8}
+.dr{min-height:40px;display:flex;align-items:center;padding:0 12px 0 4px}
+.dr .ring{height:40px}
+.dr .tt{text-decoration:line-through;color:#61637E}
+.dmark{width:22px;height:22px;border-radius:11px;background:#E5F0EA;color:#2A6B4E;display:flex;align-items:center;justify-content:center}
+.dsep{height:1px;background:#EDEDF3;margin:4px 16px}
+/* строка задачи проекта (Project.html) */
+.row{background:#FFFFFF;border:1px solid #DEDEE8;border-radius:16px;display:flex;align-items:center;gap:4px;padding:2px 4px;box-sizing:border-box}
+.side{width:48px;min-height:58px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;color:#61637E;flex-shrink:0;padding:0}
+.rring{width:26px;height:26px;border-radius:13px;border:2px solid #C3C6DE;box-sizing:border-box;display:block}
+.rbody{flex-grow:1;min-width:0;padding:8px 0;color:#1B2050}
+.rtitle{display:block;font-size:15.5px;font-weight:500;line-height:1.3}
+.meta{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:12px;font-weight:600}
+.age{font-size:12px;font-weight:600;border-radius:10px;padding:3px 7px;white-space:nowrap;flex-shrink:0;color:#61637E;background:#F3F3F7}
+/* тёмный лист и кнопки (семья диктовки) */
+.scrim{position:absolute;inset:0;background:rgba(20,24,60,0.5);z-index:6}
+.sheet{position:absolute;left:0;right:0;bottom:0;background:#14183C;border-radius:24px 24px 0 0;color:#EDEEF7;padding:8px 20px 20px;box-sizing:border-box;z-index:7}
+.sheet.light{background:#FFFFFF;color:#1B2050}
+.grab{width:36px;height:4px;border-radius:2px;background:#39407A;margin:0 auto 10px}
+.light .grab{background:#C3C6DE}
+.sh-h{display:flex;align-items:center;gap:8px;height:44px}
+.sh-t{flex-grow:1;font-family:'Unbounded',sans-serif;font-size:19px;font-weight:700}
+.wbtn{height:64px;border:none;border-radius:22px;background:#FFFFFF;color:#14183C;font-size:18px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:10px;width:100%}
+.obtn{height:48px;border:1px solid #39407A;border-radius:18px;background:transparent;color:#D6DBFF;font-size:15px;font-weight:600;width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.pd{height:40px;padding:0 14px;border-radius:20px;border:1px solid #39407A;color:#D6DBFF;font-size:14px;font-weight:700;display:inline-flex;align-items:center;background:transparent;white-space:nowrap;flex-shrink:0;box-sizing:border-box}
+.pd.on{background:#FFFFFF;color:#14183C;border-color:#FFFFFF}
+.well{background:#1F2552;border-radius:20px}
+.raised{background:#232B6E;border-radius:20px}
+/* снекбар */
+.snack{position:absolute;left:8px;right:8px;bottom:92px;height:56px;border-radius:16px;background:#1B2050;color:#FFFFFF;display:flex;align-items:center;padding:0 4px 0 16px;gap:2px;box-shadow:0 6px 18px rgba(27,32,80,0.25);z-index:6;box-sizing:border-box}
+.snack .m{flex:1;min-width:0;font-size:14.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.snack button{height:44px;padding:0 10px;border:none;background:transparent;font-size:14.5px;display:inline-flex;align-items:center;gap:6px;flex-shrink:0}
+/* меню */
+.menu{position:absolute;background:#FFFFFF;border-radius:16px;box-shadow:0 8px 28px rgba(27,32,80,0.18);padding:6px 0;z-index:8}
+.mi{height:48px;padding:0 16px;display:flex;align-items:center;gap:12px;font-size:15px;font-weight:500;color:#1B2050}
+.mi small{display:block;font-size:12px;font-weight:500;color:#61637E;margin-top:1px}
+.msep{height:1px;background:#EDEDF3;margin:4px 0}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<symbol id="crown" viewBox="0 0 24 24"><path d="M3 8.5l4.6 3.6L12 5l4.4 7.1L21 8.5l-1.8 9.5H4.8z" fill="currentColor"/><path d="M5 21h14" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></symbol>
+<symbol id="cal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+<symbol id="lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+<symbol id="unlock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.7"/></symbol>
+<symbol id="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></symbol>
+<symbol id="next" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v5a4 4 0 0 0 4 4h10"/><path d="M15 10l4 4-4 4"/></symbol>
+<symbol id="undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14L4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+<symbol id="pile" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 13h5l1.5 2.5h3L15 13h5"/><path d="M5.5 6h13L20 13v5.5H4V13z"/></symbol>
+<symbol id="later" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10M7 21h10"/><path d="M8 3v2a4 4 0 0 0 1.6 3.2L12 10l2.4-1.8A4 4 0 0 0 16 5V3"/><path d="M8 21v-2a4 4 0 0 1 1.6-3.2L12 14l2.4 1.8A4 4 0 0 1 16 19v2"/></symbol>
+<symbol id="rhythm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></symbol>
+<symbol id="review" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.4-5.7"/><path d="M4 4v5h5"/><path d="M12 8v4l3 2"/></symbol>
+<symbol id="clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.6"/></symbol>
+<symbol id="dots" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></symbol>
+<symbol id="vdots" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></symbol>
+<symbol id="down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></symbol>
+<symbol id="up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></symbol>
+<symbol id="right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></symbol>
+<symbol id="left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></symbol>
+<symbol id="x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+<symbol id="plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="minus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 12h14"/></symbol>
+<symbol id="mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></symbol>
+<symbol id="plan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12V3"/></symbol>
+<symbol id="work" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></symbol>
+<symbol id="hist" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M3 20h18"/><path d="M6 20v-6M11 20V8M16 20v-9M21 20V5"/></symbol>
+<symbol id="cloudoff" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M8.5 6.7A5.5 5.5 0 0 1 17.5 10a4 4 0 0 1 2.4 6.9M16 18H7a4.5 4.5 0 0 1-1.7-8.7"/></symbol>
+<symbol id="cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .5-8A5.5 5.5 0 0 0 7 9.5 4.3 4.3 0 0 0 7 18z"/><path d="M12 11v5M9.8 13.2L12 11l2.2 2.2"/></symbol>
+<symbol id="pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9.2"/><path d="M10 9v6M14 9v6"/></symbol>
+<symbol id="list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h11M4 17h7"/></symbol>
+<symbol id="bench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M4 10h16M4 14h16M6 14v5M18 14v5M6 10V7M18 10V7"/></symbol>
+<symbol id="arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+<symbol id="refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6"/></symbol>
+<symbol id="pin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 21s-6-5.5-6-10.5a6 6 0 0 1 12 0C18 15.5 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.2"/></symbol>
+</svg>
+
+<style>
+/* Пересмотр: полноэкранный поток на #14183C. Прогресс 6 сегментов 4 px: пройден #FFF, пропущен #6A71A6, текущий #FFF 60 %, впереди #39407A. */
+.rtop{padding:10px 8px 0 16px;display:flex;align-items:center;gap:8px}
+.rp{display:flex;gap:4px;flex:1}
+.rp i{flex:1;height:4px;border-radius:2px;background:#39407A}
+.rp i.d{background:#FFFFFF}.rp i.s{background:#6A71A6}.rp i.c{background:rgba(255,255,255,0.6)}
+.rhead{padding:14px 20px 0}
+.rstep{font-size:12.5px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+.rtitle{margin-top:4px;font-family:'Unbounded',sans-serif;font-size:22px;font-weight:700;line-height:1.2;color:#EDEEF7}
+.rhint{margin-top:6px;font-size:14px;font-weight:500;line-height:1.4;color:#A7AECF}
+.rbody{padding:0 20px;overflow:hidden}
+.rbottom{position:absolute;left:0;right:0;bottom:0;padding:24px 20px 20px;background:linear-gradient(180deg,rgba(20,24,60,0) 0,#14183C 24px)}
+.skip{height:44px;border:none;background:transparent;font-size:15px;font-weight:600;color:#D6DBFF;padding:0 4px}
+.sec{margin:18px 0 8px;display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#A7AECF}
+.pg{height:40px;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;color:#D6DBFF}
+.pb{width:22px;height:22px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#FFFFFF}
+.dn{min-height:52px;display:flex;align-items:center;gap:10px;border-top:1px solid #39407A}
+.dn b{display:block;font-size:15px;font-weight:500;color:#EDEEF7;line-height:1.3}
+.dn small{display:block;margin-top:2px;font-size:12.5px;font-weight:600}
+.nx{height:34px;padding:0 10px;border-radius:12px;border:1px solid #39407A;background:transparent;display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700;color:#D6DBFF;flex-shrink:0}
+.ic{background:#232B6E;border-radius:16px;padding:12px 14px;margin-bottom:8px}
+.ic b{display:block;font-size:15.5px;font-weight:600;color:#FFFFFF;line-height:1.3}
+.rs{height:20px;padding:0 7px;border-radius:10px;font-size:11.5px;font-weight:700;display:inline-flex;align-items:center;gap:4px}
+.sg3{margin-top:10px;display:flex;gap:2px;background:#1F2552;border-radius:12px;padding:2px}
+.sg3 span{flex:1;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:13.5px;font-weight:600;color:#D6DBFF}
+.sg3 .on{background:#FFFFFF;color:#14183C;font-weight:700}
+.gb{height:44px;border-radius:14px;font-size:14px;font-weight:700;padding:0;display:flex;align-items:center;justify-content:center;gap:5px}
+.ob44{height:44px;border-radius:14px;border:1px solid #39407A;background:transparent;color:#D6DBFF;font-size:14px;font-weight:600;width:100%;margin-top:8px}
+.ws{min-height:52px;display:flex;align-items:center;gap:10px;border-top:1px solid #39407A}
+.ws:first-child{border-top:none}
+.dl{height:32px;padding:0 10px;border-radius:10px;background:#1F2552;color:#D6DBFF;font-size:12.5px;font-weight:700;display:inline-flex;align-items:center;flex-shrink:0}
+.chp{height:30px;padding:0 12px;border-radius:15px;background:#232B6E;font-size:13px;font-weight:600;color:#D6DBFF;display:inline-flex;align-items:center;gap:6px}
+</style>
+<div class="stage">
+
+<!-- ШАГ 1 — «Что сделано», месячный вариант (пн 7.12, первый пересмотр декабря) -->
+<div>
+<div class="phone dark">
+  <div class="rtop"><div class="rp"><i class="c"></i><i></i><i></i><i></i><i></i><i></i></div><span class="ib" style="color: #A7AECF;"><svg width="22" height="22"><use href="#x"/></svg></span></div>
+  <div class="rhead">
+    <div class="rstep">Шаг 1 из 6 · Сделано</div>
+    <div class="rtitle">Что сделано</div>
+    <div class="rhint">С пн 30.11. Что из этого тянет за собой продолжение?</div>
+  </div>
+  <div class="rbody">
+    <div style="margin-top: 14px; display: flex; align-items: center; gap: 14px;">
+      <span class="U num" style="font-size: 44px; font-weight: 700; color: #7FD1A8; line-height: 1;">23</span>
+      <span><span style="display: block; font-size: 14px; font-weight: 600; color: #D6DBFF;">закрыто</span><span style="display: block; font-size: 12.5px; font-weight: 500; color: #A7AECF;">в прошлый раз 18</span></span>
+    </div>
+    <!-- месячный раздел: градиент #232B6E→#2B3592, r 20 -->
+    <div style="margin-top: 14px; border-radius: 20px; background: linear-gradient(135deg, #232B6E 0%, #2B3592 100%); padding: 14px 16px;">
+      <div style="display: flex; align-items: center;"><span class="tl" style="flex-grow: 1;">Итоги ноября</span><svg width="18" height="18" style="color: #A7AECF;"><use href="#up"/></svg></div>
+      <div style="margin-top: 6px; display: flex; align-items: baseline; gap: 8px;"><span class="U num" style="font-size: 28px; font-weight: 700; color: #7FD1A8;">84</span><span style="font-size: 13px; font-weight: 600; color: #D6DBFF;">закрыто за месяц</span></div>
+      <div class="num" style="margin-top: 8px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: #D6DBFF;">
+        <div style="display: flex; align-items: center; gap: 10px;"><span style="flex: 1;">Стенды</span><i style="width: 120px; height: 6px; border-radius: 3px; background: #7FD1A8;"></i><b style="width: 24px; text-align: right;">31</b></div>
+        <div style="display: flex; align-items: center; gap: 10px;"><span style="flex: 1;">Админка</span><i style="width: 70px; height: 6px; border-radius: 3px; background: #7FD1A8;"></i><b style="width: 24px; text-align: right;">18</b></div>
+        <div style="display: flex; align-items: center; gap: 10px;"><span style="flex: 1;">TaskRadar</span><i style="width: 58px; height: 6px; border-radius: 3px; background: #7FD1A8;"></i><b style="width: 24px; text-align: right;">15</b></div>
+      </div>
+      <div style="margin-top: 10px; display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #FFFFFF;"><svg width="14" height="14" style="color: #FFC94D;"><use href="#crown"/></svg>Голос, который работает без сети</div>
+    </div>
+    <div class="pg" style="margin-top: 10px;"><span class="pb" style="background: #1F5F73;">С</span>Стенды<span style="color: #A7AECF; font-weight: 600;">9</span></div>
+    <div class="dn">
+      <svg width="16" height="16" style="color: #7FD1A8; flex-shrink: 0;"><use href="#check"/></svg>
+      <span style="flex: 1; min-width: 0;"><b>Собрать стенд для демо в среду</b><small style="color: #9FB0FF;">→ Собрать отзывы после демо · пн 14.12</small></span>
+      <svg width="18" height="18" style="color: #9FB0FF; flex-shrink: 0; margin: 0 13px;"><use href="#check"/></svg>
+    </div>
+    <div class="dn">
+      <svg width="16" height="16" style="color: #7FD1A8; flex-shrink: 0;"><use href="#check"/></svg>
+      <span style="flex: 1; min-width: 0;"><b>Ответить Пете про стенды</b></span>
+      <span style="font-size: 12px; font-weight: 600; color: #A7AECF;">ср</span>
+      <button class="nx"><svg width="15" height="15"><use href="#next"/></svg>Следом</button>
+    </div>
+  </div>
+  <div class="rbottom">
+    <div style="display: flex; justify-content: flex-end;"><button class="skip">Пропустить</button></div>
+    <button class="wbtn">Дальше</button>
+  </div>
+</div>
+<p class="cap"><b>Шаг 1. Сделано.</b> Число, затем (только в первый пересмотр месяца) «Итоги ноября», затем задачи по проектам с «Следом» — созданное продолжение встаёт строкой под задачей (#9FB0FF).</p>
+</div>
+
+<!-- ШАГ 2 — «Задумано, но не сделано» -->
+<div>
+<div class="phone dark">
+  <div class="rtop"><div class="rp"><i class="d"></i><i class="c"></i><i></i><i></i><i></i><i></i></div><span class="ib" style="color: #A7AECF;"><svg width="22" height="22"><use href="#x"/></svg></span></div>
+  <div class="rhead">
+    <div class="rstep">Шаг 2 из 6 · Задумано</div>
+    <div class="rtitle">Задумано, но не сделано</div>
+    <div class="rhint">Рабочий набор, шаги целей и задачи с датой на эту неделю. Что с ними?</div>
+  </div>
+  <div class="rbody">
+    <div class="sec"><svg width="12" height="12" style="color: #FFC94D;"><use href="#crown"/></svg>Работа</div>
+    <div class="ic">
+      <b>Обновить прошивку на стенде №2</b>
+      <div style="margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; font-weight: 600; color: #A7AECF;">Стенды<span class="rs" style="background: #39407A; color: #D6DBFF;">в наборе</span><span class="rs" style="background: #1F2552; color: #A7AECF;">дата ср 2.12</span></div>
+      <div class="sg3"><span>Оставить</span><span>В стопку</span><span>Снять</span></div>
+    </div>
+    <div class="ic">
+      <b>Спроектировать экран «Сегодня»</b>
+      <div style="margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; font-weight: 600; color: #A7AECF;">TaskRadar<span class="rs" style="background: #2B3592; color: #FFFFFF;"><svg width="11" height="11" style="color: #FFC94D;"><use href="#crown"/></svg>шаг цели</span></div>
+      <div class="sg3"><span class="on">Оставить</span><span>В стопку</span><span>Снять</span></div>
+    </div>
+    <div class="sec">С датой</div>
+    <!-- после «В стопку»: 50 %, подпись справа -->
+    <div class="ic" style="opacity: 0.5;">
+      <div style="display: flex; align-items: flex-start; gap: 8px;"><b style="flex: 1;">Продлить страховку на машину</b><span style="font-size: 12px; font-weight: 700; color: #D6DBFF;">в стопке</span></div>
+      <div style="margin-top: 6px; display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #A7AECF;">Дом<span class="rs" style="background: #1F2552; color: #A7AECF;">дата пт 4.12</span></div>
+      <div class="sg3"><span>Оставить</span><span class="on">В стопку</span><span>Снять</span></div>
+    </div>
+  </div>
+  <div class="rbottom">
+    <div style="display: flex; justify-content: flex-end;"><button class="skip">Пропустить</button></div>
+    <button class="wbtn">Дальше</button>
+  </div>
+</div>
+<p class="cap"><b>Шаг 2.</b> Разделы по контурам (корона: золотая — активный), затем «С датой». Причины — чипами. Сегмент «Оставить / В стопку / Снять» применяется сразу, с отменой. Что делает «Снять» — вопрос 3 спецификации.</p>
+</div>
+
+<!-- ШАГ 3 — «Цели» -->
+<div>
+<div class="phone dark">
+  <div class="rtop"><div class="rp"><i class="d"></i><i class="s"></i><i class="c"></i><i></i><i></i><i></i></div><span class="ib" style="color: #A7AECF;"><svg width="22" height="22"><use href="#x"/></svg></span></div>
+  <div class="rhead">
+    <div class="rstep">Шаг 3 из 6 · Цели</div>
+    <div class="rtitle">Цели</div>
+    <div class="rhint">Окна целей. Какая остаётся, какая уступает место, какая достигнута?</div>
+  </div>
+  <div class="rbody">
+    <div class="sec"><svg width="12" height="12" style="color: #FFC94D;"><use href="#crown"/></svg>Работа · 2 из 2</div>
+    <div class="raised" style="padding: 14px 16px; margin-bottom: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" style="color: #FFC94D;"><use href="#crown"/></svg><span style="flex: 1; font-size: 16px; font-weight: 700; color: #FFFFFF;">Новое поколение TaskRadar</span><span class="U num" style="font-size: 13px; font-weight: 600; color: #7FD1A8;">3/5</span></div>
+      <div style="margin-top: 3px; font-size: 13px; font-weight: 600; color: #FF8C70;">Окно вышло вчера</div>
+      <div style="margin-top: 8px; display: flex; gap: 3px;"><i style="flex: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></i><i style="flex: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></i><i style="flex: 1; height: 3px; border-radius: 2px; background: #7FD1A8;"></i><i style="flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></i><i style="flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);"></i></div>
+      <div style="margin-top: 10px; display: flex; gap: 8px;">
+        <button class="gb" style="flex: 0 0 96px; border: none; background: #FFFFFF; color: #14183C;">Оставить</button>
+        <button class="gb" style="flex: 1; border: 1px solid rgba(255,255,255,0.15); background: transparent; color: #D6DBFF; font-weight: 600;">Уступить</button>
+        <button class="gb" style="flex: 0 0 112px; border: 1px solid rgba(127,209,168,0.5); background: transparent; color: #7FD1A8;"><svg width="16" height="16"><use href="#check"/></svg>Достигнута</button>
+      </div>
+    </div>
+    <!-- решение принято: плашка на месте кнопок -->
+    <div class="raised" style="padding: 14px 16px; margin-bottom: 8px;">
+      <div style="display: flex; align-items: center; gap: 8px;"><svg width="16" height="16" style="color: #FFC94D;"><use href="#crown"/></svg><span style="flex: 1; font-size: 16px; font-weight: 700; color: #FFFFFF;">Первая публикация</span><span class="U num" style="font-size: 13px; font-weight: 600; color: #7FD1A8;">1/3</span></div>
+      <div style="margin-top: 10px; height: 44px; border-radius: 14px; background: #1F2552; display: flex; align-items: center; padding: 0 6px 0 14px; gap: 8px;"><svg width="16" height="16" style="color: #7FD1A8;"><use href="#check"/></svg><span style="flex: 1; font-size: 14px; font-weight: 600; color: #EDEEF7;">Продлено до 14.12</span><button class="skip" style="font-size: 13px; font-weight: 700;">Вернуть</button></div>
+    </div>
+    <div class="sec"><svg width="12" height="12" style="color: #8C91B8;"><use href="#crown"/></svg>Личное · 0 из 1</div>
+    <div style="height: 56px; box-sizing: border-box; border-radius: 20px; border: 1.5px dashed #4A5088; padding: 0 6px 0 16px; display: flex; align-items: center;">
+      <span style="flex: 1; font-size: 15px; font-weight: 600; color: #A7AECF;">Свободный слот</span>
+      <button class="skip" style="display: inline-flex; align-items: center; gap: 4px; font-size: 14px; font-weight: 700;">Со скамейки<svg width="16" height="16"><use href="#down"/></svg></button>
+    </div>
+  </div>
+  <div class="rbottom">
+    <div style="display: flex; justify-content: flex-end;"><button class="skip">Пропустить</button></div>
+    <button class="wbtn">Дальше</button>
+  </div>
+</div>
+<p class="cap"><b>Шаг 3.</b> Шаг 2 был пропущен — его сегмент #6A71A6. Карточки целей как в блоке «Работы», кнопки «Оставить / Уступить / Достигнута»; решение — плашкой с «Вернуть». Свободный слот — «Со скамейки».</p>
+</div>
+
+<!-- ШАГ 4 — «Ритм» -->
+<div>
+<div class="phone dark">
+  <div class="rtop"><div class="rp"><i class="d"></i><i class="s"></i><i class="d"></i><i class="c"></i><i></i><i></i></div><span class="ib" style="color: #A7AECF;"><svg width="22" height="22"><use href="#x"/></svg></span></div>
+  <div class="rhead">
+    <div class="rstep">Шаг 4 из 6 · Ритм</div>
+    <div class="rtitle">Ритм проектов</div>
+    <div class="rhint">Проекты, которые затихли или разрослись.</div>
+  </div>
+  <div class="rbody" style="margin-top: 16px;">
+    <div class="raised" style="padding: 14px 16px; margin-bottom: 10px;">
+      <div style="display: flex; align-items: center; gap: 10px;"><span class="pb" style="width: 28px; height: 28px; border-radius: 9px; background: #8A5A0B;">А</span><span style="flex: 1; font-size: 16px; font-weight: 700; color: #FFFFFF;">Админка</span><span style="font-size: 13px; font-weight: 700; color: #FF8C70;">перебор 24/20</span></div>
+      <div class="num" style="margin-top: 6px; font-size: 13px; font-weight: 500; color: #A7AECF;">открыто 24 · потолок 20</div>
+      <button class="ob44" style="margin-top: 12px;">Почистить</button>
+      <button class="ob44">Поменять потолок</button>
+    </div>
+    <div class="raised" style="padding: 14px 16px;">
+      <div style="display: flex; align-items: center; gap: 10px;"><span class="pb" style="width: 28px; height: 28px; border-radius: 9px; background: #2A6B4E;">Д</span><span style="flex: 1; font-size: 16px; font-weight: 700; color: #FFFFFF;">Дом</span><span style="font-size: 13px; font-weight: 700; color: #FF8C70;">тишина 3 нед</span></div>
+      <div class="num" style="margin-top: 6px; font-size: 13px; font-weight: 500; color: #A7AECF;">закрыто 0,5 в неделю · норма 2</div>
+      <div style="margin-top: 12px; height: 44px; border-radius: 14px; background: #1F2552; display: flex; align-items: center; padding: 0 14px; gap: 8px; font-size: 13px; font-weight: 600; color: #7FD1A8;"><svg width="16" height="16"><use href="#check"/></svg><span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">В наборе: Позвонить в ЖЭК про счётчики</span></div>
+      <button class="ob44">Поменять норму</button>
+    </div>
+  </div>
+  <div class="rbottom">
+    <div style="display: flex; justify-content: flex-end;"><button class="skip">Пропустить</button></div>
+    <button class="wbtn">Дальше</button>
+  </div>
+</div>
+<p class="cap"><b>Шаг 4.</b> Только проекты с сигналом. Здесь, на тёмном, сигнал коралловый — единственное место, где ритм заметен. Тишина: «Взять задачу в набор» (стало: «В наборе: …») и «Поменять норму»; перебор: «Почистить» и «Поменять потолок».</p>
+</div>
+
+<!-- ШАГ 5 — «Неделя вперёд» -->
+<div>
+<div class="phone dark">
+  <div class="rtop"><div class="rp"><i class="d"></i><i class="s"></i><i class="d"></i><i class="d"></i><i class="c"></i><i></i></div><span class="ib" style="color: #A7AECF;"><svg width="22" height="22"><use href="#x"/></svg></span></div>
+  <div class="rhead">
+    <div class="rstep">Шаг 5 из 6 · Вперёд</div>
+    <div class="rtitle">Неделя вперёд</div>
+    <div class="rhint">Что берёте в работу и на какие дни.</div>
+  </div>
+  <div class="rbody">
+    <div class="sec"><svg width="12" height="12" style="color: #FFC94D;"><use href="#crown"/></svg>Работа · набор<span style="flex: 1;"></span><span style="display: inline-flex; gap: 3px;"><i style="width: 6px; height: 6px; border-radius: 3px; background: #FFC94D;"></i><i style="width: 6px; height: 6px; border-radius: 3px; background: #FFC94D;"></i><i style="width: 6px; height: 6px; border-radius: 3px; background: #4A5088;"></i><i style="width: 6px; height: 6px; border-radius: 3px; background: #4A5088;"></i><i style="width: 6px; height: 6px; border-radius: 3px; background: #4A5088;"></i></span></div>
+    <div class="raised" style="padding: 0 0 0 14px;">
+      <div class="ws"><span style="width: 20px; height: 20px; border-radius: 10px; border: 2px solid #39407A; box-sizing: border-box; flex-shrink: 0;"></span><span style="flex: 1; min-width: 0;"><span style="display: block; font-size: 15px; font-weight: 500; color: #EDEEF7;">Спроектировать экран «Сегодня»</span><span style="display: block; font-size: 12px; font-weight: 600; color: #A7AECF;">TaskRadar</span></span><span class="ib" style="color: #A7AECF;"><svg width="18" height="18"><use href="#x"/></svg></span></div>
+      <div class="ws"><span style="width: 20px; height: 20px; border-radius: 10px; border: 2px solid #39407A; box-sizing: border-box; flex-shrink: 0;"></span><span style="flex: 1; min-width: 0;"><span style="display: block; font-size: 15px; font-weight: 500; color: #EDEEF7;">Обновить прошивку на стенде №2</span><span style="display: block; font-size: 12px; font-weight: 600; color: #A7AECF;">Стенды</span></span><span class="ib" style="color: #A7AECF;"><svg width="18" height="18"><use href="#x"/></svg></span></div>
+    </div>
+    <button class="skip" style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700;"><svg width="16" height="16"><use href="#plus"/></svg>Собрать</button>
+    <div class="sec" style="margin-top: 6px;">По дням</div>
+    <div style="font-size: 13px; font-weight: 700; color: #D6DBFF; height: 32px; display: flex; align-items: center;">вт 8.12 · 2</div>
+    <div class="ws" style="min-height: 48px;"><span style="flex: 1; font-size: 15px; font-weight: 500; color: #EDEEF7;">Встретить курьера</span><span class="dl num">15:00</span></div>
+    <div class="ws" style="min-height: 48px;"><span style="flex: 1; font-size: 15px; font-weight: 500; color: #EDEEF7;">Продлить пропуск в офис</span><span class="dl">вт</span></div>
+    <div style="font-size: 13px; font-weight: 700; color: #D6DBFF; height: 32px; display: flex; align-items: center; margin-top: 4px;">ср 9.12 – пт 11.12 <span style="font-weight: 500; color: #A7AECF; margin-left: 6px;">— пусто</span></div>
+  </div>
+  <div class="rbottom">
+    <div style="display: flex; justify-content: flex-end;"><button class="skip">Пропустить</button></div>
+    <button class="wbtn">Дальше</button>
+  </div>
+</div>
+<p class="cap"><b>Шаг 5.</b> Рабочие наборы по контурам (× — убрать, «+ Собрать» — экран сбора), затем 7 дней: метка даты — кнопка, открывает лист даты. Пустые дни подряд схлопываются.</p>
+</div>
+
+<!-- ШАГ 6 — «Итог» -->
+<div>
+<div class="phone dark">
+  <div class="rtop"><div class="rp"><i class="d"></i><i class="s"></i><i class="d"></i><i class="d"></i><i class="d"></i><i class="c"></i></div><span class="ib" style="color: #A7AECF;"><svg width="22" height="22"><use href="#x"/></svg></span></div>
+  <div class="rhead">
+    <div class="rstep">Шаг 6 из 6 · Итог</div>
+    <div class="rtitle">Итог недели</div>
+    <div class="rhint">Одной строкой — что это была за неделя. Можно пропустить.</div>
+  </div>
+  <div class="rbody">
+    <div class="well" style="margin-top: 16px; min-height: 120px; padding: 16px; box-sizing: border-box; position: relative;">
+      <span style="font-size: 20px; font-weight: 500; line-height: 1.35; color: #FFFFFF;">Демо стенда прошло, админку надо разгрести<span style="display: inline-block; width: 2px; height: 22px; background: #6C79E8; vertical-align: -4px; margin-left: 1px;"></span></span>
+      <span class="ib" style="position: absolute; right: 4px; bottom: 4px; color: #A7AECF;"><svg width="22" height="22"><use href="#mic"/></svg></span>
+    </div>
+    <div style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px;" class="num">
+      <span class="chp"><svg width="14" height="14" style="color: #7FD1A8;"><use href="#check"/></svg>23 закрыто</span>
+      <span class="chp"><svg width="13" height="13" style="color: #FFC94D;"><use href="#crown"/></svg>1 цель</span>
+      <span class="chp"><svg width="14" height="14"><use href="#next"/></svg>следом 1</span>
+      <span class="chp"><svg width="14" height="14"><use href="#pile"/></svg>в стопку 1</span>
+    </div>
+  </div>
+  <div class="rbottom">
+    <div style="display: flex; justify-content: flex-end;"><button class="skip">Пропустить</button></div>
+    <button class="wbtn" style="height: 76px; border-radius: 24px; font-size: 19px;"><svg width="24" height="24"><use href="#check"/></svg>Записать пересмотр</button>
+  </div>
+</div>
+<p class="cap"><b>Шаг 6.</b> Поле как в диктовке (20/500, микрофон в колодце), ≤ 300 символов. Под ним — итоговые числа чипами. «Записать пересмотр» белая 76; «Пропустить» = записать без итога. После — снекбар «Пересмотр записан · Недели».</p>
+</div>
+
+</div>
+
+</body>
+</html>
