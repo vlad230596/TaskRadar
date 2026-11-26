@@ -64,8 +64,18 @@ class ShellScreen extends ConsumerWidget {
       AppMode.history => const HistoryHeader(),
     };
 
+    // The keyboard is never this screen's: the three modes hold no text
+    // field, and every one that opens over them -- the "Новый проект" dialog,
+    // the goal and idea sheets, the editor -- is a route of its own that keeps
+    // itself above the keyboard. Letting the Scaffold shrink its body to the
+    // inset anyway only ever cost the board: with a keyboard inset still
+    // reported (the keyboard of such a dialog, or one the system has not
+    // cleared yet) the planning tiles were cut off half-way down the screen
+    // with nothing drawn below -- the owner's screenshot of 17.11. See
+    // `plan_screen_test.dart`, "a keyboard inset".
     if (wide) {
       return Scaffold(
+        resizeToAvoidBottomInset: false,
         body: Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -88,6 +98,7 @@ class ShellScreen extends ConsumerWidget {
     }
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         bottom: false,
         child: Column(

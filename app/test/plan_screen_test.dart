@@ -509,6 +509,110 @@ void main() {
     });
   });
 
+  group('tiles on the "all spaces" board', () {
+    // The owner's phone: three scopes, two dozen projects, the board split
+    // into one grid per scope. The tiles stopped part-way through the first
+    // grid and nothing below it -- other scopes, the "Проект" button -- was
+    // ever drawn or reachable.
+    const scopeNames = <String>['Основной', 'Мои проекты', 'Работа'];
+
+    List<dynamic> scopes() => <dynamic>[
+      for (final (i, name) in scopeNames.indexed)
+        scopeJson(id: 'scope_$i', name: name, position: 1000 * (i + 1)),
+    ];
+
+    List<dynamic> board() => <dynamic>[
+      for (var s = 0; s < scopeNames.length; s++)
+        for (var p = 0; p < 7; p++)
+          boardProjectJson(
+            id: 'prj_${s}_$p',
+            name: 'Проект $s-$p',
+            scopeId: 'scope_$s',
+            updatedAt: daysAgo(p + 1),
+            tasks: <Map<String, dynamic>>[
+              taskJson(
+                id: 't_${s}_$p',
+                title: 'Посмотреть, почему не работает вентилятор в туалете',
+                isCurrent: true,
+              ),
+              taskJson(
+                id: 'b_${s}_$p',
+                status: 'blocked',
+                position: 2000,
+              ),
+            ],
+          ),
+    ];
+
+    testWidgets('every scope and every tile is laid out and scrolls into view', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      backend.alwaysRespond(board(), scopes: scopes());
+      settings.planLayout = 'tiles';
+
+      await pumpShell(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.text('ОСНОВНОЙ'), findsOneWidget);
+
+      final scrollable = find.byType(Scrollable).first;
+      for (final name in <String>[
+        'Проект 0-6',
+        'МОИ ПРОЕКТЫ',
+        'Проект 1-6',
+        'РАБОТА',
+        'Проект 2-6',
+      ]) {
+        await tester.scrollUntilVisible(
+          find.text(name),
+          200,
+          scrollable: scrollable,
+        );
+        await settle(tester);
+        expect(find.text(name), findsOneWidget, reason: name);
+        expect(tester.takeException(), isNull, reason: name);
+      }
+
+      // A whole tile, not one cut off at the bottom of a grid.
+      final tile = find.ancestor(
+        of: find.text('Проект 2-6'),
+        matching: find.byType(InkWell),
+      );
+      expect(tester.getSize(tile.first).height, greaterThan(120));
+    });
+
+    testWidgets('a keyboard inset does not cut the board off half-way', (
+      tester,
+    ) async {
+      // The owner's screenshot, to the pixel: a 1080x2340 phone at 2.75, the
+      // tiles of «ОСНОВНОЙ» clipped through their task line at 428 dp and the
+      // page colour below. That is the board's viewport ending 423 dp above
+      // the bottom of the screen -- the height of a keyboard. The modes hold
+      // no text field, so whatever inset is reported, the board is not the
+      // thing to make room for it.
+      const dpr = 2.75;
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = dpr;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 423 * dpr);
+      addTearDown(tester.view.reset);
+      backend.alwaysRespond(board(), scopes: scopes());
+      settings.planLayout = 'tiles';
+
+      await pumpShell(tester);
+      expect(tester.takeException(), isNull);
+
+      final viewport = tester.getRect(find.byType(Scrollable).first);
+      final bar = tester.getRect(find.byType(ModeBar));
+      expect(
+        viewport.bottom,
+        moreOrLessEquals(bar.top, epsilon: 1),
+        reason: 'the board reaches down to the bottom bar',
+      );
+    });
+  });
+
   group('an empty board', () {
     testWidgets('says so in words, rather than showing a blank screen', (
       tester,
