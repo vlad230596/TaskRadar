@@ -116,7 +116,7 @@ export interface StatusSpans {
 
 /** The shape `replayStatusTime` needs from a journal row. */
 export interface StatusEventLike {
-  kind: "created" | "status" | "focused" | "unfocused";
+  kind: "created" | "status" | "focused" | "unfocused" | "reopened";
   toStatus: TaskStatusLike | null;
   at: Date;
 }
@@ -152,7 +152,8 @@ export function replayStatusTime(
   let since = task.createdAt;
 
   for (const event of events) {
-    if (event.kind !== "created" && event.kind !== "status") continue;
+    // `reopened` moves the status too (done -> what it was before the closing).
+    if (event.kind !== "created" && event.kind !== "status" && event.kind !== "reopened") continue;
     if (event.toStatus === null) continue;
 
     if (status !== null) {

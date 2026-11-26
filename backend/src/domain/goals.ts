@@ -1,4 +1,5 @@
 import { Prisma, TaskStatus } from "@prisma/client";
+import { DEFAULT_LATER_HORIZON_DAYS, isLater, LaterRule, localToday } from "./today";
 
 /*
  * Goals (design/goals-ideas-contract.md): the rules that do not need a
@@ -73,6 +74,8 @@ export interface GoalTaskView {
   projectName: string;
   focusedAt: Date | null;
   focusContourId: string | null;
+  /** The task's date (`YYYY-MM-DD` on the wire), for «Позже». */
+  remindAt: Date | null;
 }
 
 /**
@@ -81,9 +84,25 @@ export interface GoalTaskView {
  * is something the owner can do now, and a blocked task is by definition not
  * that. Done tasks are history. Null when nothing pending is left; the app
  * then offers "Обсудить" (and says "всё заблокировано" if blocked ones remain).
+ *
+ * «Позже» (design/today-history-contract.md), when [later] is given: a task
+ * dated beyond the owner's horizon is passed over for one that is for now --
+ * but if every pending task is «Позже», the first pending one is still the
+ * step: a goal in a slot should name what comes next, even if it is a date.
  */
-export function nextStepOf<T extends { status: TaskStatus }>(tasksInOrder: readonly T[]): T | null {
-  return tasksInOrder.find((task) => task.status === "pending") ?? null;
+export function nextStepOf<T extends { status: TaskStatus; remindAt?: Date | null }>(
+  tasksInOrder: readonly T[],
+  later?: LaterRule,
+): T | null {
+  const pending = tasksInOrder.filter((task) => task.status === "pending");
+  if (later !== undefined) {
+    const now = pending.find(
+      (task) =>
+        !isLater({ status: task.status, remindAt: task.remindAt ?? null }, later.today, later.horizonDays),
+    );
+    if (now !== undefined) return now;
+  }
+  return pending[0] ?? null;
 }
 
 /**
@@ -106,6 +125,7 @@ export const goalInclude = {
           projectId: true,
           focusedAt: true,
           focusContourId: true,
+          remindAt: true,
           project: { select: { name: true } },
         },
       },
@@ -123,8 +143,16 @@ export const goalInclude = {
 
 export type GoalRow = Prisma.GoalGetPayload<{ include: typeof goalInclude }>;
 
-/** A goal as the API (and the MCP server) shows it -- `GoalView` in the contract. */
-export function goalView(row: GoalRow, now: Date = new Date()) {
+/**
+ * A goal as the API (and the MCP server) shows it -- `GoalView` in the contract.
+ * [horizonDays] is the owner's «Позже» horizon, for the next step; the
+ * server's today for it is UTC.
+ */
+export function goalView(
+  row: GoalRow,
+  now: Date = new Date(),
+  horizonDays: number = DEFAULT_LATER_HORIZON_DAYS,
+) {
   const state = goalState(row);
   const tasks: GoalTaskView[] = row.tasks.map(({ task }) => ({
     id: task.id,
@@ -134,6 +162,7 @@ export function goalView(row: GoalRow, now: Date = new Date()) {
     projectName: task.project.name,
     focusedAt: task.focusedAt,
     focusContourId: task.focusContourId,
+    remindAt: task.remindAt,
   }));
   return {
     id: row.id,
@@ -152,7 +181,7 @@ export function goalView(row: GoalRow, now: Date = new Date()) {
     position: row.position,
     createdAt: row.createdAt,
     tasks,
-    nextStep: nextStepOf(tasks),
+    nextStep: nextStepOf(tasks, { today: localToday(now), horizonDays }),
     ideas: row.ideas.map(({ note }) => ({
       id: note.id,
       title: note.title,

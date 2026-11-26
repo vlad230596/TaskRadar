@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { planStatusChange } from "../src/domain/taskEvents";
+import { planReopen, planStatusChange } from "../src/domain/taskEvents";
 
 /*
  * The rules the journal is written by (F11), tested where they live: a pure
@@ -22,6 +22,7 @@ describe("planStatusChange", () => {
     expect(planStatusChange({ status: "pending", focusedAt: null }, undefined)).toEqual({
       events: [],
       leavesFocus: false,
+      revokesClosing: false,
     });
   });
 
@@ -36,6 +37,7 @@ describe("planStatusChange", () => {
     expect(planStatusChange({ status: "blocked", focusedAt: T }, "blocked")).toEqual({
       events: [],
       leavesFocus: false,
+      revokesClosing: false,
     });
   });
 
@@ -48,8 +50,31 @@ describe("planStatusChange", () => {
     // that left the set at a time nobody recorded.
     expect(events).toEqual([
       { kind: "status", fromStatus: "pending", toStatus: "done" },
-      { kind: "unfocused", fromStatus: null, toStatus: null },
+      { kind: "unfocused", fromStatus: null, toStatus: null, contourId: null },
     ]);
+  });
+
+  it("says whose working set a finished task left", () => {
+    const { events } = planStatusChange(
+      { status: "blocked", focusedAt: T, focusContourId: "c-work" },
+      "done",
+    );
+    expect(events[1]).toEqual({ kind: "unfocused", fromStatus: null, toStatus: null, contourId: "c-work" });
+  });
+
+  it("stamps doneAt on the way into done and clears it on the way out, revoking the closing", () => {
+    const now = new Date("2026-11-27T08:00:00.000Z");
+    expect(planStatusChange({ status: "pending", focusedAt: null }, "done", now)).toMatchObject({
+      doneAt: now,
+      revokesClosing: false,
+    });
+    expect(planStatusChange({ status: "done", focusedAt: null }, "blocked", now)).toMatchObject({
+      doneAt: null,
+      revokesClosing: true,
+    });
+    const neither = planStatusChange({ status: "pending", focusedAt: null }, "blocked", now);
+    expect(neither.doneAt).toBeUndefined();
+    expect(neither.revokesClosing).toBe(false);
   });
 
   it("does not record leaving a set the task was never in", () => {
@@ -72,5 +97,41 @@ describe("planStatusChange", () => {
     const { events } = planStatusChange({ status: "done", focusedAt: null }, "pending");
 
     expect(events).toEqual([{ kind: "status", fromStatus: "done", toStatus: "pending" }]);
+  });
+});
+
+describe("planReopen", () => {
+  it("returns the task to the status it was closed from", () => {
+    const plan = planReopen({ focusedAt: null }, { fromStatus: "blocked" }, null, "c-default");
+    expect(plan).toEqual({
+      status: "blocked",
+      refocusContourId: null,
+      events: [{ kind: "reopened", fromStatus: "done", toStatus: "blocked" }],
+    });
+  });
+
+  it("falls back to pending when the journal has no closing", () => {
+    expect(planReopen({ focusedAt: null }, null, null, "c-default").status).toBe("pending");
+    expect(planReopen({ focusedAt: null }, { fromStatus: null }, null, "c-default").status).toBe("pending");
+  });
+
+  it("puts it back into the set it left on closing, of that contour", () => {
+    const plan = planReopen({ focusedAt: null }, { fromStatus: "pending" }, { contourId: "c-home" }, "c-default");
+    expect(plan.refocusContourId).toBe("c-home");
+    expect(plan.events).toEqual([
+      { kind: "reopened", fromStatus: "done", toStatus: "pending" },
+      { kind: "focused", fromStatus: null, toStatus: null, contourId: "c-home" },
+    ]);
+  });
+
+  it("uses the default contour for an exit that recorded none", () => {
+    const plan = planReopen({ focusedAt: null }, { fromStatus: "pending" }, { contourId: null }, "c-default");
+    expect(plan.refocusContourId).toBe("c-default");
+  });
+
+  it("does not refocus a task that is somehow in a set already", () => {
+    const plan = planReopen({ focusedAt: T }, { fromStatus: "pending" }, { contourId: "c-home" }, "c-default");
+    expect(plan.refocusContourId).toBeNull();
+    expect(plan.events).toHaveLength(1);
   });
 });
