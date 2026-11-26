@@ -99,9 +99,15 @@ sealed class FieldDictation {
 /// Words to append to the field: as dictated, or -- for a field that holds
 /// one text, a note or a line -- as tidied.
 final class FieldWords extends FieldDictation {
-  const FieldWords(this.text);
+  const FieldWords(this.text, {this.title});
 
   final String text;
+
+  /// A [ParseKind.note] answer's title for a note that had none -- what a new
+  /// idea is named, so its text can stay whole (`dictateNewIdea`). Null for
+  /// words as dictated, and for every other kind; a field that already has a
+  /// title ignores it.
+  final String? title;
 }
 
 /// A task's whole text, tidied from what it held and the words said into it:
@@ -659,7 +665,12 @@ class _DictationScreenState extends ConsumerState<DictationScreen> {
           remindAt: remindAt,
           remindTime: remindAt == null ? null : _remindTime,
         );
-      case TidiedNote() || TidiedLine():
+      case TidiedNote(:final title):
+        final text = _resultText.text.trim();
+        if (text.isEmpty) return FieldWords(words);
+        final named = title?.trim() ?? '';
+        return FieldWords(text, title: named.isEmpty ? null : named);
+      case TidiedLine():
         final text = _resultText.text.trim();
         return FieldWords(text.isEmpty ? words : text);
       case null:

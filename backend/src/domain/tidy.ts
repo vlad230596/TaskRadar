@@ -105,7 +105,12 @@ export interface TidiedLine {
  * 3: the cleanup rules depend on the level (`./aiLevels.ts`).
  */
 export const TASK_TIDY_PROMPT_VERSION = "tidy-3";
-export const NOTE_PROMPT_VERSION = "note-3";
+/**
+ * note-4: the title of an untitled note names the thought rather than
+ * repeating its opening words, and the body stays whole -- see
+ * [interpretNoteReply].
+ */
+export const NOTE_PROMPT_VERSION = "note-4";
 /**
  * 2: the reply carries the line as a task too, `title` and `description`.
  * 3: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
@@ -312,7 +317,11 @@ export function buildNoteMessages(input: DictationInput): ChatMessage[] {
     "",
     "Заголовок:",
     title === ""
-      ? "- у заметки нет заголовка: предложи короткий, до 60 символов, без точки в конце."
+      ? [
+          "- у заметки нет заголовка: предложи короткий, до 60 символов, без точки в конце;",
+          "- заголовок называет суть мысли, а не повторяет начало текста; не обрывай его многоточием;",
+          '- "content" — весь текст целиком, ничего из него не переносится в заголовок.',
+        ].join("\n")
       : `- у заметки уже есть заголовок («${title}»): верни "title": null.`,
     "",
     "Напоминаний и сроков не ставь.",
@@ -344,9 +353,54 @@ export function interpretNoteReply(content: string, noteTitle?: string, source =
   if (body === "") throw new UpstreamModelError("reply has empty content");
 
   const hadTitle = (noteTitle?.trim() ?? "") !== "";
-  const suggested = textOrNull(parsed.data.title);
-  const title = hadTitle || suggested === null ? null : tidyTitle(suggested) || null;
+  const suggested = tidyTitle(parsed.data.title ?? "");
+  const title = hadTitle
+    ? null
+    : suggested !== "" && suggested.length <= NOTE_TITLE_LIMIT
+      ? suggested
+      : noteTitleFrom(suggested !== "" ? suggested : body);
   return { title, content: body, warnings: dateWarnings(source, title, body) };
+}
+
+/**
+ * The longest title an untitled note gets from here. The prompt asks for 60;
+ * a model that wrote a sentence instead is shortened rather than trusted.
+ */
+export const NOTE_TITLE_LIMIT = 80;
+
+/**
+ * A title for a note whose reply brought none (or one too long to be a
+ * title), made from [text] without taking anything out of it: the caller
+ * keeps the body whole, so this is a name for the idea, not its first half.
+ *
+ * Why it exists: an idea dictated as one long thought used to come back with
+ * no usable title, and the client then cut the body at 120 characters --
+ * "…когда берём отпуск в…" in the title, "приложении. И сразу…" in the text,
+ * one sentence torn across two fields. A note always leaves here with a title,
+ * so nothing downstream has to cut.
+ *
+ * The first line, without a list mark or a heading's `#`, if it is short
+ * enough; else its first sentence; else its words up to the limit, marked
+ * with `…`; a single word longer than the limit is cut hard.
+ */
+export function noteTitleFrom(text: string): string | null {
+  const line =
+    text
+      .split(/\r?\n/)
+      .map((row) => row.replace(/^\s*(?:#+|[-*+]|\d+[.)])\s+/, "").trim())
+      .find((row) => row !== "") ?? "";
+  if (line === "") return null;
+  if (line.length <= NOTE_TITLE_LIMIT) return tidyTitle(line) || null;
+
+  const sentence = /^(.{10,}?[.!?…])(?=\s)/u.exec(line)?.[1];
+  if (sentence !== undefined && sentence.length <= NOTE_TITLE_LIMIT) {
+    return tidyTitle(sentence) || null;
+  }
+
+  const window = line.slice(0, NOTE_TITLE_LIMIT);
+  const lastSpace = window.search(/\s\S*$/);
+  const cut = lastSpace >= 10 ? window.slice(0, lastSpace) : window;
+  return `${tidyTitle(cut.replace(/[\s,;:—–-]+$/u, ""))}…`;
 }
 
 export const noteSpec: ParseSpec<DictationInput, TidiedNote> = {

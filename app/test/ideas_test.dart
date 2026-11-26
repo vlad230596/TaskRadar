@@ -33,12 +33,35 @@ void main() {
       ));
     });
 
-    test('a very long first line is cut at a word, the rest moves down', () {
+    test('one long thought: a title cut at a word, the text whole', () {
       final words = List<String>.filled(40, 'слово').join(' ');
       final (title, text) = splitIdeaText(words);
       expect(title.length, lessThanOrEqualTo(121));
       expect(title, endsWith('…'));
-      expect(text, isNotEmpty);
+      expect(text, words);
+    });
+
+    // The idea in «Зерно», 25.11: its first sentence is longer than 120, and
+    // the rest of it used to move into the text -- «…отпуск в…» over
+    // «приложении. И сразу…».
+    test('a sentence is never torn across the title and the text', () {
+      const zerno =
+          'Так как мы знаем всю историю начислений, мы автоматически можем '
+          'проверять, если будем отмечать, когда берём отпуск в приложении. '
+          'И сразу в лайв-режиме выбирать дни, когда его взять, и там будет '
+          'расчёт, сколько денег должно прийти.';
+      final (title, text) = splitIdeaText(zerno);
+      expect(title, endsWith('…'));
+      expect(zerno, startsWith(title.substring(0, title.length - 1)));
+      expect(text, zerno);
+    });
+
+    test('a long line that opens with a short sentence: it is the title', () {
+      final tail = List<String>.filled(30, 'продолжение').join(' ');
+      expect(splitIdeaText('Отпускные по истории. $tail\nещё строка'), (
+        'Отпускные по истории',
+        '$tail\nещё строка',
+      ));
     });
   });
 

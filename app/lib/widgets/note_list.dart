@@ -158,7 +158,10 @@ Future<void> openNewIdea(
 }
 
 /// The microphone of the ideas tab: dictation, then the new idea's screen
-/// with the words in it -- the first line its title, the rest its text.
+/// with the words in it.
+///
+/// Tidied ("Разобрать"), the answer names the idea itself and its text goes
+/// in whole. As dictated, the words are split by [splitIdeaText].
 Future<void> dictateNewIdea(BuildContext context, String projectId) async {
   final result = await AppRoutes.openDictation(
     context,
@@ -169,6 +172,7 @@ Future<void> dictateNewIdea(BuildContext context, String projectId) async {
       title,
       description ?? '',
     ),
+    FieldWords(:final text, title: final title?) => (title, text.trim()),
     FieldWords(:final text) => splitIdeaText(text),
     null => ('', ''),
   };
@@ -177,20 +181,51 @@ Future<void> dictateNewIdea(BuildContext context, String projectId) async {
   await openNewIdea(context, projectId, title: title, content: content);
 }
 
-/// Dictated words as an idea: the first line is the title (cut at 120
-/// characters, the rest moves to the text), the remaining lines the text.
+/// Dictated words as an idea, never with a sentence torn across the two
+/// fields:
+///
+/// - one short line: the title, no text;
+/// - several lines, the first short: the first line is the title, the rest
+///   the text -- the lines were said or edited that way on purpose;
+/// - a long first line that starts with a short sentence: that sentence is
+///   the title, everything after it the text;
+/// - otherwise (one long thought): the title is its first words cut at a word
+///   and marked `…`, and the text is the *whole* thing -- the title is only a
+///   name for it. Moving the rest of the sentence into the text, as this used
+///   to, left «…отпуск в…» over «приложении. И сразу…» (the «Зерно» idea).
 (String, String) splitIdeaText(String text) {
+  const limit = 120;
+  const minTitle = 10;
   final trimmed = text.trim();
   final newline = trimmed.indexOf('\n');
-  var title = newline < 0 ? trimmed : trimmed.substring(0, newline).trim();
-  var rest = newline < 0 ? '' : trimmed.substring(newline + 1).trim();
-  if (title.length > 120) {
-    final cut = title.lastIndexOf(' ', 120);
-    final at = cut > 40 ? cut : 120;
-    rest = '${title.substring(at).trim()}${rest.isEmpty ? '' : '\n$rest'}';
-    title = '${title.substring(0, at).trim()}…';
+  final first = newline < 0 ? trimmed : trimmed.substring(0, newline).trim();
+  final rest = newline < 0 ? '' : trimmed.substring(newline + 1).trim();
+  if (first.length <= limit) return (first, rest);
+
+  final sentence = RegExp(r'[.!?…]+(?=\s)')
+      .allMatches(first)
+      .where(
+        (match) => first.substring(0, match.start).trim().length >= minTitle,
+      );
+  if (sentence.isNotEmpty && sentence.first.end <= limit) {
+    var title = first.substring(0, sentence.first.end).trim();
+    if (title.endsWith('.') && !title.endsWith('...')) {
+      title = title.substring(0, title.length - 1);
+    }
+    final after = first.substring(sentence.first.end).trim();
+    return (
+      title,
+      <String>[after, rest].where((part) => part.isNotEmpty).join('\n'),
+    );
   }
-  return (title, rest);
+
+  final cut = first.lastIndexOf(' ', limit);
+  final at = cut > 40 ? cut : limit;
+  final title = first
+      .substring(0, at)
+      .trim()
+      .replaceAll(RegExp(r'[\s,;:—–-]+$'), '');
+  return ('$title…', trimmed);
 }
 
 /// The goals [noteId] is kept next to, from the goals list.

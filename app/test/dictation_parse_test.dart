@@ -820,6 +820,23 @@ void main() {
       expect(parseBodies.single['kind'], 'note');
       await save(tester);
       expect(poppedWords(), '- кабель\n- переходник');
+      expect((popped! as FieldWords).title, isNull);
+    });
+
+    testWidgets('a note field: the answer\'s title comes back with the text', (
+      tester,
+    ) async {
+      modelAnswers(<String, dynamic>{
+        'title': 'Проверка отпускных',
+        'content': 'Длинная мысль целиком. И её продолжение.',
+      });
+
+      await dictate(tester, destination: const FieldDestination('новая идея'));
+      await tidy(tester);
+      await save(tester);
+      final words = popped! as FieldWords;
+      expect(words.text, 'Длинная мысль целиком. И её продолжение.');
+      expect(words.title, 'Проверка отпускных');
     });
 
     testWidgets('a task field: tidied as a task, handed back as two fields', (

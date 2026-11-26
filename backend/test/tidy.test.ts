@@ -14,6 +14,8 @@ import {
   inventedDateTerm,
   inventedDateTerms,
   NOTE_PROMPT_VERSION,
+  NOTE_TITLE_LIMIT,
+  noteTitleFrom,
   SANDBOX_PROMPT_VERSION,
   TASK_TIDY_PROMPT_VERSION,
   type TidyParsers,
@@ -221,6 +223,61 @@ describe("note", () => {
       content: "- гвозди\n- краска",
       warnings: [],
     });
+  });
+
+  it("asks an untitled note for a title that names the thought, and the body whole", () => {
+    const [untitled] = buildNoteMessages(input("текст"));
+    expect(untitled.content).toContain("не повторяет начало текста");
+    expect(untitled.content).toContain("весь текст целиком");
+    const [titled] = buildNoteMessages(input("текст", { noteTitle: "Дача" }));
+    expect(titled.content).not.toContain("весь текст целиком");
+  });
+
+  // The idea in «Зерно», 25.11: one long thought, no title from the model, and
+  // the client cut it at 120 characters -- "…отпуск в…" / "приложении. И…".
+  const zerno =
+    "Так как мы знаем всю историю начислений, мы автоматически можем проверять, " +
+    "если будем отмечать, когда берём отпуск в приложении. И сразу в лайв-режиме " +
+    "выбирать дни, когда его взять, и там будет расчёт, сколько денег должно прийти.";
+
+  it("gives an untitled note a title even when the model gave none, and keeps the body whole", () => {
+    const tidied = interpretNoteReply(reply({ title: null, content: zerno }));
+    expect(tidied.content).toBe(zerno);
+    expect(tidied.title).not.toBeNull();
+    expect(tidied.title!.length).toBeLessThanOrEqual(NOTE_TITLE_LIMIT + 1);
+    expect(tidied.title!.endsWith("…")).toBe(true);
+    // Cut at a word, never in the middle of one, and no dangling preposition comma.
+    expect(zerno.startsWith(tidied.title!.slice(0, -1))).toBe(true);
+    expect(zerno.charAt(tidied.title!.length - 1)).toBe(" ");
+  });
+
+  it("shortens a title the model wrote as a whole sentence", () => {
+    const tidied = interpretNoteReply(reply({ title: zerno, content: zerno }));
+    expect(tidied.title!.length).toBeLessThanOrEqual(NOTE_TITLE_LIMIT + 1);
+    expect(tidied.content).toBe(zerno);
+  });
+
+  it("keeps a short model title as it is, and gives a titled note none", () => {
+    const content = reply({ title: "Проверка отпускных по истории начислений", content: zerno });
+    expect(interpretNoteReply(content).title).toBe("Проверка отпускных по истории начислений");
+    expect(interpretNoteReply(reply({ title: null, content: zerno }), "Отпуск").title).toBeNull();
+  });
+
+  it.each([
+    ["the first short line", "- гвозди\n- краска", "Гвозди"],
+    ["a heading without its mark", "# план на дачу\n\nтекст", "План на дачу"],
+    [
+      "the first sentence when the line is long",
+      "Проверять отпускные по истории. " + "А дальше длинное продолжение мысли ".repeat(4),
+      "Проверять отпускные по истории",
+    ],
+  ])("noteTitleFrom: %s", (_label, text, title) => {
+    expect(noteTitleFrom(text)).toBe(title);
+  });
+
+  it("noteTitleFrom: nothing for an empty text, a hard cut for one endless word", () => {
+    expect(noteTitleFrom("  \n ")).toBeNull();
+    expect(noteTitleFrom("а".repeat(200))).toBe(`А${"а".repeat(NOTE_TITLE_LIMIT - 1)}…`);
   });
 
   it("warns about a date the note did not have, and keeps the note", () => {
