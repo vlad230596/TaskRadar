@@ -100,6 +100,7 @@ Map<String, dynamic> taskJson({
   // integer-valued Float.
   num position = 1000,
   String? remindAt,
+  String? remindTime,
   bool isCurrent = false,
   String createdAt = '2026-08-01T09:00:00.000Z',
   String updatedAt = '2026-08-01T09:00:00.000Z',
@@ -111,6 +112,7 @@ Map<String, dynamic> taskJson({
   'status': status,
   'position': position,
   'remindAt': remindAt,
+  'remindTime': ?remindTime,
   'createdAt': createdAt,
   'updatedAt': updatedAt,
   'isCurrent': isCurrent,

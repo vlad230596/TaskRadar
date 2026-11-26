@@ -1359,7 +1359,14 @@ class _SectionLabel extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
       child: Row(
         children: <Widget>[
-          Text(name.toUpperCase(), style: AppText.sectionLabel),
+          Flexible(
+            child: Text(
+              name.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.sectionLabel,
+            ),
+          ),
           const SizedBox(width: 8),
           const Expanded(child: Divider(color: AppColors.line, height: 1)),
         ],

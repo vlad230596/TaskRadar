@@ -171,6 +171,7 @@ void main() {
           title: 'Жду кабель',
           status: 'blocked',
           remindAt: remindAt(3),
+          remindTime: '12:00',
         );
 
         final container = makeContainer();
@@ -244,6 +245,7 @@ void main() {
         title: 'Жду кабель',
         status: 'blocked',
         remindAt: remindAt(3),
+        remindTime: '12:00',
       );
 
       final container = makeContainer();
