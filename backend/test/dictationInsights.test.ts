@@ -35,7 +35,7 @@ function row(overrides: Partial<StatsRow>): StatsRow {
   return {
     kind: "task_tidy",
     model: "a",
-    promptVersion: "tidy-3",
+    promptVersion: "tidy-4",
     level: 2,
     status: "ok",
     durationMs: 1000,
@@ -90,7 +90,7 @@ describe("computeStats", () => {
       {
         kind: "task_tidy",
         level: 2,
-        promptVersion: "tidy-3",
+        promptVersion: "tidy-4",
         answered: 3,
         savedAsIs: 1,
         savedEdited: 1,
@@ -99,7 +99,7 @@ describe("computeStats", () => {
       {
         kind: "task_tidy",
         level: 3,
-        promptVersion: "tidy-3",
+        promptVersion: "tidy-4",
         answered: 1,
         savedAsIs: 1,
         savedEdited: 0,
@@ -189,7 +189,7 @@ describe("the insights routes", () => {
     expect(levelRules(2)).toEqual(["Сила обработки: МОЯ.", "- только запятые;"]);
     expect(levelRulesVersion()).toMatch(/^\+lv[0-9a-z]+$/);
     const body = res.json() as { kinds: { version: string; prompts: { system: string }[] }[] };
-    expect(body.kinds[1]!.version).toMatch(/^tidy-3\+lv/);
+    expect(body.kinds[1]!.version).toMatch(/^tidy-4\+lv/);
     expect(body.kinds[1]!.prompts[1]!.system).toContain("МОЯ");
 
     await call("PUT", "/dictation/prompts/levels/2", ownerToken, { rules: null });

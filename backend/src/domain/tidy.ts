@@ -5,6 +5,7 @@ import { splitInboxText } from "./inboxSplit";
 import { createKindParser, KindParser, ParseSpec } from "./parsePipeline";
 import { cleanupRules, normaliseLevel } from "./aiLevels";
 import { DATA_RULES, inlineData, wrapUserText } from "./promptGuard";
+import { fitTitle, shortTitleFrom, tidyTitle, TITLE_LIMIT, titleLimitRules } from "./titleLimit";
 
 /*
  * "Причесать" (F15): text that is already somewhere -- a task, a note, a
@@ -103,20 +104,23 @@ export interface TidiedLine {
 /**
  * 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
  * 3: the cleanup rules depend on the level (`./aiLevels.ts`).
+ * 4: the title limit is the shared one, stated as hard (`./titleLimit.ts`).
  */
-export const TASK_TIDY_PROMPT_VERSION = "tidy-3";
+export const TASK_TIDY_PROMPT_VERSION = "tidy-4";
 /**
  * note-4: the title of an untitled note names the thought rather than
  * repeating its opening words, and the body stays whole -- see
  * [interpretNoteReply].
+ * note-5: the title limit is the shared one, stated as hard (`./titleLimit.ts`).
  */
-export const NOTE_PROMPT_VERSION = "note-4";
+export const NOTE_PROMPT_VERSION = "note-5";
 /**
  * 2: the reply carries the line as a task too, `title` and `description`.
  * 3: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
  * 4: the cleanup rules depend on the level (`./aiLevels.ts`).
+ * 5: the title limit is the shared one, stated as hard (`./titleLimit.ts`).
  */
-export const SANDBOX_PROMPT_VERSION = "sandbox-4";
+export const SANDBOX_PROMPT_VERSION = "sandbox-5";
 
 
 
@@ -134,11 +138,6 @@ function textOrNull(value: string | null | undefined): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
-/** A title as the lists draw it: no full stop, a capital first letter. */
-function tidyTitle(value: string): string {
-  const title = value.trim().replace(/[.。]+$/, "");
-  return title.charAt(0).toUpperCase() + title.slice(1);
-}
 
 // ---- Dates the source did not say ----
 
@@ -235,7 +234,8 @@ export function buildTaskTidyMessages(input: DictationInput): ChatMessage[] {
     '- "description": описание или null.',
     "",
     "Название:",
-    "- коротко, до 80 символов, без точки в конце;",
+    "- коротко, без точки в конце;",
+    ...titleLimitRules("description"),
     "- по возможности начинается с глагола («Позвонить», «Купить», «Проверить»), если это не меняет смысл.",
     "",
     "Описание:",
@@ -280,9 +280,9 @@ export function interpretTaskTidyReply(content: string, source: string): TidiedT
   const parsed = taskTidyReplySchema.safeParse(parseJsonObject(content));
   if (!parsed.success) throw new UpstreamModelError("reply has no title");
 
-  const title = tidyTitle(parsed.data.title);
-  if (title === "") throw new UpstreamModelError("reply has an empty title");
-  const description = textOrNull(parsed.data.description);
+  const tidied = tidyTitle(parsed.data.title);
+  if (tidied === "") throw new UpstreamModelError("reply has an empty title");
+  const { title, body: description } = fitTitle(tidied, textOrNull(parsed.data.description));
 
   return { title, description, warnings: dateWarnings(source, title, description) };
 }
@@ -318,8 +318,9 @@ export function buildNoteMessages(input: DictationInput): ChatMessage[] {
     "Заголовок:",
     title === ""
       ? [
-          "- у заметки нет заголовка: предложи короткий, до 60 символов, без точки в конце;",
-          "- заголовок называет суть мысли, а не повторяет начало текста; не обрывай его многоточием;",
+          "- у заметки нет заголовка: предложи короткий, без точки в конце;",
+          ...titleLimitRules("content"),
+          "- заголовок называет суть мысли, а не повторяет начало текста;",
           '- "content" — весь текст целиком, ничего из него не переносится в заголовок.',
         ].join("\n")
       : `- у заметки уже есть заголовок («${title}»): верни "title": null.`,
@@ -363,10 +364,11 @@ export function interpretNoteReply(content: string, noteTitle?: string, source =
 }
 
 /**
- * The longest title an untitled note gets from here. The prompt asks for 60;
- * a model that wrote a sentence instead is shortened rather than trusted.
+ * The longest title an untitled note gets from here: the shared limit the
+ * prompt states (`./titleLimit.ts`). A model that wrote a sentence instead is
+ * shortened rather than trusted.
  */
-export const NOTE_TITLE_LIMIT = 80;
+export const NOTE_TITLE_LIMIT = TITLE_LIMIT;
 
 /**
  * A title for a note whose reply brought none (or one too long to be a
@@ -384,23 +386,7 @@ export const NOTE_TITLE_LIMIT = 80;
  * with `…`; a single word longer than the limit is cut hard.
  */
 export function noteTitleFrom(text: string): string | null {
-  const line =
-    text
-      .split(/\r?\n/)
-      .map((row) => row.replace(/^\s*(?:#+|[-*+]|\d+[.)])\s+/, "").trim())
-      .find((row) => row !== "") ?? "";
-  if (line === "") return null;
-  if (line.length <= NOTE_TITLE_LIMIT) return tidyTitle(line) || null;
-
-  const sentence = /^(.{10,}?[.!?…])(?=\s)/u.exec(line)?.[1];
-  if (sentence !== undefined && sentence.length <= NOTE_TITLE_LIMIT) {
-    return tidyTitle(sentence) || null;
-  }
-
-  const window = line.slice(0, NOTE_TITLE_LIMIT);
-  const lastSpace = window.search(/\s\S*$/);
-  const cut = lastSpace >= 10 ? window.slice(0, lastSpace) : window;
-  return `${tidyTitle(cut.replace(/[\s,;:—–-]+$/u, ""))}…`;
+  return shortTitleFrom(text);
 }
 
 export const noteSpec: ParseSpec<DictationInput, TidiedNote> = {
@@ -423,7 +409,7 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
     "",
     "Верни ОДИН JSON-объект с ключами:",
     '- "text": строчка, приведённая в порядок;',
-    '- "title": та же строчка как название задачи: коротко, до 80 символов, без точки в конце, по возможности с глагола;',
+    '- "title": та же строчка как название задачи: коротко, без точки в конце, по возможности с глагола;',
     '- "description": всё из строчки, что не вошло в название, или null;',
     '- "projectId": id проекта из списка ниже, к которому она скорее всего относится, или null.',
     "",
@@ -436,6 +422,7 @@ export function buildSandboxMessages(input: SandboxInput): ChatMessage[] {
     "Название и описание:",
     '- это тот же текст, что в "text", разложенный как задача: если строчку перенесут в проект, она станет задачей с этими полями;',
     '- ничего сверх "text"; описание не повторяет название.',
+    ...titleLimitRules("description"),
     "",
     ...cleanupRules(input.level, { dates: true }),
     "",
@@ -485,7 +472,9 @@ export function interpretSandboxReply(
   const task =
     title === ""
       ? splitInboxText(text)
-      : { title, description: textOrNull(parsed.data.description) };
+      : (({ title: short, body }) => ({ title: short, description: body }))(
+          fitTitle(title, textOrNull(parsed.data.description)),
+        );
 
   const id = parsed.data.projectId?.trim() ?? "";
   const project = projects.find((choice) => choice.id === id) ?? null;

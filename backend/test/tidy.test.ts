@@ -244,16 +244,17 @@ describe("note", () => {
     const tidied = interpretNoteReply(reply({ title: null, content: zerno }));
     expect(tidied.content).toBe(zerno);
     expect(tidied.title).not.toBeNull();
-    expect(tidied.title!.length).toBeLessThanOrEqual(NOTE_TITLE_LIMIT + 1);
+    expect(tidied.title!.length).toBeLessThanOrEqual(NOTE_TITLE_LIMIT);
     expect(tidied.title!.endsWith("…")).toBe(true);
     // Cut at a word, never in the middle of one, and no dangling preposition comma.
     expect(zerno.startsWith(tidied.title!.slice(0, -1))).toBe(true);
-    expect(zerno.charAt(tidied.title!.length - 1)).toBe(" ");
+    // Cut between words: what follows the kept words is a space or a mark.
+    expect(zerno.charAt(tidied.title!.length - 1)).toMatch(/[\s,;:]/);
   });
 
   it("shortens a title the model wrote as a whole sentence", () => {
     const tidied = interpretNoteReply(reply({ title: zerno, content: zerno }));
-    expect(tidied.title!.length).toBeLessThanOrEqual(NOTE_TITLE_LIMIT + 1);
+    expect(tidied.title!.length).toBeLessThanOrEqual(NOTE_TITLE_LIMIT);
     expect(tidied.content).toBe(zerno);
   });
 
@@ -277,7 +278,7 @@ describe("note", () => {
 
   it("noteTitleFrom: nothing for an empty text, a hard cut for one endless word", () => {
     expect(noteTitleFrom("  \n ")).toBeNull();
-    expect(noteTitleFrom("а".repeat(200))).toBe(`А${"а".repeat(NOTE_TITLE_LIMIT - 1)}…`);
+    expect(noteTitleFrom("а".repeat(200))).toBe(`А${"а".repeat(NOTE_TITLE_LIMIT - 2)}…`);
   });
 
   it("warns about a date the note did not have, and keeps the note", () => {
@@ -322,7 +323,7 @@ describe("sandbox", () => {
     const [system] = buildSandboxMessages({ ...input("колодки"), projects: choices });
     expect(system.content).toContain('"title"');
     expect(system.content).toContain('"description"');
-    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-4");
+    expect(SANDBOX_PROMPT_VERSION).toBe("sandbox-5");
   });
 
   it("keeps a project that is on the list, with its name from the list", () => {

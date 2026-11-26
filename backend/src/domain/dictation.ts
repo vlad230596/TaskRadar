@@ -3,6 +3,7 @@ import { ChatMessage, CompleteJson, UpstreamModelError } from "../lib/llmClient"
 import { createKindParser, KindParser, ParseTrace } from "./parsePipeline";
 import { cleanupRules } from "./aiLevels";
 import { DATA_RULES, wrapUserText } from "./promptGuard";
+import { fitTitle, titleLimitRules } from "./titleLimit";
 
 /*
  * Dictation -> task (F14): the words as spoken, turned into a task as it would
@@ -80,9 +81,10 @@ export type DictationParser = KindParser<DictationInput, ParsedDictation>;
  * format -- so that rows from different prompts are never compared as if they
  * were the same experiment.
  */
-export const DICTATION_PROMPT_VERSION = "3";
+export const DICTATION_PROMPT_VERSION = "4";
 // 2: the text arrives wrapped and is never obeyed (`./promptGuard.ts`).
 // 3: the cleanup rules depend on the level (`./aiLevels.ts`).
+// 4: the title limit is the shared one, stated as hard (`./titleLimit.ts`).
 
 /** How far ahead the calendar in the prompt reaches. */
 const CALENDAR_DAYS = 14;
@@ -238,7 +240,8 @@ export function buildDictationMessages(input: DictationInput): ChatMessage[] {
     "",
     "Название:",
     "- начинается с глагола в неопределённой форме: «Позвонить», «Купить», «Проверить», «Написать»;",
-    "- коротко и просто, до 60 символов, без точки в конце;",
+    "- коротко и просто, без точки в конце;",
+    ...titleLimitRules("description"),
     "- отвечает на вопрос «что сделать», без подробностей.",
     "",
     "Описание:",
@@ -318,7 +321,10 @@ export function interpretModelReply(content: string, today: string): ParsedDicta
     throw new UpstreamModelError("reply has an empty title");
   }
 
-  const description = parsed.data.description?.trim() || null;
+  // Held to the limit the prompt states; an over-long title's words move to
+  // the description rather than being cut off (`./titleLimit.ts`).
+  const fitted = fitTitle(title, parsed.data.description?.trim() || null);
+  const description = fitted.body;
 
   const rawDate = parsed.data.remindDate?.trim() ?? "";
   const remindDate =
@@ -330,7 +336,7 @@ export function interpretModelReply(content: string, today: string): ParsedDicta
   const remindTime = remindDate !== null && TIME_PATTERN.test(rawTime) ? rawTime : null;
 
   return {
-    title: title.charAt(0).toUpperCase() + title.slice(1),
+    title: fitted.title.charAt(0).toUpperCase() + fitted.title.slice(1),
     description,
     remindDate,
     remindTime,
