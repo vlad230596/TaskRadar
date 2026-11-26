@@ -1,21 +1,13 @@
-import 'package:dio/dio.dart';
 import 'package:taskradar/models/task_status.dart';
 
 import 'fake_backend.dart';
 
-/// Ответы истории: `GET /history` и `GET /tasks/:id/events` (F13).
+/// Ответы истории: «Сделано», «Недели», пересмотр, «Вернуть» и журнал
+/// задачи (`design/today-history-contract.md`, F13).
 ///
-/// Отдельный файл, а не пара строк в `fake_project_backend.dart`: там живёт
-/// маленький настоящий сервер — он держит состояние и отвечает на записи, — а
-/// история состоит из **сводок**, которые сервер считает по журналу. Считать их
-/// ещё раз в фейке значило бы написать второй `backend/src/domain/history.ts` и
-/// проверять экран против него, а не против контракта. Здесь поэтому фикстуры:
-/// тело ответа задаётся тестом целиком, ровно в той форме, в какой его
-/// присылает роут.
-///
-/// Даты строятся от `now`, а не написаны буквой, по единственной причине:
-/// «сегодняшний столбик» на экране красится иначе, и фикстура с прошлогодними
-/// датами эту ветку никогда не прошла бы.
+/// Фикстуры, а не маленький сервер: тело ответа задаётся тестом в той форме,
+/// в какой его присылает роут. Даты строятся от `now`, а не написаны буквой:
+/// «сегодня» и «эта неделя» на экране рисуются иначе.
 class FakeHistoryBackend {
   FakeHistoryBackend(this.backend, {DateTime? now})
     : now = now ?? DateTime.now() {
@@ -25,25 +17,84 @@ class FakeHistoryBackend {
   final FakeBackend backend;
   final DateTime now;
 
-  /// Тело `GET /history`. По умолчанию — неделя из [sampleWeek].
-  late Map<String, dynamic> history = sampleWeek();
-
-  /// Журналы по id задачи. Задача, которой здесь нет, получает пустой массив —
-  /// это честный ответ сервера для задачи без событий.
+  /// Журналы по id задачи. Задача, которой здесь нет, получает пустой массив.
   final Map<String, List<dynamic>> events = <String, List<dynamic>>{};
 
-  /// Последние параметры запроса истории — по ним проверяется, что клиент
-  /// прислал настоящее смещение часового пояса.
-  RequestOptions? lastHistoryRequest;
+  /// `GET /history/done`: все закрытия, свежие сверху; страницы режет фейк.
+  List<Map<String, dynamic>> done = <Map<String, dynamic>>[];
+
+  /// `GET /history/weeks`, свежие сверху.
+  List<Map<String, dynamic>> weeks = <Map<String, dynamic>>[];
+
+  /// `GET /reviews/status`.
+  Map<String, dynamic> status = <String, dynamic>{
+    'due': false,
+    'nextAt': null,
+    'lastAt': null,
+  };
+
+  /// `GET /reviews/draft`.
+  late Map<String, dynamic> draft = draftJson();
+
+  /// Тела `POST /reviews`, по порядку.
+  final List<Map<String, dynamic>> savedReviews = <Map<String, dynamic>>[];
+
+  /// Id задач, которым прислали `POST /tasks/:id/reopen`.
+  final List<String> reopened = <String>[];
 
   void _install() {
-    backend.on('GET', '/history', (match) {
-      lastHistoryRequest = match.options;
-      return jsonResponse(history);
-    });
-    backend.on('GET', '/tasks/:id/events', (match) {
-      return jsonResponse(events[match.params['id']] ?? const <dynamic>[]);
-    });
+    backend
+      ..on('GET', '/tasks/:id/events', (match) {
+        return jsonResponse(events[match.params['id']] ?? const <dynamic>[]);
+      })
+      ..on('GET', '/history/done', (match) {
+        final query = match.options.queryParameters;
+        final limit = int.tryParse('${query['limit'] ?? 50}') ?? 50;
+        final before = query['before'] as String?;
+        final rows = <Map<String, dynamic>>[
+          for (final row in done)
+            if (before == null ||
+                (row['doneAt'] as String).compareTo(before) < 0)
+              row,
+        ];
+        final page = rows.take(limit).toList();
+        return jsonResponse(<String, dynamic>{
+          'items': page,
+          'nextBefore': rows.length > limit ? page.last['doneAt'] : null,
+        });
+      })
+      ..on('GET', '/history/weeks', (match) {
+        return jsonResponse(<String, dynamic>{'weeks': weeks});
+      })
+      ..on('GET', '/reviews/status', (match) => jsonResponse(status))
+      ..on('GET', '/reviews/draft', (match) => jsonResponse(draft))
+      ..on('POST', '/reviews', (match) {
+        savedReviews.add(match.body);
+        return jsonResponse(
+          reviewJson(
+            id: 'rev_${savedReviews.length}',
+            daysAgo: 0,
+            closed: (draft['done'] as List).length,
+            summary: match.body['summary'] as String?,
+          ),
+          statusCode: 201,
+        );
+      })
+      ..on('POST', '/tasks/:id/reopen', (match) {
+        final id = match.params['id']!;
+        reopened.add(id);
+        final row = done
+            .map((item) => item['task'] as Map<String, dynamic>)
+            .where((task) => task['id'] == id)
+            .firstOrNull;
+        done.removeWhere((item) => (item['task'] as Map)['id'] == id);
+        return jsonResponse(<String, dynamic>{
+          ...?row,
+          'id': id,
+          'status': 'pending',
+          'doneAt': null,
+        });
+      });
   }
 
   /// `YYYY-MM-DD` местного дня, [daysAgo] дней назад.
@@ -60,148 +111,261 @@ class FakeHistoryBackend {
       .subtract(Duration(milliseconds: (daysAgo * _day).round()))
       .toIso8601String();
 
-  /// Неделя, похожая на `design/reference/History.html`: девять закрытых,
-  /// четыре долгожителя, движение в четырёх проектах.
-  Map<String, dynamic> sampleWeek() => historyJson(
-    range: '7d',
-    closedByDay: <int>[3, 0, 1, 2, 0, 2, 1],
-    stale: <Map<String, dynamic>>[
-      staleJson(
-        id: 't4',
-        title: 'Посмотреть, почему не работает вентилятор',
-        projectName: 'Дом',
-        status: TaskStatus.blocked,
-        ageDays: 8,
-        pendingDays: 4,
-        blockedDays: 4,
-      ),
-      staleJson(
-        id: 't2',
-        title: 'Купить лампочки',
-        projectName: 'Дом',
-        ageDays: 5,
-        pendingDays: 5,
-      ),
-      staleJson(
-        id: 't3',
-        title: 'Заказать крючки для полок в ванной',
-        projectName: 'Дом',
-        ageDays: 5,
-        pendingDays: 5,
-      ),
-      staleJson(
-        id: 't7',
-        title: 'Потестить диктовку на телефоне',
-        projectName: 'TaskRadar',
-        ageDays: 5,
-        pendingDays: 5,
-        focusedDaysAgo: 2,
-      ),
-      staleJson(
-        id: 't8',
-        title: 'Адаптировать кнопку распознавания',
-        projectName: 'TaskRadar',
-        ageDays: 4,
-        pendingDays: 4,
-      ),
-    ],
-    projects: <Map<String, dynamic>>[
-      projectMovementJson(name: 'Дом', opened: 6, closed: 2),
-      projectMovementJson(name: 'TaskRadar', opened: 2, closed: 4),
-      projectMovementJson(name: 'Семья', opened: 2, closed: 3),
-      projectMovementJson(name: 'Авоська', opened: 1),
-    ],
-  );
-
-  /// Ответ, в котором нет ничего: журнал есть, а событий в нём ещё не было.
-  Map<String, dynamic> emptyWeek() => historyJson(
-    range: '7d',
-    closedByDay: const <int>[0, 0, 0, 0, 0, 0, 0],
-  );
-
-  /// Тело `GET /history` целиком.
-  ///
-  /// [closedByDay] — счётчики по дням, самый старый первым, как их отдаёт
-  /// `countByDay`; последний элемент — сегодня.
-  Map<String, dynamic> historyJson({
-    String range = '7d',
-    List<int> closedByDay = const <int>[],
-    List<Map<String, dynamic>> stale = const <Map<String, dynamic>>[],
-    List<Map<String, dynamic>> projects = const <Map<String, dynamic>>[],
-  }) {
-    final days = <Map<String, dynamic>>[
-      for (var i = 0; i < closedByDay.length; i++)
-        <String, dynamic>{
-          'date': dayKey(closedByDay.length - 1 - i),
-          'count': closedByDay[i],
-        },
-    ];
-
-    var total = 0;
-    for (final count in closedByDay) {
-      total += count;
-    }
-
-    return <String, dynamic>{
-      'range': range,
-      'from': range == 'all' ? null : iso(closedByDay.length - 1),
-      'to': iso(0),
-      'closedByDay': days,
-      'closedTotal': total,
-      'projects': projects,
-      'stale': stale,
-    };
-  }
-
-  /// Одна строка «висит дольше всего», в форме роута.
-  ///
-  /// `byStatus` задаётся днями по статусам, а не миллисекундами: тест про
-  /// экран читается как «четыре дня в очереди, четыре в блокере», а не как
-  /// `345600000`.
-  Map<String, dynamic> staleJson({
+  /// A placed task (`taskView` + project and scope).
+  Map<String, dynamic> placedTaskJson({
     required String id,
     required String title,
-    required String projectName,
-    TaskStatus status = TaskStatus.pending,
-    String? projectId,
-    required num ageDays,
-    num pendingDays = 0,
-    num blockedDays = 0,
-    num doneDays = 0,
+    String projectId = 'prj_1',
+    String projectName = 'TaskRadar',
+    String status = 'done',
+    String? doneAt,
+    String? remindAt,
+    List<Map<String, dynamic>> goals = const <Map<String, dynamic>>[],
+  }) => <String, dynamic>{
+    'id': id,
+    'projectId': projectId,
+    'title': title,
+    'description': null,
+    'status': status,
+    'position': 1000,
+    'remindAt': remindAt,
+    'remindTime': null,
+    'doneAt': doneAt,
+    'createdAt': iso(20),
+    'updatedAt': iso(1),
+    'goals': goals,
+    'projectName': projectName,
+    'scopeId': 'scp_1',
+    'scopeName': 'Работа',
+  };
 
-    /// Когда задачу взяли в набор. Null — она не в работе.
-    num? focusedDaysAgo,
+  /// One closing of «Сделано», [daysAgo] days and [hoursAgo] hours back.
+  Map<String, dynamic> doneJson({
+    required String id,
+    required String title,
+    num daysAgo = 0,
+    num hoursAgo = 0,
+    String projectId = 'prj_1',
+    String projectName = 'TaskRadar',
+    List<Map<String, dynamic>> goals = const <Map<String, dynamic>>[],
   }) {
-    final currentDays = status == TaskStatus.blocked ? blockedDays : pendingDays;
+    final at = now
+        .toUtc()
+        .subtract(
+          Duration(milliseconds: (daysAgo * _day + hoursAgo * 3600000).round()),
+        )
+        .toIso8601String();
     return <String, dynamic>{
-      'id': id,
-      'title': title,
-      'status': status.name,
-      'projectId': projectId ?? 'prj_${projectName.hashCode}',
-      'projectName': projectName,
-      'createdAt': iso(ageDays),
-      'focusedAt': focusedDaysAgo == null ? null : iso(focusedDaysAgo),
-      'ageMs': (ageDays * _day).round(),
-      'currentSince': iso(currentDays),
-      'currentForMs': (currentDays * _day).round(),
-      'byStatus': <String, dynamic>{
-        'pending': (pendingDays * _day).round(),
-        'blocked': (blockedDays * _day).round(),
-        'done': (doneDays * _day).round(),
-      },
+      'task': placedTaskJson(
+        id: id,
+        title: title,
+        projectId: projectId,
+        projectName: projectName,
+        doneAt: at,
+        goals: goals,
+      ),
+      'doneAt': at,
     };
   }
 
-  Map<String, dynamic> projectMovementJson({
-    required String name,
-    int opened = 0,
+  /// The local Monday [weeksAgo] weeks back, `YYYY-MM-DD`.
+  String mondayKey(int weeksAgo) {
+    final local = DateTime(now.year, now.month, now.day);
+    final monday = DateTime(
+      local.year,
+      local.month,
+      local.day - (local.weekday - 1) - 7 * weeksAgo,
+    );
+    return '${monday.year.toString().padLeft(4, '0')}-'
+        '${monday.month.toString().padLeft(2, '0')}-'
+        '${monday.day.toString().padLeft(2, '0')}';
+  }
+
+  Map<String, dynamic> reviewJson({
+    String id = 'rev_1',
+    num daysAgo = 7,
     int closed = 0,
-    String? projectId,
+    String? summary,
+    bool monthly = false,
+    List<Map<String, dynamic>> byProject = const <Map<String, dynamic>>[],
+    List<Map<String, dynamic>> achievedGoals = const <Map<String, dynamic>>[],
   }) => <String, dynamic>{
-    'projectId': projectId ?? 'prj_${name.hashCode}',
-    'name': name,
-    'opened': opened,
+    'id': id,
+    'periodStart': iso(daysAgo + 7),
+    'periodEnd': iso(daysAgo),
+    'monthly': monthly,
+    'closedCount': closed,
+    'byProject': byProject,
+    'achievedGoals': achievedGoals,
+    'summary': summary,
+    'createdAt': iso(daysAgo),
+  };
+
+  Map<String, dynamic> weekJson({
+    required int weeksAgo,
+    required int closed,
+    List<Map<String, dynamic>> byProject = const <Map<String, dynamic>>[],
+    Map<String, dynamic>? review,
+  }) => <String, dynamic>{
+    'start': mondayKey(weeksAgo),
     'closed': closed,
+    'byProject': byProject,
+    'review': review,
+  };
+
+  Map<String, dynamic> projectClosedJson(String name, int closed) =>
+      <String, dynamic>{
+        'projectId': 'prj_${name.hashCode}',
+        'name': name,
+        'closed': closed,
+      };
+
+  /// «Сделано» like `History-Done.html`: today, yesterday and before.
+  List<Map<String, dynamic>> sampleDone() => <Map<String, dynamic>>[
+    doneJson(id: 'd1', title: 'Зарелизить 0.15', hoursAgo: 0.2),
+    doneJson(
+      id: 'd2',
+      title: 'Ответить Марине про макеты',
+      hoursAgo: 0.5,
+      projectId: 'prj_work',
+      projectName: 'Работа',
+    ),
+    doneJson(
+      id: 'd3',
+      title: 'Купить лампочки в ванную',
+      daysAgo: 1,
+      projectId: 'prj_dom',
+      projectName: 'Дом',
+    ),
+    doneJson(id: 'd4', title: 'Починить виджет на Android', daysAgo: 1),
+    doneJson(
+      id: 'd5',
+      title: 'Записать сына на секцию',
+      daysAgo: 3,
+      projectId: 'prj_fam',
+      projectName: 'Семья',
+    ),
+  ];
+
+  /// 12 weeks like `History-Weeks.html`: this one and eleven before, one of
+  /// them with a review.
+  List<Map<String, dynamic>> sampleWeeks() => <Map<String, dynamic>>[
+    weekJson(
+      weeksAgo: 0,
+      closed: 9,
+      byProject: <Map<String, dynamic>>[projectClosedJson('TaskRadar', 6)],
+    ),
+    weekJson(
+      weeksAgo: 1,
+      closed: 23,
+      byProject: <Map<String, dynamic>>[
+        projectClosedJson('TaskRadar', 11),
+        projectClosedJson('Дом', 6),
+        projectClosedJson('Семья', 4),
+        projectClosedJson('Авоська', 1),
+        projectClosedJson('Работа', 1),
+      ],
+      review: reviewJson(
+        daysAgo: 1,
+        closed: 23,
+        summary: 'Дожал стенды, дом стоял. Следующая — отзывы по 0.15.',
+        achievedGoals: <Map<String, dynamic>>[
+          <String, dynamic>{'goalId': 'g1', 'title': 'Релиз 0.15'},
+        ],
+      ),
+    ),
+    weekJson(weeksAgo: 2, closed: 15),
+    weekJson(weeksAgo: 3, closed: 18),
+    weekJson(weeksAgo: 4, closed: 0),
+    for (var i = 5; i < 12; i++) weekJson(weeksAgo: i, closed: (i * 7) % 20),
+  ];
+
+  /// `GET /reviews/draft` with something in every step.
+  Map<String, dynamic> draftJson({bool monthly = false}) => <String, dynamic>{
+    'periodStart': iso(7),
+    'periodEnd': iso(0),
+    'monthly': monthly,
+    'done': <dynamic>[
+      doneJson(id: 'd1', title: 'Зарелизить 0.15', daysAgo: 2),
+      doneJson(id: 'd2', title: 'Починить диктовку', daysAgo: 3),
+      doneJson(
+        id: 'd3',
+        title: 'Купить лампочки',
+        daysAgo: 4,
+        projectId: 'prj_dom',
+        projectName: 'Дом',
+      ),
+    ],
+    'intended': <dynamic>[
+      <String, dynamic>{
+        'task': placedTaskJson(
+          id: 'i1',
+          title: 'Собрать отзывы',
+          status: 'pending',
+        ),
+        'reasons': <String>['workingSet'],
+      },
+      <String, dynamic>{
+        'task': placedTaskJson(
+          id: 'i2',
+          title: 'Позвонить в УК',
+          status: 'pending',
+          projectId: 'prj_dom',
+          projectName: 'Дом',
+          remindAt: '${dayKey(2)}T00:00:00.000Z',
+        ),
+        'reasons': <String>['dated'],
+      },
+    ],
+    'goals': <dynamic>[
+      <String, dynamic>{
+        'id': 'g_slot',
+        'contourId': 'c_work',
+        'title': 'Выпустить 0.16',
+        'state': 'slot',
+        'windowDays': 7,
+        'windowEndsAt': iso(1),
+        'windowExpired': true,
+        'position': 1000,
+        'createdAt': iso(20),
+        'tasks': <dynamic>[],
+        'ideas': <dynamic>[],
+        'progress': <String, dynamic>{'done': 2, 'total': 5},
+      },
+    ],
+    'rhythm': <dynamic>[
+      <String, dynamic>{
+        'project': <String, dynamic>{
+          'id': 'prj_dom',
+          'name': 'Дом',
+          'scopeId': 'scp_1',
+          'archivedAt': null,
+          'createdAt': iso(100),
+          'updatedAt': iso(1),
+          'rhythmClosedPerWeek': 2,
+          'rhythmMaxOpen': null,
+        },
+        'rhythm': <String, dynamic>{
+          'closedPerWeek': 2,
+          'maxOpen': null,
+          'closedAvg': 0.5,
+          'open': 24,
+          'lastClosedAt': iso(22),
+          'silentWeeks': 3,
+          'signal': 'silence',
+        },
+      },
+    ],
+    'month': monthly
+        ? <String, dynamic>{
+            'month': '2026-11',
+            'byProject': <dynamic>[
+              projectClosedJson('TaskRadar', 40),
+              projectClosedJson('Дом', 24),
+            ],
+            'achievedGoals': <dynamic>[],
+          }
+        : null,
   };
 
   /// Одна строка журнала задачи.

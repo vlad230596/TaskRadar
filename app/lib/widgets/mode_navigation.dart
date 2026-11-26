@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../providers/today_providers.dart';
 import '../providers/outbox_providers.dart';
 import '../providers/shell_providers.dart';
 import '../theme/app_theme.dart';
@@ -352,7 +353,32 @@ class OutboxBadge extends ConsumerWidget {
     if (!enabled) return child;
     final counts = ref.watch(outboxCountsProvider);
     final total = counts.waiting + counts.decisions;
-    if (total == 0) return child;
+    // The review is due (or was skipped): a coral dot on the mode's icon
+    // (today-history-spec §9.1) -- not a number, not red, no repeated push.
+    final reviewDue = ref.watch(reviewDueProvider);
+    final marked = reviewDue
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: <Widget>[
+              child,
+              Positioned(
+                top: -1,
+                left: -4,
+                child: Container(
+                  key: const ValueKey<String>('review-due-dot'),
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: AppColors.voiceRecordingSoft,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: AppColors.card, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : child;
+    if (total == 0) return marked;
 
     return Badge(
       label: Text('$total'),
@@ -360,7 +386,7 @@ class OutboxBadge extends ConsumerWidget {
           ? AppColors.waitingDot
           : AppColors.muted,
       textColor: AppColors.onInk,
-      child: child,
+      child: marked,
     );
   }
 }

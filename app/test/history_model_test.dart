@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:taskradar/models/history_snapshot.dart';
 import 'package:taskradar/models/history_task_event.dart';
 import 'package:taskradar/models/task_status.dart';
+import 'package:taskradar/models/today_history.dart';
 
 import 'support/fake_backend.dart';
 import 'support/fake_history_backend.dart';
@@ -19,110 +19,39 @@ void main() {
     fixtures = FakeHistoryBackend(FakeBackend(), now: now);
   });
 
-  group('HistorySnapshot.fromJson', () {
-    test('разбирает ответ роута целиком', () {
-      final snapshot = HistorySnapshot.fromJson(fixtures.sampleWeek());
-
-      expect(snapshot.range, HistoryRange.week);
-      expect(snapshot.closedTotal, 9);
-      expect(snapshot.closedByDay, hasLength(7));
-      expect(snapshot.closedByDay.last.date, fixtures.dayKey(0));
-      expect(snapshot.projects.first.name, 'Дом');
-      expect(snapshot.projects.first.opened, 6);
-      expect(snapshot.stale.first.title, contains('вентилятор'));
-      expect(snapshot.stale.first.status, TaskStatus.blocked);
-      expect(snapshot.isEmpty, isFalse);
-    });
-
-    test('пустой ответ — это пустой ответ, а не нули', () {
-      final snapshot = HistorySnapshot.fromJson(fixtures.emptyWeek());
-
-      expect(snapshot.closedTotal, 0);
-      // Семь дней с нулями всё равно приходят: ось рисуется, данных на ней нет.
-      expect(snapshot.closedByDay, hasLength(7));
-      expect(snapshot.isEmpty, isTrue);
-    });
-
-    test('неизвестный диапазон не роняет разбор', () {
-      final snapshot = HistorySnapshot.fromJson(<String, dynamic>{
-        ...fixtures.sampleWeek(),
-        'range': '90d',
+  group('ответы «Сделано», «Недели», пересмотра', () {
+    test('страница «Сделано» и курсор следующей', () {
+      final page = DonePage.fromJson(<String, dynamic>{
+        'items': fixtures.sampleDone(),
+        'nextBefore': fixtures.iso(4),
       });
-
-      expect(snapshot.range, HistoryRange.month);
+      expect(page.items, hasLength(5));
+      expect(page.items.first.task.projectName, 'TaskRadar');
+      expect(page.items.first.task.task.status, TaskStatus.done);
+      expect(page.nextBefore, fixtures.iso(4));
     });
 
-    test('миллисекунды приходят числом любой формы', () {
-      final raw = fixtures.staleJson(
-        id: 't1',
-        title: 'x',
-        projectName: 'Дом',
-        ageDays: 2,
-        pendingDays: 2,
-      );
-      raw['ageMs'] = 172800000.0;
-
-      expect(StaleTask.fromJson(raw).ageMs, 172800000);
+    test('недели, запись пересмотра в неделе', () {
+      final weeks = HistoryWeek.listFromJson(<String, dynamic>{
+        'weeks': fixtures.sampleWeeks(),
+      });
+      expect(weeks, hasLength(12));
+      expect(weeks.first.start, fixtures.mondayKey(0));
+      expect(weeks[1].review?.closedCount, 23);
+      expect(weeks[1].review?.achievedGoals.single.title, 'Релиз 0.15');
+      expect(weeks[2].review, isNull);
     });
 
-    test('общая шкала полосок — возраст самой старой задачи', () {
-      final snapshot = HistorySnapshot.fromJson(fixtures.sampleWeek());
-
-      expect(snapshot.oldestAgeMs, 8 * Duration.millisecondsPerDay);
-    });
-  });
-
-  group('StaleTask.inWorkMs', () {
-    test('считается от focusedAt и не вылезает за время в очереди', () {
-      final task = StaleTask.fromJson(
-        fixtures.staleJson(
-          id: 't7',
-          title: 'Потестить диктовку',
-          projectName: 'TaskRadar',
-          ageDays: 5,
-          pendingDays: 5,
-          focusedDaysAgo: 2,
-        ),
-      );
-
-      expect(
-        task.inWorkMs(now: now),
-        closeTo(2 * Duration.millisecondsPerDay, 1000),
-      );
-    });
-
-    test('задача вне набора не была в работе', () {
-      final task = StaleTask.fromJson(
-        fixtures.staleJson(
-          id: 't2',
-          title: 'Купить лампочки',
-          projectName: 'Дом',
-          ageDays: 5,
-          pendingDays: 5,
-        ),
-      );
-
-      expect(task.inWorkMs(now: now), 0);
-    });
-
-    test('заход в набор не может быть длиннее очереди', () {
-      // Задачу взяли в работу, потом она ушла в блокер: времени в очереди у неё
-      // день, а в наборе она числится третьи сутки. Синий сегмент не имеет
-      // права быть длиннее серого, из которого он вырезан.
-      final task = StaleTask.fromJson(
-        fixtures.staleJson(
-          id: 't4',
-          title: 'Вентилятор',
-          projectName: 'Дом',
-          status: TaskStatus.blocked,
-          ageDays: 4,
-          pendingDays: 1,
-          blockedDays: 3,
-          focusedDaysAgo: 3,
-        ),
-      );
-
-      expect(task.inWorkMs(now: now), 1 * Duration.millisecondsPerDay);
+    test('черновик пересмотра: все разделы и месяц', () {
+      final draft = ReviewDraft.fromJson(fixtures.draftJson(monthly: true));
+      expect(draft.done, hasLength(3));
+      expect(draft.intended.first.reasons, <IntendedReason>[
+        IntendedReason.workingSet,
+      ]);
+      expect(draft.goals.single.windowExpired, isTrue);
+      expect(draft.rhythm.single.project.rhythm?.silentWeeks, 3);
+      expect(draft.month?.closed, 64);
+      expect(ReviewDraft.fromJson(fixtures.draftJson()).month, isNull);
     });
   });
 

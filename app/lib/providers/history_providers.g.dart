@@ -8,106 +8,29 @@ part of 'history_providers.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// Данные режима «История» и журнал одной задачи (F13).
+/// Журнал одной задачи — для блока «жизнь задачи» в редакторе (F13).
 ///
-/// ## Почему здесь нет кеша на диске, в отличие от доски
-///
-/// Доска — это то, ради чего приложение открывают без сети: снимок на диске
-/// существует, чтобы в лифте было видно, что надо сделать. История — это ответ
-/// на «как оно шло», и он никогда не бывает срочным. Показывать вчерашние
-/// столбики как сегодняшние ради экрана, который смотрят раз в неделю, — это
-/// вся сложность снимка (схема, версия, устаревание) ради единственного
-/// результата: неверных чисел без предупреждения.
-///
-/// ## Почему обёртки API объявлены здесь, а не в `dependencies.dart`
-///
-/// Только чтобы не трогать общий файл: в дереве параллельно идёт вторая
-/// итерация. По смыслу им место рядом с `projectApi` — это такие же
-/// `keepAlive`-обёртки над общим `ApiClient`, — и переезд туда ничего не меняет
-/// ни в одном вызывающем.
-
-@ProviderFor(historyApi)
-final historyApiProvider = HistoryApiProvider._();
-
-/// Данные режима «История» и журнал одной задачи (F13).
-///
-/// ## Почему здесь нет кеша на диске, в отличие от доски
-///
-/// Доска — это то, ради чего приложение открывают без сети: снимок на диске
-/// существует, чтобы в лифте было видно, что надо сделать. История — это ответ
-/// на «как оно шло», и он никогда не бывает срочным. Показывать вчерашние
-/// столбики как сегодняшние ради экрана, который смотрят раз в неделю, — это
-/// вся сложность снимка (схема, версия, устаревание) ради единственного
-/// результата: неверных чисел без предупреждения.
-///
-/// ## Почему обёртки API объявлены здесь, а не в `dependencies.dart`
-///
-/// Только чтобы не трогать общий файл: в дереве параллельно идёт вторая
-/// итерация. По смыслу им место рядом с `projectApi` — это такие же
-/// `keepAlive`-обёртки над общим `ApiClient`, — и переезд туда ничего не меняет
-/// ни в одном вызывающем.
-
-final class HistoryApiProvider
-    extends $FunctionalProvider<HistoryApi, HistoryApi, HistoryApi>
-    with $Provider<HistoryApi> {
-  /// Данные режима «История» и журнал одной задачи (F13).
-  ///
-  /// ## Почему здесь нет кеша на диске, в отличие от доски
-  ///
-  /// Доска — это то, ради чего приложение открывают без сети: снимок на диске
-  /// существует, чтобы в лифте было видно, что надо сделать. История — это ответ
-  /// на «как оно шло», и он никогда не бывает срочным. Показывать вчерашние
-  /// столбики как сегодняшние ради экрана, который смотрят раз в неделю, — это
-  /// вся сложность снимка (схема, версия, устаревание) ради единственного
-  /// результата: неверных чисел без предупреждения.
-  ///
-  /// ## Почему обёртки API объявлены здесь, а не в `dependencies.dart`
-  ///
-  /// Только чтобы не трогать общий файл: в дереве параллельно идёт вторая
-  /// итерация. По смыслу им место рядом с `projectApi` — это такие же
-  /// `keepAlive`-обёртки над общим `ApiClient`, — и переезд туда ничего не меняет
-  /// ни в одном вызывающем.
-  HistoryApiProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'historyApiProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$historyApiHash();
-
-  @$internal
-  @override
-  $ProviderElement<HistoryApi> $createElement($ProviderPointer pointer) =>
-      $ProviderElement(pointer);
-
-  @override
-  HistoryApi create(Ref ref) {
-    return historyApi(ref);
-  }
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(HistoryApi value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<HistoryApi>(value),
-    );
-  }
-}
-
-String _$historyApiHash() => r'1c796a443fadccd9d0b6175194436a160bfa429b';
+/// Сводки режима «История» (`/history/done`, `/history/weeks`, пересмотр)
+/// живут в `today_providers.dart`; старый `GET /history` приложение больше
+/// не зовёт (сервер держит его для старых версий).
 
 @ProviderFor(taskEventsApi)
 final taskEventsApiProvider = TaskEventsApiProvider._();
 
+/// Журнал одной задачи — для блока «жизнь задачи» в редакторе (F13).
+///
+/// Сводки режима «История» (`/history/done`, `/history/weeks`, пересмотр)
+/// живут в `today_providers.dart`; старый `GET /history` приложение больше
+/// не зовёт (сервер держит его для старых версий).
+
 final class TaskEventsApiProvider
     extends $FunctionalProvider<TaskEventsApi, TaskEventsApi, TaskEventsApi>
     with $Provider<TaskEventsApi> {
+  /// Журнал одной задачи — для блока «жизнь задачи» в редакторе (F13).
+  ///
+  /// Сводки режима «История» (`/history/done`, `/history/weeks`, пересмотр)
+  /// живут в `today_providers.dart`; старый `GET /history` приложение больше
+  /// не зовёт (сервер держит его для старых версий).
   TaskEventsApiProvider._()
     : super(
         from: null,
@@ -142,187 +65,6 @@ final class TaskEventsApiProvider
 }
 
 String _$taskEventsApiHash() => r'e08e68dbfad9f524b851e6075720e1c0fadc2379';
-
-/// Выбранный диапазон: неделя, месяц, всё время.
-///
-/// Неделя по умолчанию, хотя сервер по умолчанию отдаёт месяц. Это не разнобой:
-/// умолчание схемы — для curl, а экран открывают с вопросом «как прошла эта
-/// неделя», и эталон (`design/reference/History.html`) подписывает кнопку «7
-/// дней». Клиент всегда присылает `range` явно, так что серверное умолчание с
-/// этим выбором и не встречается.
-///
-/// Выбор живёт до конца запуска и не пишется в настройки: в отличие от
-/// «списком/плитками» это не то, как человеку удобно смотреть, а вопрос, с
-/// которым он сюда пришёл сегодня.
-
-@ProviderFor(HistoryRangeChoice)
-final historyRangeChoiceProvider = HistoryRangeChoiceProvider._();
-
-/// Выбранный диапазон: неделя, месяц, всё время.
-///
-/// Неделя по умолчанию, хотя сервер по умолчанию отдаёт месяц. Это не разнобой:
-/// умолчание схемы — для curl, а экран открывают с вопросом «как прошла эта
-/// неделя», и эталон (`design/reference/History.html`) подписывает кнопку «7
-/// дней». Клиент всегда присылает `range` явно, так что серверное умолчание с
-/// этим выбором и не встречается.
-///
-/// Выбор живёт до конца запуска и не пишется в настройки: в отличие от
-/// «списком/плитками» это не то, как человеку удобно смотреть, а вопрос, с
-/// которым он сюда пришёл сегодня.
-final class HistoryRangeChoiceProvider
-    extends $NotifierProvider<HistoryRangeChoice, HistoryRange> {
-  /// Выбранный диапазон: неделя, месяц, всё время.
-  ///
-  /// Неделя по умолчанию, хотя сервер по умолчанию отдаёт месяц. Это не разнобой:
-  /// умолчание схемы — для curl, а экран открывают с вопросом «как прошла эта
-  /// неделя», и эталон (`design/reference/History.html`) подписывает кнопку «7
-  /// дней». Клиент всегда присылает `range` явно, так что серверное умолчание с
-  /// этим выбором и не встречается.
-  ///
-  /// Выбор живёт до конца запуска и не пишется в настройки: в отличие от
-  /// «списком/плитками» это не то, как человеку удобно смотреть, а вопрос, с
-  /// которым он сюда пришёл сегодня.
-  HistoryRangeChoiceProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: null,
-        name: r'historyRangeChoiceProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$historyRangeChoiceHash();
-
-  @$internal
-  @override
-  HistoryRangeChoice create() => HistoryRangeChoice();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(HistoryRange value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<HistoryRange>(value),
-    );
-  }
-}
-
-String _$historyRangeChoiceHash() =>
-    r'834b2dac214fd6c6ae6ce041ddfcb5eaeb89cd91';
-
-/// Выбранный диапазон: неделя, месяц, всё время.
-///
-/// Неделя по умолчанию, хотя сервер по умолчанию отдаёт месяц. Это не разнобой:
-/// умолчание схемы — для curl, а экран открывают с вопросом «как прошла эта
-/// неделя», и эталон (`design/reference/History.html`) подписывает кнопку «7
-/// дней». Клиент всегда присылает `range` явно, так что серверное умолчание с
-/// этим выбором и не встречается.
-///
-/// Выбор живёт до конца запуска и не пишется в настройки: в отличие от
-/// «списком/плитками» это не то, как человеку удобно смотреть, а вопрос, с
-/// которым он сюда пришёл сегодня.
-
-abstract class _$HistoryRangeChoice extends $Notifier<HistoryRange> {
-  HistoryRange build();
-  @$mustCallSuper
-  @override
-  void runBuild() {
-    final ref = this.ref as $Ref<HistoryRange, HistoryRange>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<HistoryRange, HistoryRange>,
-              HistoryRange,
-              Object?,
-              Object?
-            >;
-    element.handleCreate(ref, build);
-  }
-}
-
-/// `GET /history` для выбранного диапазона.
-///
-/// `watch` на диапазон, а не `read`: смена диапазона — это и есть новый
-/// запрос, и написать её как «сменить состояние и не забыть перезапросить»
-/// значило бы завести второе место, которое обязано об этом помнить.
-///
-/// Автоповтор выключен ([noAutomaticRetry]) по той же причине, что и у доски:
-/// у пользователя есть явный повтор — жест и кнопка, — а невидимый на тридцать
-/// восемь секунд поверх него делает видимый похожим на сломанный.
-
-@ProviderFor(HistoryFeed)
-final historyFeedProvider = HistoryFeedProvider._();
-
-/// `GET /history` для выбранного диапазона.
-///
-/// `watch` на диапазон, а не `read`: смена диапазона — это и есть новый
-/// запрос, и написать её как «сменить состояние и не забыть перезапросить»
-/// значило бы завести второе место, которое обязано об этом помнить.
-///
-/// Автоповтор выключен ([noAutomaticRetry]) по той же причине, что и у доски:
-/// у пользователя есть явный повтор — жест и кнопка, — а невидимый на тридцать
-/// восемь секунд поверх него делает видимый похожим на сломанный.
-final class HistoryFeedProvider
-    extends $AsyncNotifierProvider<HistoryFeed, HistorySnapshot> {
-  /// `GET /history` для выбранного диапазона.
-  ///
-  /// `watch` на диапазон, а не `read`: смена диапазона — это и есть новый
-  /// запрос, и написать её как «сменить состояние и не забыть перезапросить»
-  /// значило бы завести второе место, которое обязано об этом помнить.
-  ///
-  /// Автоповтор выключен ([noAutomaticRetry]) по той же причине, что и у доски:
-  /// у пользователя есть явный повтор — жест и кнопка, — а невидимый на тридцать
-  /// восемь секунд поверх него делает видимый похожим на сломанный.
-  HistoryFeedProvider._()
-    : super(
-        from: null,
-        argument: null,
-        retry: noAutomaticRetry,
-        name: r'historyFeedProvider',
-        isAutoDispose: false,
-        dependencies: null,
-        $allTransitiveDependencies: null,
-      );
-
-  @override
-  String debugGetCreateSourceHash() => _$historyFeedHash();
-
-  @$internal
-  @override
-  HistoryFeed create() => HistoryFeed();
-}
-
-String _$historyFeedHash() => r'09623131b1c270c1d0ec89c0a916ee98eaabcafb';
-
-/// `GET /history` для выбранного диапазона.
-///
-/// `watch` на диапазон, а не `read`: смена диапазона — это и есть новый
-/// запрос, и написать её как «сменить состояние и не забыть перезапросить»
-/// значило бы завести второе место, которое обязано об этом помнить.
-///
-/// Автоповтор выключен ([noAutomaticRetry]) по той же причине, что и у доски:
-/// у пользователя есть явный повтор — жест и кнопка, — а невидимый на тридцать
-/// восемь секунд поверх него делает видимый похожим на сломанный.
-
-abstract class _$HistoryFeed extends $AsyncNotifier<HistorySnapshot> {
-  FutureOr<HistorySnapshot> build();
-  @$mustCallSuper
-  @override
-  void runBuild() {
-    final ref = this.ref as $Ref<AsyncValue<HistorySnapshot>, HistorySnapshot>;
-    final element =
-        ref.element
-            as $ClassProviderElement<
-              AnyNotifier<AsyncValue<HistorySnapshot>, HistorySnapshot>,
-              AsyncValue<HistorySnapshot>,
-              Object?,
-              Object?
-            >;
-    element.handleCreate(ref, build);
-  }
-}
 
 /// Журнал одной задачи для блока «жизнь задачи».
 ///
