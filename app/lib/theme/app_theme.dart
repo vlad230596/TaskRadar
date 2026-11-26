@@ -347,6 +347,102 @@ abstract final class AppText {
     height: 1.4,
     color: AppColors.muted,
   );
+
+  // -- Today, history, review (design/today-history-spec.md §2) -------------
+
+  /// «Сегодня» over the day's list.
+  static const TextStyle todayTitle = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w700,
+    fontSize: 15,
+    color: AppColors.ink,
+  );
+
+  /// «3 из 7».
+  static const TextStyle todayCount = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w600,
+    fontSize: 13,
+    color: AppColors.todayProgress,
+    fontFeatures: _figures,
+  );
+
+  /// A row of «Сегодня» and of the tail.
+  static const TextStyle todayRow = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w500,
+    fontSize: 15,
+    height: 1.3,
+    color: AppColors.ink,
+  );
+
+  /// A done row of «Сегодня».
+  static const TextStyle todayRowDone = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w500,
+    fontSize: 15,
+    height: 1.3,
+    color: AppColors.muted,
+    decoration: TextDecoration.lineThrough,
+    decorationColor: AppColors.muted,
+  );
+
+  /// «15:00» in its chip.
+  static const TextStyle timeLabel = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w700,
+    fontSize: 12.5,
+    color: AppColors.timeChipInk,
+    fontFeatures: _figures,
+  );
+
+  /// A task's date label on a row («сегодня», «сб 28.11»).
+  static const TextStyle dateLabel = chip;
+
+  /// «РАБОТА», «ДОМ» inside «Сегодня».
+  static const TextStyle scopeLabel = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w700,
+    fontSize: 11.5,
+    letterSpacing: 0.575,
+    color: AppColors.muted,
+  );
+
+  /// A review step's title.
+  static const TextStyle reviewTitle = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w700,
+    fontSize: 22,
+    height: 1.2,
+    color: AppColors.voiceInk,
+  );
+
+  /// A review step's explanation.
+  static const TextStyle reviewHint = TextStyle(
+    fontFamily: AppFonts.text,
+    fontWeight: FontWeight.w500,
+    fontSize: 14,
+    height: 1.4,
+    color: AppColors.voiceMuted,
+  );
+
+  /// «23» on step 1.
+  static const TextStyle reviewNumber = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w700,
+    fontSize: 44,
+    color: AppColors.doneOnDark,
+    fontFeatures: _figures,
+  );
+
+  /// The number over a week's bar.
+  static const TextStyle weekNumber = TextStyle(
+    fontFamily: AppFonts.display,
+    fontWeight: FontWeight.w600,
+    fontSize: 11,
+    color: AppColors.muted,
+    fontFeatures: _figures,
+  );
 }
 
 /// The app's one theme.

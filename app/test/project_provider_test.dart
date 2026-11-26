@@ -313,7 +313,7 @@ void main() {
     });
 
     test(
-      'closing a task clears the reminder date; blocking and unblocking keep it',
+      'no status change touches the date -- closing included (today-history contract)',
       () async {
         final projectId = server.addProject(name: 'Дача');
         server.addTask(
@@ -343,14 +343,14 @@ void main() {
         expect(server.patches.last.body.containsKey('remindAt'), isFalse);
         expect(tasksNow(container, projectId).single.remindAt, isNotNull);
 
-        // Closing it drops the date, with an explicit null.
+        // Closing keeps it too: a task dated today and closed is what
+        // «Сегодня N из M» counts, and «Вернуть» brings it back to its day.
         await notifier.setStatus(
           tasksNow(container, projectId).single,
           TaskStatus.done,
         );
-        expect(server.patches.last.body['remindAt'], isNull);
-        expect(server.patches.last.body.containsKey('remindAt'), isTrue);
-        expect(tasksNow(container, projectId).single.remindAt, isNull);
+        expect(server.patches.last.body.containsKey('remindAt'), isFalse);
+        expect(tasksNow(container, projectId).single.remindAt, isNotNull);
       },
     );
 
@@ -875,13 +875,13 @@ void main() {
       expect(gateway.queue, hasLength(1));
       expect(gateway.queue.values.single.payload, 'task:${task.id}');
 
-      // 4. close it. The date goes with the status, so the alarm goes too --
-      // that keeps a stale date from resurfacing if the task is reopened.
+      // 4. close it. The date stays (it is what «Сегодня» counts closed
+      // tasks by), but a done task raises no alarm.
       task = tasksNow(container, projectId).single;
       await notifier.setStatus(task, TaskStatus.done);
       await pumpEventQueue();
 
-      expect(tasksNow(container, projectId).single.remindAt, isNull);
+      expect(tasksNow(container, projectId).single.remindAt, isNotNull);
       await container.read(reminderSyncProvider.future);
       expect(gateway.queue, isEmpty);
     });

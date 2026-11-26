@@ -15,6 +15,8 @@ import '../providers/scope_providers.dart';
 import '../navigation/app_routes.dart';
 import '../theme/app_theme.dart';
 import '../theme/tokens.dart';
+import '../widgets/today/rhythm_sheet.dart';
+import '../widgets/today/today_icons.dart';
 import '../widgets/adaptive_layout.dart';
 import '../widgets/glance.dart';
 import '../widgets/mode_navigation.dart';
@@ -594,6 +596,7 @@ class _ProjectMenu extends ConsumerWidget {
       onSelected: (action) => switch (action) {
         _ProjectAction.rename => _rename(context, ref),
         _ProjectAction.moveToScope => _moveToScope(context, ref),
+        _ProjectAction.rhythm => openRhythmSheet(context, project),
         _ProjectAction.archive => _archive(context, ref),
         _ProjectAction.unarchive => _unarchive(context, ref),
       },
@@ -615,6 +618,20 @@ class _ProjectMenu extends ConsumerWidget {
             child: ListTile(
               leading: Icon(Icons.workspaces_outline),
               title: Text('Переместить в скоуп'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+        // «Ритм…» над «В архив» (today-history-spec §6.2).
+        if (!_archived)
+          const PopupMenuItem<_ProjectAction>(
+            value: _ProjectAction.rhythm,
+            child: ListTile(
+              leading: TodayIcon(
+                TodayGlyph.rhythm,
+                size: 22,
+                color: AppColors.inkSoft,
+              ),
+              title: Text('Ритм…'),
               contentPadding: EdgeInsets.zero,
             ),
           ),
@@ -745,7 +762,7 @@ class _ProjectMenu extends ConsumerWidget {
   }
 }
 
-enum _ProjectAction { rename, moveToScope, archive, unarchive }
+enum _ProjectAction { rename, moveToScope, rhythm, archive, unarchive }
 
 /// "What you are looking at is the cache / the last refresh failed."
 ///

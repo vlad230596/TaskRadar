@@ -1425,7 +1425,9 @@ as String,
 /// @nodoc
 mixin _$GoalTask {
 
- String get id; String get title; TaskStatus get status; String get projectId; String get projectName; String? get focusedAt; String? get focusContourId;
+ String get id; String get title; TaskStatus get status; String get projectId; String get projectName; String? get focusedAt; String? get focusContourId;/// The task's date (`design/today-history-contract.md`), when the server
+/// sends it.
+ String? get remindAt;
 /// Create a copy of GoalTask
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1438,16 +1440,16 @@ $GoalTaskCopyWith<GoalTask> get copyWith => _$GoalTaskCopyWithImpl<GoalTask>(thi
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is GoalTask&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.status, status) || other.status == status)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.projectName, projectName) || other.projectName == projectName)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is GoalTask&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.status, status) || other.status == status)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.projectName, projectName) || other.projectName == projectName)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,title,status,projectId,projectName,focusedAt,focusContourId);
+int get hashCode => Object.hash(runtimeType,id,title,status,projectId,projectName,focusedAt,focusContourId,remindAt);
 
 @override
 String toString() {
-  return 'GoalTask(id: $id, title: $title, status: $status, projectId: $projectId, projectName: $projectName, focusedAt: $focusedAt, focusContourId: $focusContourId)';
+  return 'GoalTask(id: $id, title: $title, status: $status, projectId: $projectId, projectName: $projectName, focusedAt: $focusedAt, focusContourId: $focusContourId, remindAt: $remindAt)';
 }
 
 
@@ -1458,7 +1460,7 @@ abstract mixin class $GoalTaskCopyWith<$Res>  {
   factory $GoalTaskCopyWith(GoalTask value, $Res Function(GoalTask) _then) = _$GoalTaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String title, TaskStatus status, String projectId, String projectName, String? focusedAt, String? focusContourId
+ String id, String title, TaskStatus status, String projectId, String projectName, String? focusedAt, String? focusContourId, String? remindAt
 });
 
 
@@ -1475,7 +1477,7 @@ class _$GoalTaskCopyWithImpl<$Res>
 
 /// Create a copy of GoalTask
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? title = null,Object? status = null,Object? projectId = null,Object? projectName = null,Object? focusedAt = freezed,Object? focusContourId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? title = null,Object? status = null,Object? projectId = null,Object? projectName = null,Object? focusedAt = freezed,Object? focusContourId = freezed,Object? remindAt = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
@@ -1484,6 +1486,7 @@ as TaskStatus,projectId: null == projectId ? _self.projectId : projectId // igno
 as String,projectName: null == projectName ? _self.projectName : projectName // ignore: cast_nullable_to_non_nullable
 as String,focusedAt: freezed == focusedAt ? _self.focusedAt : focusedAt // ignore: cast_nullable_to_non_nullable
 as String?,focusContourId: freezed == focusContourId ? _self.focusContourId : focusContourId // ignore: cast_nullable_to_non_nullable
+as String?,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }
@@ -1569,10 +1572,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String title,  TaskStatus status,  String projectId,  String projectName,  String? focusedAt,  String? focusContourId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String title,  TaskStatus status,  String projectId,  String projectName,  String? focusedAt,  String? focusContourId,  String? remindAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _GoalTask() when $default != null:
-return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectName,_that.focusedAt,_that.focusContourId);case _:
+return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectName,_that.focusedAt,_that.focusContourId,_that.remindAt);case _:
   return orElse();
 
 }
@@ -1590,10 +1593,10 @@ return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectN
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String title,  TaskStatus status,  String projectId,  String projectName,  String? focusedAt,  String? focusContourId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String title,  TaskStatus status,  String projectId,  String projectName,  String? focusedAt,  String? focusContourId,  String? remindAt)  $default,) {final _that = this;
 switch (_that) {
 case _GoalTask():
-return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectName,_that.focusedAt,_that.focusContourId);case _:
+return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectName,_that.focusedAt,_that.focusContourId,_that.remindAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1610,10 +1613,10 @@ return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectN
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String title,  TaskStatus status,  String projectId,  String projectName,  String? focusedAt,  String? focusContourId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String title,  TaskStatus status,  String projectId,  String projectName,  String? focusedAt,  String? focusContourId,  String? remindAt)?  $default,) {final _that = this;
 switch (_that) {
 case _GoalTask() when $default != null:
-return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectName,_that.focusedAt,_that.focusContourId);case _:
+return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectName,_that.focusedAt,_that.focusContourId,_that.remindAt);case _:
   return null;
 
 }
@@ -1625,7 +1628,7 @@ return $default(_that.id,_that.title,_that.status,_that.projectId,_that.projectN
 @JsonSerializable()
 
 class _GoalTask implements GoalTask {
-  const _GoalTask({required this.id, required this.title, required this.status, required this.projectId, required this.projectName, this.focusedAt, this.focusContourId});
+  const _GoalTask({required this.id, required this.title, required this.status, required this.projectId, required this.projectName, this.focusedAt, this.focusContourId, this.remindAt});
   factory _GoalTask.fromJson(Map<String, dynamic> json) => _$GoalTaskFromJson(json);
 
 @override final  String id;
@@ -1635,6 +1638,9 @@ class _GoalTask implements GoalTask {
 @override final  String projectName;
 @override final  String? focusedAt;
 @override final  String? focusContourId;
+/// The task's date (`design/today-history-contract.md`), when the server
+/// sends it.
+@override final  String? remindAt;
 
 /// Create a copy of GoalTask
 /// with the given fields replaced by the non-null parameter values.
@@ -1649,16 +1655,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _GoalTask&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.status, status) || other.status == status)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.projectName, projectName) || other.projectName == projectName)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _GoalTask&&(identical(other.id, id) || other.id == id)&&(identical(other.title, title) || other.title == title)&&(identical(other.status, status) || other.status == status)&&(identical(other.projectId, projectId) || other.projectId == projectId)&&(identical(other.projectName, projectName) || other.projectName == projectName)&&(identical(other.focusedAt, focusedAt) || other.focusedAt == focusedAt)&&(identical(other.focusContourId, focusContourId) || other.focusContourId == focusContourId)&&(identical(other.remindAt, remindAt) || other.remindAt == remindAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,title,status,projectId,projectName,focusedAt,focusContourId);
+int get hashCode => Object.hash(runtimeType,id,title,status,projectId,projectName,focusedAt,focusContourId,remindAt);
 
 @override
 String toString() {
-  return 'GoalTask(id: $id, title: $title, status: $status, projectId: $projectId, projectName: $projectName, focusedAt: $focusedAt, focusContourId: $focusContourId)';
+  return 'GoalTask(id: $id, title: $title, status: $status, projectId: $projectId, projectName: $projectName, focusedAt: $focusedAt, focusContourId: $focusContourId, remindAt: $remindAt)';
 }
 
 
@@ -1669,7 +1675,7 @@ abstract mixin class _$GoalTaskCopyWith<$Res> implements $GoalTaskCopyWith<$Res>
   factory _$GoalTaskCopyWith(_GoalTask value, $Res Function(_GoalTask) _then) = __$GoalTaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String title, TaskStatus status, String projectId, String projectName, String? focusedAt, String? focusContourId
+ String id, String title, TaskStatus status, String projectId, String projectName, String? focusedAt, String? focusContourId, String? remindAt
 });
 
 
@@ -1686,7 +1692,7 @@ class __$GoalTaskCopyWithImpl<$Res>
 
 /// Create a copy of GoalTask
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? title = null,Object? status = null,Object? projectId = null,Object? projectName = null,Object? focusedAt = freezed,Object? focusContourId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? title = null,Object? status = null,Object? projectId = null,Object? projectName = null,Object? focusedAt = freezed,Object? focusContourId = freezed,Object? remindAt = freezed,}) {
   return _then(_GoalTask(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
@@ -1695,6 +1701,7 @@ as TaskStatus,projectId: null == projectId ? _self.projectId : projectId // igno
 as String,projectName: null == projectName ? _self.projectName : projectName // ignore: cast_nullable_to_non_nullable
 as String,focusedAt: freezed == focusedAt ? _self.focusedAt : focusedAt // ignore: cast_nullable_to_non_nullable
 as String?,focusContourId: freezed == focusContourId ? _self.focusContourId : focusContourId // ignore: cast_nullable_to_non_nullable
+as String?,remindAt: freezed == remindAt ? _self.remindAt : remindAt // ignore: cast_nullable_to_non_nullable
 as String?,
   ));
 }

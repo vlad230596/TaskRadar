@@ -346,7 +346,8 @@ void main() {
 
       expect(done.kind, NotificationActionOutcomeKind.sent);
       expect(serverTask(taskId)['status'], 'done');
-      expect(serverTask(taskId)['remindAt'], isNull);
+      // The date stays with a closed task (today-history contract).
+      expect(serverTask(taskId)['remindAt'], isNotNull);
       final board = container.read(boardProvider).requireValue.projects;
       expect(
         board.single.tasks.singleWhere((t) => t.id == taskId).status.name,
@@ -392,7 +393,7 @@ void main() {
       final entry = outbox.entries.single;
       expect(entry.kind, OutboxKind.editTask);
       expect(entry.taskId, taskId);
-      expect(entry.body, <String, Object?>{'status': 'done', 'remindAt': null});
+      expect(entry.body, <String, Object?>{'status': 'done'});
       expect(entry.expected, <String, Object?>{'status': 'blocked'});
       // The place stays quiet until the app can drop the zone.
       expect(
@@ -600,7 +601,7 @@ void main() {
 
         expect(outcome.kind, NotificationActionOutcomeKind.sent);
         expect(serverTask(taskId)['status'], 'done');
-        expect(serverTask(taskId)['remindAt'], isNull);
+        expect(serverTask(taskId)['remindAt'], isNotNull);
         expect(
           backend.lastRequest.headers['Authorization'],
           'Bearer jwt.token',
@@ -636,10 +637,7 @@ void main() {
         expect(entry.isWaiting, isTrue);
         expect(entry.taskId, taskId);
         expect(entry.title, 'Жду кабель');
-        expect(entry.body, <String, Object?>{
-          'status': 'done',
-          'remindAt': null,
-        });
+        expect(entry.body, <String, Object?>{'status': 'done'});
         expect(entry.expected, <String, Object?>{'status': 'blocked'});
       },
     );

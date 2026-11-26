@@ -34,7 +34,12 @@ mixin _$Project {
 /// "none" -- the screen then waits for the notes themselves. Read
 /// leniently ([_countFromJson]), because a counter is not worth failing a
 /// whole project list over.
-@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? get noteCount;
+@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? get noteCount;/// The project's rhythm (`design/today-history-contract.md`): the norm
+/// «≥ N closed a week» and the ceiling «≤ M open», both optional; the
+/// rhythm is on when either is set.
+ int? get rhythmClosedPerWeek; int? get rhythmMaxOpen;/// What the server computed from them, or null when the rhythm is off
+/// (or the server is older than rhythms).
+@JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson) ProjectRhythm? get rhythm;
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -47,16 +52,16 @@ $ProjectCopyWith<Project> get copyWith => _$ProjectCopyWithImpl<Project>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount)&&(identical(other.rhythmClosedPerWeek, rhythmClosedPerWeek) || other.rhythmClosedPerWeek == rhythmClosedPerWeek)&&(identical(other.rhythmMaxOpen, rhythmMaxOpen) || other.rhythmMaxOpen == rhythmMaxOpen)&&(identical(other.rhythm, rhythm) || other.rhythm == rhythm));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt,noteCount);
+int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt,noteCount,rhythmClosedPerWeek,rhythmMaxOpen,rhythm);
 
 @override
 String toString() {
-  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt, noteCount: $noteCount)';
+  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt, noteCount: $noteCount, rhythmClosedPerWeek: $rhythmClosedPerWeek, rhythmMaxOpen: $rhythmMaxOpen, rhythm: $rhythm)';
 }
 
 
@@ -67,7 +72,7 @@ abstract mixin class $ProjectCopyWith<$Res>  {
   factory $ProjectCopyWith(Project value, $Res Function(Project) _then) = _$ProjectCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt,@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount
+ String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt,@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount, int? rhythmClosedPerWeek, int? rhythmMaxOpen,@JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson) ProjectRhythm? rhythm
 });
 
 
@@ -84,7 +89,7 @@ class _$ProjectCopyWithImpl<$Res>
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? noteCount = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? noteCount = freezed,Object? rhythmClosedPerWeek = freezed,Object? rhythmMaxOpen = freezed,Object? rhythm = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -93,7 +98,10 @@ as String,archivedAt: freezed == archivedAt ? _self.archivedAt : archivedAt // i
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,noteCount: freezed == noteCount ? _self.noteCount : noteCount // ignore: cast_nullable_to_non_nullable
-as int?,
+as int?,rhythmClosedPerWeek: freezed == rhythmClosedPerWeek ? _self.rhythmClosedPerWeek : rhythmClosedPerWeek // ignore: cast_nullable_to_non_nullable
+as int?,rhythmMaxOpen: freezed == rhythmMaxOpen ? _self.rhythmMaxOpen : rhythmMaxOpen // ignore: cast_nullable_to_non_nullable
+as int?,rhythm: freezed == rhythm ? _self.rhythm : rhythm // ignore: cast_nullable_to_non_nullable
+as ProjectRhythm?,
   ));
 }
 
@@ -178,10 +186,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount,  int? rhythmClosedPerWeek,  int? rhythmMaxOpen, @JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson)  ProjectRhythm? rhythm)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Project() when $default != null:
-return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount,_that.rhythmClosedPerWeek,_that.rhythmMaxOpen,_that.rhythm);case _:
   return orElse();
 
 }
@@ -199,10 +207,10 @@ return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.created
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount,  int? rhythmClosedPerWeek,  int? rhythmMaxOpen, @JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson)  ProjectRhythm? rhythm)  $default,) {final _that = this;
 switch (_that) {
 case _Project():
-return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount,_that.rhythmClosedPerWeek,_that.rhythmMaxOpen,_that.rhythm);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -219,10 +227,10 @@ return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.created
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String scopeId,  String? archivedAt,  String createdAt,  String updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false)  int? noteCount,  int? rhythmClosedPerWeek,  int? rhythmMaxOpen, @JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson)  ProjectRhythm? rhythm)?  $default,) {final _that = this;
 switch (_that) {
 case _Project() when $default != null:
-return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount);case _:
+return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.createdAt,_that.updatedAt,_that.noteCount,_that.rhythmClosedPerWeek,_that.rhythmMaxOpen,_that.rhythm);case _:
   return null;
 
 }
@@ -234,7 +242,7 @@ return $default(_that.id,_that.name,_that.scopeId,_that.archivedAt,_that.created
 @JsonSerializable()
 
 class _Project implements Project {
-  const _Project({required this.id, required this.name, required this.scopeId, required this.archivedAt, required this.createdAt, required this.updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false) this.noteCount});
+  const _Project({required this.id, required this.name, required this.scopeId, required this.archivedAt, required this.createdAt, required this.updatedAt, @JsonKey(fromJson: _countFromJson, includeIfNull: false) this.noteCount, this.rhythmClosedPerWeek, this.rhythmMaxOpen, @JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson) this.rhythm});
   factory _Project.fromJson(Map<String, dynamic> json) => _$ProjectFromJson(json);
 
 @override final  String id;
@@ -263,6 +271,14 @@ class _Project implements Project {
 /// leniently ([_countFromJson]), because a counter is not worth failing a
 /// whole project list over.
 @override@JsonKey(fromJson: _countFromJson, includeIfNull: false) final  int? noteCount;
+/// The project's rhythm (`design/today-history-contract.md`): the norm
+/// «≥ N closed a week» and the ceiling «≤ M open», both optional; the
+/// rhythm is on when either is set.
+@override final  int? rhythmClosedPerWeek;
+@override final  int? rhythmMaxOpen;
+/// What the server computed from them, or null when the rhythm is off
+/// (or the server is older than rhythms).
+@override@JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson) final  ProjectRhythm? rhythm;
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
@@ -277,16 +293,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Project&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.scopeId, scopeId) || other.scopeId == scopeId)&&(identical(other.archivedAt, archivedAt) || other.archivedAt == archivedAt)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.noteCount, noteCount) || other.noteCount == noteCount)&&(identical(other.rhythmClosedPerWeek, rhythmClosedPerWeek) || other.rhythmClosedPerWeek == rhythmClosedPerWeek)&&(identical(other.rhythmMaxOpen, rhythmMaxOpen) || other.rhythmMaxOpen == rhythmMaxOpen)&&(identical(other.rhythm, rhythm) || other.rhythm == rhythm));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt,noteCount);
+int get hashCode => Object.hash(runtimeType,id,name,scopeId,archivedAt,createdAt,updatedAt,noteCount,rhythmClosedPerWeek,rhythmMaxOpen,rhythm);
 
 @override
 String toString() {
-  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt, noteCount: $noteCount)';
+  return 'Project(id: $id, name: $name, scopeId: $scopeId, archivedAt: $archivedAt, createdAt: $createdAt, updatedAt: $updatedAt, noteCount: $noteCount, rhythmClosedPerWeek: $rhythmClosedPerWeek, rhythmMaxOpen: $rhythmMaxOpen, rhythm: $rhythm)';
 }
 
 
@@ -297,7 +313,7 @@ abstract mixin class _$ProjectCopyWith<$Res> implements $ProjectCopyWith<$Res> {
   factory _$ProjectCopyWith(_Project value, $Res Function(_Project) _then) = __$ProjectCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt,@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount
+ String id, String name, String scopeId, String? archivedAt, String createdAt, String updatedAt,@JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount, int? rhythmClosedPerWeek, int? rhythmMaxOpen,@JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson) ProjectRhythm? rhythm
 });
 
 
@@ -314,7 +330,7 @@ class __$ProjectCopyWithImpl<$Res>
 
 /// Create a copy of Project
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? noteCount = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? scopeId = null,Object? archivedAt = freezed,Object? createdAt = null,Object? updatedAt = null,Object? noteCount = freezed,Object? rhythmClosedPerWeek = freezed,Object? rhythmMaxOpen = freezed,Object? rhythm = freezed,}) {
   return _then(_Project(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -323,7 +339,10 @@ as String,archivedAt: freezed == archivedAt ? _self.archivedAt : archivedAt // i
 as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,noteCount: freezed == noteCount ? _self.noteCount : noteCount // ignore: cast_nullable_to_non_nullable
-as int?,
+as int?,rhythmClosedPerWeek: freezed == rhythmClosedPerWeek ? _self.rhythmClosedPerWeek : rhythmClosedPerWeek // ignore: cast_nullable_to_non_nullable
+as int?,rhythmMaxOpen: freezed == rhythmMaxOpen ? _self.rhythmMaxOpen : rhythmMaxOpen // ignore: cast_nullable_to_non_nullable
+as int?,rhythm: freezed == rhythm ? _self.rhythm : rhythm // ignore: cast_nullable_to_non_nullable
+as ProjectRhythm?,
   ));
 }
 

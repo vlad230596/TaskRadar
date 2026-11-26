@@ -38,6 +38,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => _Task(
       const <TaskGoalRef>[],
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,
+  doneAt: json['doneAt'] as String?,
   isCurrent: json['isCurrent'] as bool,
 );
 
@@ -61,6 +62,7 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'goals': instance.goals.map((e) => e.toJson()).toList(),
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
+  'doneAt': instance.doneAt,
   'isCurrent': instance.isCurrent,
 };
 

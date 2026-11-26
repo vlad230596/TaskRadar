@@ -14,6 +14,9 @@ _Project _$ProjectFromJson(Map<String, dynamic> json) => _Project(
   createdAt: json['createdAt'] as String,
   updatedAt: json['updatedAt'] as String,
   noteCount: _countFromJson(json['noteCount']),
+  rhythmClosedPerWeek: (json['rhythmClosedPerWeek'] as num?)?.toInt(),
+  rhythmMaxOpen: (json['rhythmMaxOpen'] as num?)?.toInt(),
+  rhythm: ProjectRhythm.maybeFromJson(json['rhythm']),
 );
 
 Map<String, dynamic> _$ProjectToJson(_Project instance) => <String, dynamic>{
@@ -24,4 +27,7 @@ Map<String, dynamic> _$ProjectToJson(_Project instance) => <String, dynamic>{
   'createdAt': instance.createdAt,
   'updatedAt': instance.updatedAt,
   'noteCount': ?instance.noteCount,
+  'rhythmClosedPerWeek': instance.rhythmClosedPerWeek,
+  'rhythmMaxOpen': instance.rhythmMaxOpen,
+  'rhythm': ProjectRhythm.maybeToJson(instance.rhythm),
 };

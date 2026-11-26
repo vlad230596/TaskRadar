@@ -56,9 +56,106 @@ abstract class Project with _$Project {
     /// leniently ([_countFromJson]), because a counter is not worth failing a
     /// whole project list over.
     @JsonKey(fromJson: _countFromJson, includeIfNull: false) int? noteCount,
+
+    /// The project's rhythm (`design/today-history-contract.md`): the norm
+    /// «≥ N closed a week» and the ceiling «≤ M open», both optional; the
+    /// rhythm is on when either is set.
+    int? rhythmClosedPerWeek,
+    int? rhythmMaxOpen,
+
+    /// What the server computed from them, or null when the rhythm is off
+    /// (or the server is older than rhythms).
+    @JsonKey(fromJson: ProjectRhythm.maybeFromJson, toJson: ProjectRhythm.maybeToJson)
+    ProjectRhythm? rhythm,
   }) = _Project;
 
   factory Project.fromJson(Map<String, dynamic> json) => _$ProjectFromJson(json);
+}
+
+/// Which way a project is off its rhythm.
+enum RhythmSignal { silence, overflow }
+
+/// `rhythm` of a project response: the norm and ceiling as set, and what the
+/// server measured against them. Hand-written JSON: it is read leniently,
+/// because a counter is not worth failing a project list over.
+@immutable
+class ProjectRhythm {
+  const ProjectRhythm({
+    this.closedPerWeek,
+    this.maxOpen,
+    this.closedAvg = 0,
+    this.open = 0,
+    this.lastClosedAt,
+    this.silentWeeks = 0,
+    this.signal,
+  });
+
+  final int? closedPerWeek;
+  final int? maxOpen;
+
+  /// Closed in the last 14 days / 2; may be fractional (1.5).
+  final double closedAvg;
+
+  /// Pending + blocked.
+  final int open;
+  final String? lastClosedAt;
+
+  /// Whole weeks since the last closing (or since the project was created).
+  final int silentWeeks;
+  final RhythmSignal? signal;
+
+  static ProjectRhythm? maybeFromJson(Object? json) {
+    if (json is! Map) return null;
+    int? whole(Object? v) => v is num ? v.toInt() : null;
+    return ProjectRhythm(
+      closedPerWeek: whole(json['closedPerWeek']),
+      maxOpen: whole(json['maxOpen']),
+      closedAvg: (json['closedAvg'] as num?)?.toDouble() ?? 0,
+      open: whole(json['open']) ?? 0,
+      lastClosedAt: json['lastClosedAt'] as String?,
+      silentWeeks: whole(json['silentWeeks']) ?? 0,
+      signal: switch (json['signal']) {
+        'silence' => RhythmSignal.silence,
+        'overflow' => RhythmSignal.overflow,
+        _ => null,
+      },
+    );
+  }
+
+  static Map<String, dynamic>? maybeToJson(ProjectRhythm? rhythm) =>
+      rhythm?.toJson();
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+    'closedPerWeek': closedPerWeek,
+    'maxOpen': maxOpen,
+    'closedAvg': closedAvg,
+    'open': open,
+    'lastClosedAt': lastClosedAt,
+    'silentWeeks': silentWeeks,
+    'signal': signal?.name,
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is ProjectRhythm &&
+      other.closedPerWeek == closedPerWeek &&
+      other.maxOpen == maxOpen &&
+      other.closedAvg == closedAvg &&
+      other.open == open &&
+      other.lastClosedAt == lastClosedAt &&
+      other.silentWeeks == silentWeeks &&
+      other.signal == signal;
+
+  @override
+  int get hashCode => Object.hash(
+    closedPerWeek,
+    maxOpen,
+    closedAvg,
+    open,
+    lastClosedAt,
+    silentWeeks,
+    signal,
+  );
 }
 
 /// A non-negative whole number, or null for anything else.

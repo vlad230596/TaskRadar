@@ -268,11 +268,11 @@ class ProjectTasks extends _$ProjectTasks {
 
   /// Moves a task between `pending` / `done` / `blocked`.
   ///
-  /// Moving to `done` clears `remindAt`, which is the one place that uses
-  /// [PatchField.clear] in anger: a finished task has nothing to be reminded
-  /// about, and a date kept invisibly would resurface as an alarm if the task
-  /// were ever reopened, on a day the user never chose. `pending` <-> `blocked`
-  /// keeps the date -- a reminder belongs to any open task, not only a blocker.
+  /// The date stays as it is, closing included
+  /// (`design/today-history-contract.md`): a task dated today and closed is
+  /// what «Сегодня» counts as «N из M», and a task brought back by «Вернуть»
+  /// comes back to its day. A done task raises no alarm whatever its date
+  /// (`remindersFromBoard` filters on the status), so keeping it costs nothing.
   ///
   /// `description` is left as [PatchField.keep], which is the whole point of
   /// that type: a status change must not touch the description, and the way to
@@ -282,7 +282,6 @@ class ProjectTasks extends _$ProjectTasks {
       return Future<WriteOutcome>.value(WriteOutcome.sent);
     }
 
-    final clearsDate = status == TaskStatus.done && task.remindAt != null;
     return _mutate(
       taskId: task.id,
       // Checked on the status alone: a reminder moved on the laptop is no
@@ -291,10 +290,7 @@ class ProjectTasks extends _$ProjectTasks {
           .read(outboxProvider.notifier)
           .queueEdit(
             base: task,
-            body: <String, Object?>{
-              'status': status.name,
-              if (clearsDate) 'remindAt': null,
-            },
+            body: <String, Object?>{'status': status.name},
             checked: const <String>{'status'},
           ),
       (rows) {
@@ -307,9 +303,10 @@ class ProjectTasks extends _$ProjectTasks {
             index,
             rows[index].copyWith(
               status: status,
-              remindAt: clearsDate ? null : rows[index].remindAt,
-              // The server clears the time with the date.
-              remindTime: clearsDate ? null : rows[index].remindTime,
+              // The server stamps it; the guess only lasts the round trip.
+              doneAt: status == TaskStatus.done
+                  ? DateTime.now().toUtc().toIso8601String()
+                  : null,
               // The one optimistic touch of `isCurrent` anywhere, and it is a
               // weakening, never an invention: a task that is not `pending`
               // cannot be current, so dropping the highlight is knowledge, not a
@@ -318,13 +315,7 @@ class ProjectTasks extends _$ProjectTasks {
             ),
           ),
           send: () async {
-            await _api.updateTask(
-              task.id,
-              status: status,
-              remindAt: clearsDate
-                  ? const PatchField<String>.clear()
-                  : const PatchField<String>.keep(),
-            );
+            await _api.updateTask(task.id, status: status);
             return null; // reconcile: the current task has almost certainly moved
           },
         );

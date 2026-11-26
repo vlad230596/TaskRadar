@@ -197,6 +197,59 @@ abstract final class AppColors {
   /// The bulb's tile on dark.
   static const Color ideaTileOnDark = Color(0xFF2A2466);
 
+  // -- Today, history, review (design/today-history-spec.md §2) -------------
+  //
+  // Almost all of them name an existing value by its new job; three hexes are
+  // new. No [alarm] anywhere in this family: the tail, the rhythm and a
+  // skipped review invite, they do not alarm.
+
+  /// «сегодня» on a row, the time in «Сегодня».
+  static const Color dateToday = indigoLink;
+
+  /// «завтра», «сб 28.11», «25 фев».
+  static const Color dateSoon = muted;
+
+  /// «вчера», «3 дн. назад».
+  static const Color dateOverdue = waitingInk;
+
+  /// The fill and the ink of the «15:00» chip in «Сегодня».
+  static const Color timeChip = indigoFill;
+  static const Color timeChipInk = indigoInk;
+
+  /// The «С прошлых дней» card: fill, border and its inner rules.
+  static const Color tailFill = waitingFill;
+  static const Color tailLine = waitingLine;
+
+  /// The segments of «N из M» that are done, the check of a done row.
+  static const Color todayProgress = done;
+
+  /// The segments not done yet.
+  static const Color todayTrack = lineFaint;
+
+  /// The dashed border of «Позже: N».
+  static const Color laterLine = lineStrong;
+
+  /// A week's bar, the current week's, a week with nothing closed.
+  static const Color weekBar = done;
+  static const Color weekBarNow = voiceLevelHigh;
+  static const Color weekBarEmpty = line;
+
+  /// The snackbar with «Следом…»: its background, «Следом…», «Отменить».
+  static const Color snackBackground = ink;
+  static const Color snackAction = Color(0xFFFFFFFF);
+  static const Color snackActionSoft = voiceBright;
+
+  /// The review's progress: steps ahead, passed, skipped.
+  static const Color reviewStepTrack = voiceLine;
+  static const Color reviewStepDone = Color(0xFFFFFFFF);
+  static const Color reviewSkipped = Color(0xFF6A71A6);
+
+  /// «→ следом: …» under a task on a dark surface.
+  static const Color nextOnDark = Color(0xFF9FB0FF);
+
+  /// The check's circle on a done row in «Сегодня» and «Сделано».
+  static const Color doneChip = Color(0xFFE5F0EA);
+
   // -- The desktop rail, which is dark for the same reason ------------------
 
   /// The rail's own background. Same [ink] as the primary button: the rail is

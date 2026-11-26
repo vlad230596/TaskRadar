@@ -45,6 +45,10 @@ class CachedRead {
 abstract final class ReadCacheKeys {
   static const String focus = 'focus';
   static const String scopes = 'scopes';
+  static const String ownerSettings = 'ownerSettings';
+  static const String historyDone = 'history.done';
+  static const String historyWeeks = 'history.weeks';
+  static const String reviewStatus = 'reviews.status';
   static String notes(String projectId) => 'notes.$projectId';
 }
 

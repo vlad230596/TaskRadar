@@ -103,6 +103,11 @@ abstract class Task with _$Task {
     required String createdAt,
     required String updatedAt,
 
+    /// When the task was closed (`design/today-history-contract.md`): set on
+    /// the move into `done`, cleared on any move out of it. Null for an open
+    /// task, and on the wire from an older server or snapshot.
+    String? doneAt,
+
     /// Computed by the server, never stored: the first task in `position` order
     /// that is neither done nor blocked.
     ///

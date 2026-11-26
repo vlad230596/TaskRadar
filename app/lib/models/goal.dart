@@ -99,6 +99,10 @@ abstract class GoalTask with _$GoalTask {
     required String projectName,
     String? focusedAt,
     String? focusContourId,
+
+    /// The task's date (`design/today-history-contract.md`), when the server
+    /// sends it.
+    String? remindAt,
   }) = _GoalTask;
 
   factory GoalTask.fromJson(Map<String, dynamic> json) =>

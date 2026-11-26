@@ -246,25 +246,14 @@ class HeadlessReminderActions {
 
     switch (request.action) {
       case ReminderAction.done:
-        // The date goes with «done», as in `ProjectTasks.setStatus`. Unknown
-        // task: clear it anyway -- a finished task has no reminder, and
-        // clearing an absent date changes nothing.
-        final clearsDate = known == null || known.task.remindAt != null;
+        // The date stays, as in `ProjectTasks.setStatus`: a closed task
+        // dated today is part of «Сегодня N из M», and raises no alarm.
         final outcome = await _write(
           known: known,
           taskId: taskId,
-          body: <String, Object?>{
-            'status': TaskStatus.done.name,
-            if (clearsDate) 'remindAt': null,
-          },
+          body: <String, Object?>{'status': TaskStatus.done.name},
           checked: const <String>{'status'},
-          send: () => api.updateTask(
-            taskId,
-            status: TaskStatus.done,
-            remindAt: clearsDate
-                ? const PatchField<String>.clear()
-                : const PatchField<String>.keep(),
-          ),
+          send: () => api.updateTask(taskId, status: TaskStatus.done),
         );
         if (_landed(outcome)) {
           // The date alarm, if one is still queued (a place notification
